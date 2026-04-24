@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Button, Field, useToast } from '@/components/ui'
+import { supabase } from '@/lib/supabase'
 
 interface MailAccount {
   imap_host: string
@@ -33,37 +34,40 @@ export default function SettingsPage() {
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [hasConfig, setHasConfig] = useState(false)
 
-  const getToken = () => {
-    const keys = Object.keys(localStorage)
-    const authKey = keys.find(k => k.includes('auth-token'))
-    if (!authKey) return ''
-    try {
-      const data = JSON.parse(localStorage.getItem(authKey) ?? '{}')
-      return data?.access_token ?? ''
-    } catch { return '' }
+  const getToken = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    return session?.access_token ?? ''
   }
 
   useEffect(() => {
-    fetch('/api/mail/accounts', {
-      headers: { 'Authorization': `Bearer ${getToken()}` }
-    })
-      .then(r => r.json())
-      .then(res => {
-        if (res.success && res.data) {
-          setForm(f => ({ ...f, ...res.data }))
-          setHasConfig(true)
-        }
+    const load = async () => {
+      const token = await getToken()
+      fetch('/api/mail/accounts', {
+        headers: { 'Authorization': `Bearer ${token}` }
       })
-      .catch(() => {})
+        .then(r => r.json())
+        .then(res => {
+          if (res.success && res.data) {
+            setForm(f => ({ ...f, ...res.data }))
+            setHasConfig(true)
+          }
+        })
+        .catch(() => {})
+    }
+    load()
   }, [])
 
   const handleTest = async () => {
     setTesting(true)
     setTestResult(null)
     try {
+      const token = await getToken()
       const res = await fetch('/api/mail/accounts/test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify(form),
       })
       const data = await res.json()
@@ -81,9 +85,13 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setLoading(true)
     try {
+      const token = await getToken()
       const res = await fetch('/api/mail/accounts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify(form),
       })
       const data = await res.json()
