@@ -20,9 +20,11 @@ import {
 // ── Helper : récupérer le token auth ─────────────────────────
 async function getAuthHeaders(): Promise<HeadersInit> {
   const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token ?? ''
+  console.log('Token:', token ? 'OK' : 'VIDE')
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${session?.access_token ?? ''}`,
+    'Authorization': `Bearer ${token}`,
   }
 }
 
@@ -124,10 +126,10 @@ export const suppliersApi = {
 export const mailApi = {
 
   sync: () =>
-    apiFetch<{ fetched: number; stored: number; aoDetected: number }>('/api/mail/sync', {
-      method: 'POST',
-      body: JSON.stringify({}),
-    }),
+  apiFetch<{ fetched: number; stored: number; aoDetected: number }>('/api/mail/sync', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  }),
 
   getEmails: (filters?: { ao?: boolean; unread?: boolean }) => {
     const params = new URLSearchParams()
