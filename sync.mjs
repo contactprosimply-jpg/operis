@@ -29,44 +29,66 @@ async function sync() {
   await client.connect()
   await client.mailboxOpen('INBOX')
 
-  const messages = client.fetch('*:1', { uid: true, source: true })
+  // Emails du dernier mois
+  const since = new Date()
+  since.setDate(since.getDate() - 30)
+
+  console.log(`Récupération des emails depuis le ${since.toLocaleDateString('fr-FR')}...`)
+
+  const messages = client.fetch({ since }, { uid: true, source: true })
   let count = 0
+  let stored = 0
+  let duplicates = 0
 
   for await (const message of messages) {
-    if (count >= 30) break
     count++
 
-    const parsed = await simpleParser(message.source)
-    const messageId = parsed.messageId ?? `msg-${message.uid}`
+    try {
+      const parsed = await simpleParser(message.source)
+      const messageId = parsed.messageId ?? `msg-${message.uid}`
 
-    const { data: existing } = await db.from('emails').select('id').eq('message_id', messageId).single()
-    if (existing) { console.log('Doublon:', parsed.subject); continue }
+      const { data: existing } = await db.from('emails').select('id').eq('message_id', messageId).single()
+      if (existing) { duplicates++; continue }
 
-    const text = `${parsed.subject ?? ''} ${parsed.text ?? ''}`.toLowerCase()
-    let score = 0
-    for (const kw of AO_KEYWORDS) { if (text.includes(kw)) score += 20 }
-    score = Math.min(100, score)
+      const text = `${parsed.subject ?? ''} ${parsed.text ?? ''}`.toLowerCase()
+      let score = 0
+      for (const kw of AO_KEYWORDS) { if (text.includes(kw)) score += 20 }
+      score = Math.min(100, score)
 
-    await db.from('emails').insert({
-      user_id: USER_ID,
-      message_id: messageId,
-      subject: parsed.subject ?? '(sans objet)',
-      from_address: parsed.from?.text ?? '',
-      to_address: parsed.to?.text ?? '',
-      body_text: parsed.text ?? '',
-      body_html: parsed.html || '',
-      received_at: (parsed.date ?? new Date()).toISOString(),
-      is_read: false,
-      is_ao: score >= 30,
-      ao_score: score,
-      tender_id: null,
-    })
+      const { error } = await db.from('emails').insert({
+        user_id: USER_ID,
+        message_id: messageId,
+        subject: parsed.subject ?? '(sans objet)',
+        from_address: parsed.from?.text ?? '',
+        to_address: parsed.to?.text ?? '',
+        body_text: parsed.text ?? '',
+        body_html: parsed.html || '',
+        received_at: (parsed.date ?? new Date()).toISOString(),
+        is_read: false,
+        is_ao: score >= 30,
+        ao_score: score,
+        tender_id: null,
+      })
 
-    console.log(`✓ ${parsed.subject} (score AO: ${score})`)
+      if (error) {
+        console.log(`✗ Erreur: ${parsed.subject}`)
+        continue
+      }
+
+      stored++
+      const aoTag = score >= 30 ? ' 🔔 AO DÉTECTÉ' : ''
+      console.log(`✓ ${parsed.subject} (score: ${score})${aoTag}`)
+
+    } catch (e) {
+      console.log(`✗ Erreur parsing message ${message.uid}`)
+    }
   }
 
   await client.logout()
-  console.log(`\nTerminé — ${count} emails traités`)
+  console.log(`\n--- Résumé ---`)
+  console.log(`Emails trouvés  : ${count}`)
+  console.log(`Stockés         : ${stored}`)
+  console.log(`Doublons        : ${duplicates}`)
 }
 
 sync().catch(console.error)

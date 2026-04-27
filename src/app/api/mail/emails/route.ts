@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { getEmails } from '@/services/mailSync.service'
+import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
@@ -12,10 +12,19 @@ export async function GET(req: NextRequest) {
              : undefined
   const isRead = searchParams.get('unread') === 'true' ? false : undefined
 
-  try {
-    const data = await getEmails(userId, { isAo, isRead })
-    return Response.json({ success: true, data })
-  } catch (e: any) {
-    return Response.json({ success: false, error: e.message }, { status: 500 })
-  }
+  const db = createAdminClient()
+
+  let query = db
+    .from('emails')
+    .select('*')
+    .eq('user_id', userId)
+    .order('received_at', { ascending: false })
+    .limit(100)
+
+  if (isAo !== undefined) query = query.eq('is_ao', isAo)
+  if (isRead !== undefined) query = query.eq('is_read', isRead)
+
+  const { data, error } = await query
+  if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
+  return Response.json({ success: true, data: data ?? [] })
 }
