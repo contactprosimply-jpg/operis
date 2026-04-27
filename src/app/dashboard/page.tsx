@@ -1,8 +1,4 @@
 'use client'
-// ============================================================
-// OPERIS — app/dashboard/page.tsx — V2
-// Dashboard complet avec bouton Traiter connecté
-// ============================================================
 
 import { useRouter } from 'next/navigation'
 import { useTenders } from '@/hooks'
@@ -21,7 +17,6 @@ export default function DashboardPage() {
   const { tenders, loading } = useTenders()
   const [emails, setEmails] = useState<Email[]>([])
   const [creatingAo, setCreatingAo] = useState<string | null>(null)
-  const [syncing, setSyncing] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
   const showToast = (msg: string) => {
@@ -41,7 +36,7 @@ export default function DashboardPage() {
     load()
   }, [])
 
-  const handleCreateAoFromEmail = async (email: Email) => {
+  const handleCreateAo = async (email: Email) => {
     setCreatingAo(email.id)
     try {
       const token = await getToken()
@@ -52,7 +47,7 @@ export default function DashboardPage() {
       })
       const data = await res.json()
       if (data.success) {
-        showToast('AO créé ✓')
+        showToast('AO cree !')
         router.push(`/tenders/${data.data.tender_id}`)
       } else {
         showToast(`Erreur : ${data.error}`)
@@ -63,8 +58,8 @@ export default function DashboardPage() {
 
   if (loading) return <div className="flex items-center justify-center h-64"><Spinner size={32} /></div>
 
-  const actifs    = tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status))
-  const urgents   = tenders.filter(t => t.days_remaining !== null && t.days_remaining <= 3 && ['nouveau', 'en_cours', 'urgence'].includes(t.status))
+  const actifs = tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status))
+  const urgents = tenders.filter(t => t.days_remaining !== null && t.days_remaining <= 3 && ['nouveau', 'en_cours', 'urgence'].includes(t.status))
   const totalResp = tenders.reduce((a, t) => a + (t.nb_responses ?? 0), 0)
   const totalSupp = tenders.reduce((a, t) => a + (t.nb_suppliers ?? 0), 0)
   const tauxReponse = totalSupp > 0 ? Math.round((totalResp / totalSupp) * 100) : 0
@@ -80,47 +75,44 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* KPIs */}
       <div className="grid grid-cols-4 gap-3 mb-6">
         <KpiCard label="AO actifs" value={actifs.length}
-          delta={urgents.length > 0 ? `⚠ ${urgents.length} urgent(s)` : 'Aucune urgence'}
+          delta={urgents.length > 0 ? `${urgents.length} urgent(s)` : 'Aucune urgence'}
           deltaVariant={urgents.length > 0 ? 'danger' : 'success'} />
-        <KpiCard label="Taux réponse" value={`${tauxReponse}%`}
+        <KpiCard label="Taux reponse" value={`${tauxReponse}%`}
           delta={`${totalResp}/${totalSupp} fournisseurs`} />
-        <KpiCard label="Devis reçus" value={totalDevis}
-          delta={emails.length > 0 ? `${emails.length} AO à traiter` : 'Tout traité'}
+        <KpiCard label="Devis recus" value={totalDevis}
+          delta={emails.length > 0 ? `${emails.length} AO a traiter` : 'Tout traite'}
           deltaVariant={emails.length > 0 ? 'warn' : 'success'} />
-        <KpiCard label="Taux réussite" value={`${tauxReussite}%`}
-          delta={`${gagnes} AO gagnés`} deltaVariant="success" />
+        <KpiCard label="Taux reussite" value={`${tauxReussite}%`}
+          delta={`${gagnes} AO gagnes`} deltaVariant="success" />
       </div>
 
-      {/* Urgences */}
       {urgents.length > 0 && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-5">
-          <div className="font-mono text-[10px] text-red-400 uppercase tracking-widest mb-2">⚠ Urgences — deadline dans moins de 3 jours</div>
+          <div className="font-mono text-[10px] text-red-400 uppercase tracking-widest mb-2">Urgences - deadline dans moins de 3 jours</div>
           {urgents.map(t => (
             <div key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
               className="flex items-center gap-3 py-2 cursor-pointer hover:opacity-80 transition-opacity">
               <span className="text-xs font-semibold text-white flex-1">{t.title}</span>
               <span className="font-mono text-xs text-red-400">{t.days_remaining}j restants</span>
-              <Badge color={t.nb_responses > 0 ? 'amber' : 'red'}>{t.nb_responses}/{t.nb_suppliers} réponses</Badge>
+              <Badge color={t.nb_responses > 0 ? 'amber' : 'red'}>{t.nb_responses}/{t.nb_suppliers}</Badge>
             </div>
           ))}
         </div>
       )}
 
-      {/* AO en cours */}
       <div className="flex items-center justify-between mb-3">
         <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">AO en cours</span>
         <button onClick={() => router.push('/tenders')}
           className="text-xs text-slate-400 hover:text-white border border-white/10 hover:bg-white/5 px-3 py-1 rounded-md transition-colors">
-          Voir tous →
+          Voir tous
         </button>
       </div>
 
       <table className="w-full text-sm border-collapse mb-6">
         <thead>
-          <tr>{['Titre','Client','Deadline','Statut','Fournisseurs','Réponses'].map(h => (
+          <tr>{['Titre','Client','Deadline','Statut','Fournisseurs','Reponses'].map(h => (
             <th key={h} className="font-mono text-[10px] text-slate-500 uppercase tracking-widest text-left px-3 py-2 border-b border-white/10">{h}</th>
           ))}</tr>
         </thead>
@@ -135,7 +127,7 @@ export default function DashboardPage() {
                 <td className="px-3 py-2.5 font-semibold border-b border-white/5 group-hover:text-blue-300 transition-colors">{t.title}</td>
                 <td className="px-3 py-2.5 text-slate-400 border-b border-white/5">{t.client}</td>
                 <td className="px-3 py-2.5 border-b border-white/5">
-                  <span className={`font-mono text-xs ${deadlineColor}`}>{daysLeft !== null ? `${daysLeft}j` : '—'}</span>
+                  <span className={`font-mono text-xs ${deadlineColor}`}>{daysLeft !== null ? `${daysLeft}j` : '-'}</span>
                 </td>
                 <td className="px-3 py-2.5 border-b border-white/5"><TenderStatusBadge status={t.status} /></td>
                 <td className="px-3 py-2.5 border-b border-white/5"><Badge>{t.nb_suppliers}</Badge></td>
@@ -149,23 +141,21 @@ export default function DashboardPage() {
           })}
           {actifs.length === 0 && (
             <tr><td colSpan={6} className="text-center text-slate-500 py-8 text-xs">
-              Aucun AO en cours —{' '}
-              <button onClick={() => router.push('/tenders')} className="text-blue-400 hover:underline">créer un AO</button>
+              Aucun AO en cours
             </td></tr>
           )}
         </tbody>
       </table>
 
-      {/* Emails AO à traiter */}
       {emails.length > 0 && (
         <>
           <div className="flex items-center justify-between mb-3">
             <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">
-              Emails AO à traiter ({emails.length})
+              Emails AO a traiter ({emails.length})
             </span>
             <button onClick={() => router.push('/mail')}
               className="text-xs text-slate-400 hover:text-white border border-white/10 hover:bg-white/5 px-3 py-1 rounded-md transition-colors">
-              Voir tous →
+              Voir tous
             </button>
           </div>
           <div className="bg-white/5 border border-white/10 rounded-lg overflow-hidden">
@@ -187,11 +177,11 @@ export default function DashboardPage() {
                   Score {email.ao_score}
                 </span>
                 <button
-                  onClick={() => handleCreateAoFromEmail(email)}
+                  onClick={() => handleCreateAo(email)}
                   disabled={creatingAo === email.id}
                   className="bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white text-[10px] font-semibold px-3 py-1.5 rounded-md transition-colors flex-shrink-0"
                 >
-                  {creatingAo === email.id ? '...' : '+ Créer AO'}
+                  {creatingAo === email.id ? '...' : '+ Creer AO'}
                 </button>
               </div>
             ))}
