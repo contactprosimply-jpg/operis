@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Email } from '@/types/database'
@@ -16,11 +16,22 @@ const authFetch = async (url: string, options: RequestInit = {}) => {
   return fetch(url, { ...options, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(options.headers ?? {}) } })
 }
 
+const getSignature = () => {
+  try {
+    const mode = localStorage.getItem('operis_signature_mode') ?? 'fields'
+    const sig = JSON.parse(localStorage.getItem('operis_signature') ?? '{}')
+    if (mode === 'html') return sig.html ? `\n\n--\n${sig.html}` : ''
+    if (!sig.name) return ''
+    return `\n\n--\n${sig.name}${sig.title ? ` | ${sig.title}` : ''}${sig.company ? ` | ${sig.company}` : ''}${sig.phone ? `\n${sig.phone}` : ''}${sig.email ? ` | ${sig.email}` : ''}${sig.website ? ` | ${sig.website}` : ''}`
+  } catch { return '' }
+}
+
 export default function MailPage() {
   const router = useRouter()
   const [emails, setEmails] = useState<Email[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [newCount, setNewCount] = useState(0)
   const [selected, setSelected] = useState<Email | null>(null)
   const [composing, setComposing] = useState(false)
   const [compose, setCompose] = useState({ to: '', cc: '', subject: '', body: '' })
@@ -30,55 +41,87 @@ export default function MailPage() {
   const [filter, setFilter] = useState<'all' | 'ao' | 'unread'>('all')
   const [toast, setToast] = useState<string | null>(null)
   const bodyRef = useRef<HTMLTextAreaElement>(null)
+  const prevCountRef = useRef(0)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
-  const loadEmails = async () => {
-    setLoading(true)
+  const loadEmails = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const params = new URLSearchParams()
       if (filter === 'ao') params.set('ao', 'true')
       if (filter === 'unread') params.set('unread', 'true')
       const res = await authFetch(`/api/mail/emails?${params}`)
       const data = await res.json()
-      if (data.success) setEmails(data.data)
+      if (data.success) {
+        const newEmails = data.data as Email[]
+        // Detect new emails for badge
+        if (silent && newEmails.length > prevCountRef.current) {
+          setNewCount(newEmails.length - prevCountRef.current)
+        }
+        prevCountRef.current = newEmails.length
+        setEmails(newEmails)
+      }
     } catch (e) { console.error(e) }
-    setLoading(false)
-  }
+    if (!silent) setLoading(false)
+  }, [filter])
 
   useEffect(() => { loadEmails() }, [filter])
 
+  // Poll toutes les 30 secondes pour badge
+  useEffect(() => {
+    const interval = setInterval(() => loadEmails(true), 30000)
+    return () => clearInterval(interval)
+  }, [loadEmails])
+
   const handleSync = async () => {
     setSyncing(true)
+    setNewCount(0)
     try {
       const res = await authFetch('/api/mail/sync', { method: 'POST', body: JSON.stringify({}) })
       const data = await res.json()
-      if (data.success) { showToast(`Synchro terminee — ${data.data.aoDetected} AO detectes`); await loadEmails() }
-      else showToast(`Erreur : ${data.error}`)
+      if (data.success) {
+        showToast(`Synchro terminee — ${data.data.stored} nouveaux, ${data.data.aoDetected} AO detectes`)
+        await loadEmails()
+      } else showToast(`Erreur : ${data.error}`)
     } catch (e: any) { showToast(`Erreur : ${e.message}`) }
     setSyncing(false)
+  }
+
+  const openCompose = (prefill = {}) => {
+    const signature = getSignature()
+    setCompose({ to: '', cc: '', subject: '', body: signature, ...prefill })
+    setComposing(true); setSendError(null)
+    setTimeout(() => bodyRef.current?.setSelectionRange(0, 0), 100)
   }
 
   const openReply = (email: Email) => {
     const from = email.from_address ?? ''
     const emailMatch = from.match(/<(.+)>/)
-    setCompose({ to: emailMatch ? emailMatch[1] : from, cc: '', subject: `Re: ${email.subject ?? ''}`, body: `\n\n---\nDe : ${email.from_address}\nDate : ${email.received_at ? new Date(email.received_at).toLocaleString('fr-FR') : ''}\nObjet : ${email.subject}\n\n${email.body_text?.slice(0, 500) ?? ''}` })
-    setComposing(true); setSendError(null)
+    const signature = getSignature()
+    openCompose({
+      to: emailMatch ? emailMatch[1] : from,
+      subject: `Re: ${email.subject ?? ''}`,
+      body: `${signature}\n\n---\nDe : ${email.from_address}\nDate : ${email.received_at ? new Date(email.received_at).toLocaleString('fr-FR') : ''}\nObjet : ${email.subject}\n\n${email.body_text?.slice(0, 500) ?? ''}`,
+    })
     setTimeout(() => bodyRef.current?.focus(), 100)
   }
 
   const openForward = (email: Email) => {
-    setCompose({ to: '', cc: '', subject: `Fwd: ${email.subject ?? ''}`, body: `\n\n------- Message transfère -------\nDe : ${email.from_address}\nDate : ${email.received_at ? new Date(email.received_at).toLocaleString('fr-FR') : ''}\nObjet : ${email.subject}\n\n${email.body_text?.slice(0, 1000) ?? ''}` })
-    setComposing(true); setSendError(null)
+    const signature = getSignature()
+    openCompose({
+      subject: `Fwd: ${email.subject ?? ''}`,
+      body: `${signature}\n\n------- Message transfère -------\nDe : ${email.from_address}\nDate : ${email.received_at ? new Date(email.received_at).toLocaleString('fr-FR') : ''}\nObjet : ${email.subject}\n\n${email.body_text?.slice(0, 1000) ?? ''}`,
+    })
   }
 
   const handleSend = async () => {
     if (!compose.to || !compose.subject || !compose.body) { setSendError('Destinataire, sujet et corps requis'); return }
     setSending(true); setSendError(null)
     try {
-      const res = await authFetch('/api/mail/send', { method: 'POST', body: JSON.stringify({ to: compose.to, cc: compose.cc || undefined, subject: compose.subject, body: compose.body }) })
+      const res = await authFetch('/api/mail/send', { method: 'POST', body: JSON.stringify(compose) })
       const data = await res.json()
-      if (data.success) { showToast('Email envoye'); setComposing(false); setCompose({ to: '', cc: '', subject: '', body: '' }) }
+      if (data.success) { showToast('Email envoye'); setComposing(false) }
       else setSendError(`Erreur : ${data.error}`)
     } catch (e: any) { setSendError(`Erreur : ${e.message}`) }
     setSending(false)
@@ -116,15 +159,19 @@ export default function MailPage() {
             </button>
           ))}
         </div>
-        <button onClick={() => router.push('/settings')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 6, borderRadius: 7 }} title="Config IMAP">
+        <button onClick={() => router.push('/settings')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 6, borderRadius: 7 }} title="Config">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" width="16" height="16"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         </button>
-        <button onClick={() => { setCompose({ to: '', cc: '', subject: '', body: '' }); setComposing(true); setSendError(null) }}
-          style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
+        <button onClick={() => openCompose()} style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
           + Nouveau mail
         </button>
-        <button onClick={handleSync} disabled={syncing} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-secondary)', borderRadius: 7, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
+        <button onClick={handleSync} disabled={syncing} style={{ position: 'relative', background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-secondary)', borderRadius: 7, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
           {syncing ? '...' : 'Sync'}
+          {newCount > 0 && (
+            <span style={{ position: 'absolute', top: -6, right: -6, background: 'var(--accent)', color: '#fff', borderRadius: '50%', width: 16, height: 16, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'DM Mono, monospace' }}>
+              {newCount}
+            </span>
+          )}
         </button>
       </div>
 
@@ -137,7 +184,7 @@ export default function MailPage() {
           ) : emails.length === 0 ? (
             <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 32 }}>Aucun email</div>
           ) : emails.map(email => (
-            <div key={email.id} onClick={() => setSelected(email)}
+            <div key={email.id} onClick={() => { setSelected(email); setNewCount(0) }}
               style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === email.id ? 'var(--bg-hover)' : 'transparent', transition: 'background 0.1s' }}
               onMouseEnter={e => { if (selected?.id !== email.id) (e.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)' }}
               onMouseLeave={e => { if (selected?.id !== email.id) (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
@@ -167,7 +214,7 @@ export default function MailPage() {
                 {[{ label: 'A', key: 'to', type: 'email' }, { label: 'Cc', key: 'cc', type: 'text' }, { label: 'Objet', key: 'subject', type: 'text' }].map(field => (
                   <div key={field.key} style={{ display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
                     <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', width: 32, textTransform: 'uppercase' }}>{field.label}</span>
-                    <input type={field.type} value={(compose as any)[field.key]} onChange={e => setCompose(c => ({ ...c, [field.key]: e.target.value }))} placeholder="" style={inputStyle} />
+                    <input type={field.type} value={(compose as any)[field.key]} onChange={e => setCompose(c => ({ ...c, [field.key]: e.target.value }))} style={inputStyle} />
                   </div>
                 ))}
                 <textarea ref={bodyRef} value={compose.body} onChange={e => setCompose(c => ({ ...c, body: e.target.value }))}
@@ -208,12 +255,19 @@ export default function MailPage() {
                 <button onClick={() => openReply(selected)} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-secondary)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Repondre</button>
                 <button onClick={() => openForward(selected)} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-secondary)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Transferer</button>
               </div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{selected.body_text}</div>
+              {selected.body_html ? (
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: selected.body_html }} />
+              ) : (
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{selected.body_text}</div>
+              )}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', gap: 12 }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" width="40" height="40"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-              <span style={{ fontSize: 12 }}>Selectionne un email ou compose un nouveau message</span>
+              <span style={{ fontSize: 12 }}>Selectionne un email ou compose un message</span>
+              <button onClick={() => openCompose()} style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui', marginTop: 8 }}>
+                + Nouveau mail
+              </button>
             </div>
           )}
         </div>

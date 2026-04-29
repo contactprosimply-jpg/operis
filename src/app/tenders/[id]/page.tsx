@@ -17,12 +17,22 @@ const authFetch = async (url: string, options: RequestInit = {}) => {
   return fetch(url, { ...options, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(options.headers ?? {}) } })
 }
 
-function Composer({ title, onClose, to, subject, body, onSubjectChange, onBodyChange, onSend, sending, children }: any) {
+const getSignature = () => {
+  try {
+    const mode = localStorage.getItem('operis_signature_mode') ?? 'fields'
+    const sig = JSON.parse(localStorage.getItem('operis_signature') ?? '{}')
+    if (mode === 'html') return sig.html ? `\n\n--\n${sig.html}` : ''
+    if (!sig.name) return ''
+    return `\n\n--\n${sig.name}${sig.title ? ` | ${sig.title}` : ''}${sig.company ? ` | ${sig.company}` : ''}${sig.phone ? `\n${sig.phone}` : ''}${sig.email ? ` | ${sig.email}` : ''}`
+  } catch { return '' }
+}
+
+function Composer({ title, onClose, children, subject, body, onSubjectChange, onBodyChange, onSend, sending, sendLabel }: any) {
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose() }}
       style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-hi)', borderRadius: 14, width: 600, maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-hi)', borderRadius: 14, width: 640, maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 22px', borderBottom: '1px solid var(--border)' }}>
           <span style={{ fontSize: 14, fontWeight: 600 }}>{title}</span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 20 }}>×</button>
         </div>
@@ -39,7 +49,7 @@ function Composer({ title, onClose, to, subject, body, onSubjectChange, onBodyCh
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '14px 22px', borderTop: '1px solid var(--border)' }}>
           <Button variant="ghost" onClick={onClose}>Annuler</Button>
-          <Button variant="primary" loading={sending} onClick={onSend}>{to}</Button>
+          <Button variant="primary" loading={sending} onClick={onSend}>{sendLabel}</Button>
         </div>
       </div>
     </div>
@@ -73,7 +83,11 @@ export default function TenderDetailPage() {
   const [quoteSupplier, setQuoteSupplier] = useState('')
   const [quotePriceHT, setQuotePriceHT] = useState('')
   const [quoteNotes, setQuoteNotes] = useState('')
+  const [quoteEmailRef, setQuoteEmailRef] = useState('')
   const [savingQuote, setSavingQuote] = useState(false)
+
+  // Email du fournisseur selectionne pour devis
+  const [selectedQuoteEmail, setSelectedQuoteEmail] = useState<any | null>(null)
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><Spinner size={28} /></div>
   if (!tender) return <div style={{ textAlign: 'center', color: 'var(--text-muted)', paddingTop: 80 }}>AO introuvable</div>
@@ -96,8 +110,9 @@ export default function TenderDetailPage() {
     const targets = tender.consultations.filter((c: any) => c.status === 'en_attente')
     const list = targets.length > 0 ? targets : tender.consultations
     setSelectedConsultSuppliers(list.map((c: any) => c.supplier_id))
+    const sig = getSignature()
     setComposerSubject(`Consultation — ${tender.title}`)
-    setComposerBody(`Bonjour,\n\nNous vous contactons dans le cadre d'un appel d'offres pour le projet suivant :\n\nProjet : ${tender.title}\nClient : ${tender.client}${tender.deadline ? `\nDate limite : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}` : ''}\n\nMerci de nous faire parvenir votre offre dans les meilleurs delais.\n\nCordialement,\nL'equipe ${tender.client}`)
+    setComposerBody(`Bonjour,\n\nNous vous contactons dans le cadre d'un appel d'offres pour le projet suivant :\n\nProjet : ${tender.title}\nClient : ${tender.client}${tender.deadline ? `\nDate limite : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}` : ''}\n\nMerci de nous faire parvenir votre offre dans les meilleurs delais.${sig}`)
     setShowComposer(true)
   }
 
@@ -126,8 +141,9 @@ export default function TenderDetailPage() {
   const openRelaunchComposer = (consultation: ConsultationWithSupplier) => {
     setRelaunchTarget(consultation)
     const n = (consultation.relaunch_count ?? 0) + 1
+    const sig = getSignature()
     setRelaunchSubject(`Relance${n > 1 ? ` ${n}` : ''} — ${tender.title}`)
-    setRelaunchBody(`Bonjour,\n\nSauf erreur de notre part, nous n'avons pas encore recu votre devis concernant :\n\nProjet : ${tender.title}\nClient : ${tender.client}${tender.deadline ? `\nDate limite : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}` : ''}\n\nPourriez-vous nous faire parvenir votre offre dans les meilleurs delais ?\n\nCordialement,\nL'equipe ${tender.client}`)
+    setRelaunchBody(`Bonjour,\n\nSauf erreur de notre part, nous n'avons pas encore recu votre devis concernant :\n\nProjet : ${tender.title}\nClient : ${tender.client}${tender.deadline ? `\nDate limite : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}` : ''}\n\nPourriez-vous nous faire parvenir votre offre dans les meilleurs delais ?${sig}`)
     setShowRelaunchComposer(true)
   }
 
@@ -154,7 +170,7 @@ export default function TenderDetailPage() {
       const res = await authFetch('/api/quotes', { method: 'POST', body: JSON.stringify({ tender_id: id, supplier_id: quoteSupplier, price_ht: quotePriceHT ? parseFloat(quotePriceHT.replace(',', '.')) : null, notes: quoteNotes || null }) })
       const data = await res.json()
       if (data.success) {
-        setShowAddQuote(false); setQuoteSupplier(''); setQuotePriceHT(''); setQuoteNotes('')
+        setShowAddQuote(false); setQuoteSupplier(''); setQuotePriceHT(''); setQuoteNotes(''); setQuoteEmailRef(''); setSelectedQuoteEmail(null)
         await refetch(); show('Devis enregistre')
       } else show(`Erreur : ${data.error}`)
     } catch (e: any) { show(`Erreur : ${e.message}`) }
@@ -221,7 +237,7 @@ export default function TenderDetailPage() {
             ))}
           </div>
 
-          {/* Devis */}
+          {/* Devis recus — avec email sur la ligne */}
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>Devis recus</span>
@@ -231,21 +247,35 @@ export default function TenderDetailPage() {
               <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>Aucun devis recu</div>
             ) : (
               <>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr>{['Fournisseur', 'Montant HT', 'Notes', 'Recu le'].map(h => (
-                      <th key={h} style={{ ...tdStyle, fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
-                    ))}</tr>
-                  </thead>
-                  <tbody>{tender.quotes.map((q: any) => (
-                    <tr key={q.id}>
-                      <td style={{ ...tdStyle, fontWeight: 500 }}>{q.supplier.name}</td>
-                      <td style={{ ...tdStyle, fontFamily: 'DM Mono, monospace', color: '#4ade80' }}>{q.price_ht ? `${q.price_ht.toLocaleString('fr-FR')} EUR HT` : '—'}</td>
-                      <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{q.notes ?? '—'}</td>
-                      <td style={{ ...tdStyle, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', fontSize: 11 }}>{new Date(q.received_at).toLocaleDateString('fr-FR')}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
+                {tender.quotes.map((q: any) => (
+                  <div key={q.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+                    {/* Gauche — infos devis */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{q.supplier.name}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#4ade80', fontWeight: 600 }}>
+                          {q.price_ht ? `${q.price_ht.toLocaleString('fr-FR')} EUR HT` : 'Prix non renseigne'}
+                        </span>
+                        <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+                          {new Date(q.received_at).toLocaleDateString('fr-FR')}
+                        </span>
+                      </div>
+                      {q.notes && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{q.notes}</div>}
+                    </div>
+
+                    {/* Droite — email de reponse + telechargement */}
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                      <button
+                        onClick={() => router.push('/mail')}
+                        style={{ fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'DM Sans, system-ui', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="11" height="11"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        Voir email
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Comparateur */}
                 {tender.quotes.length > 1 && stats?.min_quote && stats?.max_quote && (
                   <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '12px 14px', marginTop: 12, display: 'flex', gap: 32 }}>
                     <div><div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', marginBottom: 4 }}>Moins cher</div><div style={{ fontFamily: 'DM Mono, monospace', color: '#4ade80', fontWeight: 600 }}>{stats.min_quote.toLocaleString('fr-FR')} EUR</div></div>
@@ -319,7 +349,8 @@ export default function TenderDetailPage() {
           </select>
         </div>
         <Field label="Montant HT (EUR)" value={quotePriceHT} onChange={setQuotePriceHT} placeholder="Ex: 84500" />
-        <Field label="Notes" value={quoteNotes} onChange={setQuoteNotes} placeholder="Observations, conditions..." />
+        <Field label="Notes / Conditions" value={quoteNotes} onChange={setQuoteNotes} placeholder="Observations, delais, conditions..." />
+        <Field label="Reference email (optionnel)" value={quoteEmailRef} onChange={setQuoteEmailRef} placeholder="Objet ou expediteur du mail de devis" />
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
           <Button variant="ghost" onClick={() => setShowAddQuote(false)}>Annuler</Button>
           <Button variant="primary" loading={savingQuote} onClick={saveQuote}>Enregistrer</Button>
@@ -332,7 +363,7 @@ export default function TenderDetailPage() {
           subject={composerSubject} body={composerBody}
           onSubjectChange={setComposerSubject} onBodyChange={setComposerBody}
           onSend={sendConsultation} sending={sendingConsult}
-          to={`Envoyer a ${selectedConsultSuppliers.length} fournisseur(s)`}>
+          sendLabel={`Envoyer a ${selectedConsultSuppliers.length} fournisseur(s)`}>
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 8 }}>Destinataires</div>
             {tender.consultations.map((c: any) => (
@@ -355,7 +386,7 @@ export default function TenderDetailPage() {
           subject={relaunchSubject} body={relaunchBody}
           onSubjectChange={setRelaunchSubject} onBodyChange={setRelaunchBody}
           onSend={sendRelaunch} sending={sendingRelaunch}
-          to="Envoyer la relance">
+          sendLabel="Envoyer la relance">
           <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '9px 13px', marginBottom: 14, fontSize: 12, fontFamily: 'DM Mono, monospace', color: 'var(--text-secondary)' }}>
             A : {relaunchTarget.supplier.email}
           </div>

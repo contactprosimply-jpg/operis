@@ -24,9 +24,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const load = async () => {
       const token = await getToken()
-      const res = await fetch('/api/mail/emails?ao=true', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
+      const res = await fetch('/api/mail/emails?ao=true', { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       if (data.success) setEmails(data.data.filter((e: Email) => !e.tender_id))
     }
@@ -44,11 +42,9 @@ export default function DashboardPage() {
       })
       const data = await res.json()
       if (data.success) {
-        show('AO cree avec succes')
+        show('AO cree')
         router.push(`/tenders/${data.data.tender_id}`)
-      } else {
-        show(`Erreur : ${data.error}`)
-      }
+      } else show(`Erreur : ${data.error}`)
     } catch (e: any) { show(`Erreur : ${e.message}`) }
     setCreatingAo(null)
   }
@@ -68,7 +64,6 @@ export default function DashboardPage() {
     <div>
       {ToastComponent}
 
-      {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
         <KpiCard label="AO actifs" value={actifs.length}
           delta={urgents.length > 0 ? `${urgents.length} urgent(s)` : 'Aucune urgence'}
@@ -82,7 +77,6 @@ export default function DashboardPage() {
           delta={`${gagnes} AO gagnes`} deltaVariant="success" />
       </div>
 
-      {/* Urgences */}
       {urgents.length > 0 && (
         <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '14px 18px', marginBottom: 20 }}>
           <div style={{ fontSize: 11, color: '#f87171', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 10 }}>
@@ -99,14 +93,9 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* AO en cours */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>
-          AO en cours
-        </span>
-        <button onClick={() => router.push('/tenders')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
-          Voir tous →
-        </button>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>AO en cours</span>
+        <button onClick={() => router.push('/tenders')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>Voir tous →</button>
       </div>
 
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 24 }}>
@@ -144,32 +133,27 @@ export default function DashboardPage() {
             {actifs.length === 0 && (
               <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
                 Aucun AO en cours —{' '}
-                <button onClick={() => router.push('/tenders')} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>
-                  creer un AO
-                </button>
+                <button onClick={() => router.push('/tenders')} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>creer un AO</button>
               </td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Emails AO */}
       {emails.length > 0 && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>
               Emails AO detectes ({emails.length})
             </span>
-            <button onClick={() => router.push('/mail')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
-              Voir tous →
-            </button>
+            <button onClick={() => router.push('/mail')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>Voir tous →</button>
           </div>
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
             {emails.slice(0, 6).map(email => (
               <div key={email.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#fbbf24', fontFamily: 'DM Mono, monospace', flexShrink: 0 }}>AO</div>
                 <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => router.push('/mail')}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.subject}</div>
+                  <div style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.subject}</div>
                   <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.from_address}</div>
                 </div>
                 <Badge color={email.ao_score >= 60 ? 'amber' : 'blue'}>Score {email.ao_score}</Badge>
