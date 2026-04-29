@@ -1,50 +1,38 @@
 'use client'
-// ============================================================
-// OPERIS — app/tenders/page.tsx — VERSION AMÉLIORÉE
-// ============================================================
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTenders } from '@/hooks'
 import { Button, Modal, Field, TenderStatusBadge, Badge, Spinner, useToast } from '@/components/ui'
-import { TenderStatus } from '@/types/database'
 
 export default function TendersPage() {
   const router = useRouter()
   const { tenders, loading, create } = useTenders()
   const { show, ToastComponent } = useToast()
   const [showModal, setShowModal] = useState(false)
-  const [filter, setFilter] = useState<string>('actifs')
+  const [filter, setFilter] = useState('actifs')
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ title: '', client: '', deadline: '', description: '' })
 
   const filtered = filter === 'actifs'
     ? tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status))
-    : filter === 'tous'
-    ? tenders
+    : filter === 'tous' ? tenders
     : tenders.filter(t => t.status === filter)
 
   const handleCreate = async () => {
     if (!form.title || !form.client) return
     setCreating(true)
-    const res = await create({
-      title: form.title,
-      client: form.client,
-      deadline: form.deadline || undefined,
-      description: form.description || undefined,
-    })
+    const res = await create({ title: form.title, client: form.client, deadline: form.deadline || undefined, description: form.description || undefined })
     setCreating(false)
     if (res.success) {
       setShowModal(false)
       setForm({ title: '', client: '', deadline: '', description: '' })
-      show('AO créé ✓')
+      show('AO cree')
       router.push(`/tenders/${(res.data as any).id}`)
-    } else {
-      show(`Erreur : ${res.error}`)
-    }
+    } else show(`Erreur : ${res.error}`)
   }
 
-  if (loading) return <div className="flex items-center justify-center h-64"><Spinner size={32} /></div>
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><Spinner size={28} /></div>
 
   const stats = {
     actifs: tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status)).length,
@@ -57,98 +45,81 @@ export default function TendersPage() {
     <div>
       {ToastComponent}
 
-      {/* KPIs rapides */}
-      <div className="grid grid-cols-4 gap-3 mb-5">
+      {/* KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
         {[
-          { label: 'Actifs', value: stats.actifs, color: 'text-blue-400' },
-          { label: 'Gagnés', value: stats.gagnes, color: 'text-emerald-400' },
-          { label: 'Perdus', value: stats.perdus, color: 'text-red-400' },
-          { label: 'Total', value: stats.total, color: 'text-slate-400' },
+          { label: 'Actifs', value: stats.actifs, color: '#60a5fa' },
+          { label: 'Gagnes', value: stats.gagnes, color: '#4ade80' },
+          { label: 'Perdus', value: stats.perdus, color: '#f87171' },
+          { label: 'Total', value: stats.total, color: 'var(--text-secondary)' },
         ].map(s => (
-          <div key={s.label} className="bg-white/5 border border-white/10 rounded-lg p-4">
-            <div className="font-mono text-[10px] text-slate-500 uppercase tracking-widest mb-2">{s.label}</div>
-            <div className={`font-mono text-2xl font-medium ${s.color}`}>{s.value}</div>
+          <div key={s.label} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 8 }}>{s.label}</div>
+            <div style={{ fontSize: 24, fontWeight: 600, color: s.color, fontFamily: 'DM Mono, monospace' }}>{s.value}</div>
           </div>
         ))}
       </div>
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex gap-1">
-          {[
-            { key: 'actifs', label: 'Actifs' },
-            { key: 'tous', label: 'Tous' },
-            { key: 'gagne', label: 'Gagnés' },
-            { key: 'perdu', label: 'Perdus' },
-          ].map(f => (
-            <button key={f.key} onClick={() => setFilter(f.key)}
-              className={`text-[10px] font-mono px-3 py-1 rounded-md transition-all ${
-                filter === f.key
-                  ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                  : 'text-slate-500 hover:text-slate-300 border border-transparent'
-              }`}>
-              {f.label}
-            </button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {[{ key: 'actifs', label: 'Actifs' }, { key: 'tous', label: 'Tous' }, { key: 'gagne', label: 'Gagnes' }, { key: 'perdu', label: 'Perdus' }].map(f => (
+            <button key={f.key} onClick={() => setFilter(f.key)} style={{
+              padding: '5px 14px', borderRadius: 7, fontSize: 12, cursor: 'pointer', border: 'none',
+              background: filter === f.key ? 'var(--accent-soft)' : 'transparent',
+              color: filter === f.key ? 'var(--accent)' : 'var(--text-muted)',
+              fontFamily: 'DM Sans, system-ui',
+            }}>{f.label}</button>
           ))}
         </div>
         <Button variant="primary" onClick={() => setShowModal(true)}>+ Nouvel AO</Button>
       </div>
 
       {/* Table */}
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr>
-            {['Titre', 'Client', 'Deadline', 'Statut', 'Fournisseurs', 'Réponses', 'Devis'].map(h => (
-              <th key={h} className="font-mono text-[10px] text-slate-500 uppercase tracking-widest text-left px-3 py-2 border-b border-white/10">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map(t => {
-            const daysLeft = t.days_remaining
-            const deadlineColor = daysLeft !== null && daysLeft <= 3 ? 'text-red-400' : 'text-slate-400'
-            const respPct = t.nb_suppliers > 0 ? Math.round((t.nb_responses / t.nb_suppliers) * 100) : 0
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              {['Titre', 'Client', 'Deadline', 'Statut', 'Fournisseurs', 'Reponses', 'Devis'].map(h => (
+                <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(t => {
+              const respPct = t.nb_suppliers > 0 ? Math.round((t.nb_responses / t.nb_suppliers) * 100) : 0
+              return (
+                <tr key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
+                  style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', transition: 'background 0.1s' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                  <td style={{ padding: '11px 14px', fontWeight: 500 }}>{t.title}</td>
+                  <td style={{ padding: '11px 14px', color: 'var(--text-secondary)' }}>{t.client}</td>
+                  <td style={{ padding: '11px 14px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: t.days_remaining !== null && t.days_remaining <= 3 ? '#f87171' : 'var(--text-secondary)' }}>
+                    {t.days_remaining !== null ? `${t.days_remaining}j` : '—'}
+                  </td>
+                  <td style={{ padding: '11px 14px' }}><TenderStatusBadge status={t.status} /></td>
+                  <td style={{ padding: '11px 14px' }}><Badge>{t.nb_suppliers}</Badge></td>
+                  <td style={{ padding: '11px 14px' }}><Badge color={respPct === 100 ? 'green' : respPct >= 50 ? 'amber' : t.nb_suppliers > 0 ? 'red' : 'gray'}>{t.nb_responses}/{t.nb_suppliers}</Badge></td>
+                  <td style={{ padding: '11px 14px' }}><Badge color={t.nb_quotes > 0 ? 'green' : 'gray'}>{t.nb_quotes}</Badge></td>
+                </tr>
+              )
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan={7} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>Aucun AO</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
-            return (
-              <tr key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
-                className="hover:bg-white/5 cursor-pointer transition-colors group">
-                <td className="px-3 py-3 font-semibold border-b border-white/5 group-hover:text-blue-300 transition-colors">
-                  {t.title}
-                </td>
-                <td className="px-3 py-3 text-slate-400 border-b border-white/5">{t.client}</td>
-                <td className="px-3 py-3 border-b border-white/5">
-                  <span className={`font-mono text-xs ${deadlineColor}`}>
-                    {daysLeft !== null ? `${daysLeft}j` : '—'}
-                  </span>
-                </td>
-                <td className="px-3 py-3 border-b border-white/5"><TenderStatusBadge status={t.status} /></td>
-                <td className="px-3 py-3 border-b border-white/5"><Badge>{t.nb_suppliers}</Badge></td>
-                <td className="px-3 py-3 border-b border-white/5">
-                  <Badge color={respPct === 100 ? 'green' : respPct >= 50 ? 'amber' : t.nb_suppliers > 0 ? 'red' : 'gray'}>
-                    {t.nb_responses}/{t.nb_suppliers}
-                  </Badge>
-                </td>
-                <td className="px-3 py-3 border-b border-white/5">
-                  <Badge color={t.nb_quotes > 0 ? 'green' : 'gray'}>{t.nb_quotes}</Badge>
-                </td>
-              </tr>
-            )
-          })}
-          {filtered.length === 0 && (
-            <tr><td colSpan={7} className="text-center text-slate-500 py-10 text-xs">Aucun AO trouvé</td></tr>
-          )}
-        </tbody>
-      </table>
-
-      {/* Modal création */}
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouvel appel d'offres">
-        <Field label="Titre *" value={form.title} onChange={v => setForm(f => ({ ...f, title: v }))} placeholder="Ex: Réhabilitation façades R+5" />
+        <Field label="Titre *" value={form.title} onChange={v => setForm(f => ({ ...f, title: v }))} placeholder="Ex: Rehabilitation facades R+5" />
         <Field label="Client *" value={form.client} onChange={v => setForm(f => ({ ...f, client: v }))} placeholder="Ex: Nexity Grand Paris" />
         <Field label="Deadline" value={form.deadline} onChange={v => setForm(f => ({ ...f, deadline: v }))} type="date" />
-        <Field label="Description" value={form.description} onChange={v => setForm(f => ({ ...f, description: v }))} placeholder="Description du marché..." />
-        <div className="flex gap-2 justify-end mt-2">
+        <Field label="Description" value={form.description} onChange={v => setForm(f => ({ ...f, description: v }))} placeholder="Description du marche..." />
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
           <Button variant="ghost" onClick={() => setShowModal(false)}>Annuler</Button>
-          <Button variant="primary" onClick={handleCreate} loading={creating}>Créer l'AO</Button>
+          <Button variant="primary" onClick={handleCreate} loading={creating}>Creer l'AO</Button>
         </div>
       </Modal>
     </div>

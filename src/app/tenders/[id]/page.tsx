@@ -1,16 +1,9 @@
 'use client'
-// ============================================================
-// OPERIS — app/tenders/[id]/page.tsx — V2
-// Détail AO + enregistrement devis + compositeur mail
-// ============================================================
 
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useTenderDetail, useSuppliers } from '@/hooks'
-import {
-  Button, Modal, TenderStatusBadge, ConsultationStatusBadge,
-  KpiCard, ProgressBar, Spinner, useToast, Field,
-} from '@/components/ui'
+import { Button, Modal, TenderStatusBadge, ConsultationStatusBadge, KpiCard, ProgressBar, Spinner, useToast, Field } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { ConsultationWithSupplier } from '@/types/database'
 
@@ -21,14 +14,36 @@ const getToken = async () => {
 
 const authFetch = async (url: string, options: RequestInit = {}) => {
   const token = await getToken()
-  return fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      ...(options.headers ?? {}),
-    },
-  })
+  return fetch(url, { ...options, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(options.headers ?? {}) } })
+}
+
+function Composer({ title, onClose, to, subject, body, onSubjectChange, onBodyChange, onSend, sending, children }: any) {
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-hi)', borderRadius: 14, width: 600, maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>{title}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 20 }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 22 }}>
+          {children}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 6 }}>Objet</div>
+            <input value={subject} onChange={e => onSubjectChange(e.target.value)} style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-hi)', borderRadius: 8, padding: '9px 13px', fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui', outline: 'none' }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 6 }}>Message</div>
+            <textarea value={body} onChange={e => onBodyChange(e.target.value)} rows={10} style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-hi)', borderRadius: 8, padding: '9px 13px', fontSize: 12, color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace', outline: 'none', resize: 'vertical' }} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '14px 22px', borderTop: '1px solid var(--border)' }}>
+          <Button variant="ghost" onClick={onClose}>Annuler</Button>
+          <Button variant="primary" loading={sending} onClick={onSend}>{to}</Button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function TenderDetailPage() {
@@ -38,81 +53,66 @@ export default function TenderDetailPage() {
   const { suppliers } = useSuppliers()
   const { show, ToastComponent } = useToast()
 
-  // États modales
   const [showAddSupplier, setShowAddSupplier] = useState(false)
   const [selectedSupplierId, setSelectedSupplierId] = useState('')
   const [loadingAction, setLoadingAction] = useState<string | null>(null)
 
-  // Compositeur consultation
   const [showComposer, setShowComposer] = useState(false)
   const [selectedConsultSuppliers, setSelectedConsultSuppliers] = useState<string[]>([])
   const [composerSubject, setComposerSubject] = useState('')
   const [composerBody, setComposerBody] = useState('')
   const [sendingConsult, setSendingConsult] = useState(false)
 
-  // Compositeur relance
   const [showRelaunchComposer, setShowRelaunchComposer] = useState(false)
   const [relaunchTarget, setRelaunchTarget] = useState<ConsultationWithSupplier | null>(null)
   const [relaunchSubject, setRelaunchSubject] = useState('')
   const [relaunchBody, setRelaunchBody] = useState('')
   const [sendingRelaunch, setSendingRelaunch] = useState(false)
 
-  // Enregistrement devis
   const [showAddQuote, setShowAddQuote] = useState(false)
   const [quoteSupplier, setQuoteSupplier] = useState('')
   const [quotePriceHT, setQuotePriceHT] = useState('')
   const [quoteNotes, setQuoteNotes] = useState('')
   const [savingQuote, setSavingQuote] = useState(false)
 
-  if (loading) return <div className="flex items-center justify-center h-64"><Spinner size={32} /></div>
-  if (!tender) return <div className="text-center text-slate-500 py-20">AO introuvable</div>
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><Spinner size={28} /></div>
+  if (!tender) return <div style={{ textAlign: 'center', color: 'var(--text-muted)', paddingTop: 80 }}>AO introuvable</div>
 
   const stats = tender.stats
   const respPct = stats?.nb_suppliers > 0 ? Math.round((stats.nb_responses / stats.nb_suppliers) * 100) : 0
-  const delayPct = tender.deadline
-    ? Math.min(100, Math.round(((new Date().getTime() - new Date(tender.created_at).getTime()) /
-        (new Date(tender.deadline).getTime() - new Date(tender.created_at).getTime())) * 100))
-    : 0
+  const delayPct = tender.deadline ? Math.min(100, Math.round(((new Date().getTime() - new Date(tender.created_at).getTime()) / (new Date(tender.deadline).getTime() - new Date(tender.created_at).getTime())) * 100)) : 0
+  const addedIds = tender.consultations.map((c: any) => c.supplier_id)
+  const availableSuppliers = suppliers.filter((s: any) => !addedIds.includes(s.id))
 
-  const addedIds = tender.consultations.map(c => c.supplier_id)
-  const availableSuppliers = suppliers.filter(s => !addedIds.includes(s.id))
-
-  const action = async (key: string, fn: () => Promise<any>, successMsg: string) => {
+  const action = async (key: string, fn: () => Promise<any>, msg: string) => {
     setLoadingAction(key)
     const res = await fn()
     setLoadingAction(null)
-    if (res?.success) show(successMsg)
+    if (res?.success) show(msg)
     else show(`Erreur : ${res?.error}`)
   }
 
-  // ── Compositeur consultation ──────────────────────────────
   const openConsultComposer = () => {
-    const pending = tender.consultations.filter(c => c.status === 'en_attente')
-    const targets = pending.length > 0 ? pending : tender.consultations
-    setSelectedConsultSuppliers(targets.map(c => c.supplier_id))
+    const targets = tender.consultations.filter((c: any) => c.status === 'en_attente')
+    const list = targets.length > 0 ? targets : tender.consultations
+    setSelectedConsultSuppliers(list.map((c: any) => c.supplier_id))
     setComposerSubject(`Consultation — ${tender.title}`)
-    setComposerBody(`Bonjour,\n\nNous vous contactons dans le cadre d'un appel d'offres pour le projet suivant :\n\nProjet : ${tender.title}\nClient : ${tender.client}${tender.deadline ? `\nDate limite : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}` : ''}\n\nMerci de nous faire parvenir votre offre dans les meilleurs délais.\n\nCordialement,\nL'équipe ${tender.client}`)
+    setComposerBody(`Bonjour,\n\nNous vous contactons dans le cadre d'un appel d'offres pour le projet suivant :\n\nProjet : ${tender.title}\nClient : ${tender.client}${tender.deadline ? `\nDate limite : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}` : ''}\n\nMerci de nous faire parvenir votre offre dans les meilleurs delais.\n\nCordialement,\nL'equipe ${tender.client}`)
     setShowComposer(true)
   }
 
   const sendConsultation = async () => {
-    if (selectedConsultSuppliers.length === 0) { show('Sélectionne au moins un fournisseur'); return }
+    if (selectedConsultSuppliers.length === 0) { show('Selectionne au moins un fournisseur'); return }
     setSendingConsult(true)
     let sent = 0, errors = 0
     for (const supplierId of selectedConsultSuppliers) {
-      const c = tender.consultations.find(c => c.supplier_id === supplierId)
+      const c = tender.consultations.find((c: any) => c.supplier_id === supplierId)
       if (!c) continue
       try {
-        const mailRes = await authFetch('/api/mail/send', {
-          method: 'POST',
-          body: JSON.stringify({ to: c.supplier.email, subject: composerSubject, body: composerBody }),
-        })
+        const mailRes = await authFetch('/api/mail/send', { method: 'POST', body: JSON.stringify({ to: c.supplier.email, subject: composerSubject, body: composerBody }) })
         const mailData = await mailRes.json()
         if (mailData.success) {
-          await authFetch(`/api/tenders/${id}/consult`, {
-            method: 'POST',
-            body: JSON.stringify({ supplier_ids: [supplierId] }),
-          })
+          await authFetch(`/api/tenders/${id}/consult`, { method: 'POST', body: JSON.stringify({ supplier_ids: [supplierId] }) })
           sent++
         } else errors++
       } catch { errors++ }
@@ -120,15 +120,14 @@ export default function TenderDetailPage() {
     setSendingConsult(false)
     setShowComposer(false)
     await refetch()
-    show(`${sent} consultation(s) envoyée(s)${errors > 0 ? ` — ${errors} erreur(s)` : ' ✓'}`)
+    show(`${sent} consultation(s) envoyee(s)${errors > 0 ? ` — ${errors} erreur(s)` : ''}`)
   }
 
-  // ── Compositeur relance ───────────────────────────────────
   const openRelaunchComposer = (consultation: ConsultationWithSupplier) => {
     setRelaunchTarget(consultation)
     const n = (consultation.relaunch_count ?? 0) + 1
     setRelaunchSubject(`Relance${n > 1 ? ` ${n}` : ''} — ${tender.title}`)
-    setRelaunchBody(`Bonjour,\n\nSauf erreur de notre part, nous n'avons pas encore reçu votre devis concernant :\n\nProjet : ${tender.title}\nClient : ${tender.client}${tender.deadline ? `\nDate limite : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}` : ''}\n\nPourriez-vous nous faire parvenir votre offre dans les meilleurs délais ?\n\nCordialement,\nL'équipe ${tender.client}`)
+    setRelaunchBody(`Bonjour,\n\nSauf erreur de notre part, nous n'avons pas encore recu votre devis concernant :\n\nProjet : ${tender.title}\nClient : ${tender.client}${tender.deadline ? `\nDate limite : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}` : ''}\n\nPourriez-vous nous faire parvenir votre offre dans les meilleurs delais ?\n\nCordialement,\nL'equipe ${tender.client}`)
     setShowRelaunchComposer(true)
   }
 
@@ -136,159 +135,122 @@ export default function TenderDetailPage() {
     if (!relaunchTarget) return
     setSendingRelaunch(true)
     try {
-      const mailRes = await authFetch('/api/mail/send', {
-        method: 'POST',
-        body: JSON.stringify({ to: relaunchTarget.supplier.email, subject: relaunchSubject, body: relaunchBody }),
-      })
+      const mailRes = await authFetch('/api/mail/send', { method: 'POST', body: JSON.stringify({ to: relaunchTarget.supplier.email, subject: relaunchSubject, body: relaunchBody }) })
       const mailData = await mailRes.json()
       if (mailData.success) {
-        await authFetch(`/api/tenders/${id}/relaunch`, {
-          method: 'POST',
-          body: JSON.stringify({ supplier_id: relaunchTarget.supplier_id }),
-        })
+        await authFetch(`/api/tenders/${id}/relaunch`, { method: 'POST', body: JSON.stringify({ supplier_id: relaunchTarget.supplier_id }) })
         setShowRelaunchComposer(false)
         await refetch()
-        show(`Relance envoyée à ${relaunchTarget.supplier.name} ✓`)
+        show(`Relance envoyee a ${relaunchTarget.supplier.name}`)
       } else show(`Erreur : ${mailData.error}`)
     } catch (e: any) { show(`Erreur : ${e.message}`) }
     setSendingRelaunch(false)
   }
 
-  // ── Enregistrer un devis ──────────────────────────────────
   const saveQuote = async () => {
-    if (!quoteSupplier) { show('Sélectionne un fournisseur'); return }
+    if (!quoteSupplier) { show('Selectionne un fournisseur'); return }
     setSavingQuote(true)
     try {
-      const res = await authFetch('/api/quotes', {
-        method: 'POST',
-        body: JSON.stringify({
-          tender_id: id,
-          supplier_id: quoteSupplier,
-          price_ht: quotePriceHT ? parseFloat(quotePriceHT.replace(',', '.')) : null,
-          notes: quoteNotes || null,
-        }),
-      })
+      const res = await authFetch('/api/quotes', { method: 'POST', body: JSON.stringify({ tender_id: id, supplier_id: quoteSupplier, price_ht: quotePriceHT ? parseFloat(quotePriceHT.replace(',', '.')) : null, notes: quoteNotes || null }) })
       const data = await res.json()
       if (data.success) {
-        setShowAddQuote(false)
-        setQuoteSupplier('')
-        setQuotePriceHT('')
-        setQuoteNotes('')
-        await refetch()
-        show('Devis enregistré ✓')
+        setShowAddQuote(false); setQuoteSupplier(''); setQuotePriceHT(''); setQuoteNotes('')
+        await refetch(); show('Devis enregistre')
       } else show(`Erreur : ${data.error}`)
     } catch (e: any) { show(`Erreur : ${e.message}`) }
     setSavingQuote(false)
   }
+
+  const tdStyle = { padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: 13 }
 
   return (
     <div>
       {ToastComponent}
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-5">
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
-          <button onClick={() => router.back()} className="text-[10px] text-slate-500 hover:text-slate-300 mb-2 font-mono">← Retour</button>
-          <div className="text-lg font-bold">{tender.title}</div>
-          <div className="text-xs text-slate-400 mt-1 flex items-center gap-3">
+          <button onClick={() => router.back()} style={{ fontSize: 11, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Mono, monospace', marginBottom: 8, display: 'block' }}>← Retour</button>
+          <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em' }}>{tender.title}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6, display: 'flex', alignItems: 'center', gap: 12 }}>
             <span>{tender.client}</span>
-            {tender.deadline && stats?.days_remaining !== null && (
-              <span className={stats.days_remaining <= 3 ? 'text-red-400' : ''}>{stats.days_remaining}j restants</span>
-            )}
+            {stats?.days_remaining !== null && <span style={{ color: stats.days_remaining <= 3 ? '#f87171' : 'var(--text-secondary)' }}>{stats.days_remaining}j restants</span>}
             <TenderStatusBadge status={tender.status} />
           </div>
         </div>
-        <div className="flex gap-2 flex-wrap justify-end">
-          <Button variant="success" onClick={openConsultComposer}>Envoyer consultation</Button>
-          <Button variant="ghost" onClick={() => setShowAddQuote(true)}>+ Devis reçu</Button>
-          <Button variant="ghost" loading={loadingAction === 'relaunch-all'} onClick={() => action('relaunch-all', relaunchAll, 'Relances envoyées ✓')}>Relancer tout</Button>
-          <Button variant="success" loading={loadingAction === 'won'} onClick={() => action('won', () => markStatus('gagne'), 'AO Gagné ✓')}>Gagné</Button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <Button variant="primary" onClick={openConsultComposer}>Envoyer consultation</Button>
+          <Button variant="ghost" onClick={() => setShowAddQuote(true)}>+ Devis recu</Button>
+          <Button variant="ghost" loading={loadingAction === 'relaunch-all'} onClick={() => action('relaunch-all', relaunchAll, 'Relances envoyees')}>Relancer tout</Button>
+          <Button variant="success" loading={loadingAction === 'won'} onClick={() => action('won', () => markStatus('gagne'), 'AO Gagne')}>Gagne</Button>
           <Button variant="danger" loading={loadingAction === 'lost'} onClick={() => action('lost', () => markStatus('perdu'), 'AO Perdu')}>Perdu</Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-[1fr_300px] gap-4">
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16 }}>
         <div>
           {/* KPIs */}
-          <div className="grid grid-cols-4 gap-3 mb-4">
-            <KpiCard label="Délai restant" value={stats?.days_remaining !== null ? `${stats.days_remaining}j` : '—'} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+            <KpiCard label="Delai restant" value={stats?.days_remaining !== null ? `${stats.days_remaining}j` : '—'} />
             <KpiCard label="Fournisseurs" value={stats?.nb_suppliers ?? 0} />
-            <KpiCard label="Réponses" value={stats?.nb_responses ?? 0} />
+            <KpiCard label="Reponses" value={stats?.nb_responses ?? 0} />
             <KpiCard label="Devis" value={stats?.nb_quotes ?? 0} />
           </div>
 
           {/* Fournisseurs */}
-          <div className="bg-white/5 border border-white/10 rounded-lg p-4 mb-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="font-mono text-[10px] text-slate-500 uppercase tracking-widest">Fournisseurs consultés</span>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>Fournisseurs consultes</span>
               <Button variant="ghost" onClick={() => setShowAddSupplier(true)}>+ Ajouter</Button>
             </div>
             {tender.consultations.length === 0 ? (
-              <div className="text-xs text-slate-500 text-center py-4">Aucun fournisseur ajouté</div>
-            ) : tender.consultations.map(c => (
-              <div key={c.id} className="flex items-center gap-2 py-2 border-b border-white/5 last:border-0">
-                <div className="w-7 h-7 rounded-md bg-[#0a1f6e] border border-blue-500/35 flex items-center justify-center text-[9px] text-blue-400 font-mono flex-shrink-0">
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>Aucun fournisseur ajoute</div>
+            ) : tender.consultations.map((c: any) => (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--accent-soft)', border: '1px solid rgba(59,126,246,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'var(--accent)', fontFamily: 'DM Mono, monospace', flexShrink: 0 }}>
                   {c.supplier.name.slice(0, 2).toUpperCase()}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold truncate">{c.supplier.name}</div>
-                  <div className="text-[10px] font-mono text-slate-500 truncate">{c.supplier.email}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.supplier.name}</div>
+                  <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.supplier.email}</div>
                 </div>
                 <ConsultationStatusBadge status={c.status} />
                 <Button variant="ghost" onClick={() => openRelaunchComposer(c)}>Relancer</Button>
-                <Button variant="success" onClick={() => { setQuoteSupplier(c.supplier_id); setShowAddQuote(true) }}>
-                  + Devis
-                </Button>
+                <Button variant="ghost" onClick={() => { setQuoteSupplier(c.supplier_id); setShowAddQuote(true) }}>+ Devis</Button>
               </div>
             ))}
           </div>
 
-          {/* Devis reçus */}
-          <div className="bg-white/5 border border-white/10 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="font-mono text-[10px] text-slate-500 uppercase tracking-widest">Devis reçus</span>
+          {/* Devis */}
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>Devis recus</span>
               <Button variant="ghost" onClick={() => setShowAddQuote(true)}>+ Ajouter</Button>
             </div>
             {tender.quotes.length === 0 ? (
-              <div className="text-xs text-slate-500 text-center py-4">Aucun devis reçu</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>Aucun devis recu</div>
             ) : (
               <>
-                <table className="w-full text-xs mb-3">
-                  <thead><tr>{['Fournisseur','Montant HT','Notes','Reçu le'].map(h => (
-                    <th key={h} className="font-mono text-[10px] text-slate-500 text-left pb-2">{h}</th>
-                  ))}</tr></thead>
-                  <tbody>{tender.quotes.map(q => (
-                    <tr key={q.id} className="border-t border-white/5">
-                      <td className="py-2 font-semibold">{q.supplier.name}</td>
-                      <td className="py-2 font-mono text-emerald-400">
-                        {q.price_ht ? `${q.price_ht.toLocaleString('fr-FR')} € HT` : '—'}
-                      </td>
-                      <td className="py-2 text-slate-400">{q.notes ?? '—'}</td>
-                      <td className="py-2 font-mono text-slate-400">{new Date(q.received_at).toLocaleDateString('fr-FR')}</td>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr>{['Fournisseur', 'Montant HT', 'Notes', 'Recu le'].map(h => (
+                      <th key={h} style={{ ...tdStyle, fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>{tender.quotes.map((q: any) => (
+                    <tr key={q.id}>
+                      <td style={{ ...tdStyle, fontWeight: 500 }}>{q.supplier.name}</td>
+                      <td style={{ ...tdStyle, fontFamily: 'DM Mono, monospace', color: '#4ade80' }}>{q.price_ht ? `${q.price_ht.toLocaleString('fr-FR')} EUR HT` : '—'}</td>
+                      <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{q.notes ?? '—'}</td>
+                      <td style={{ ...tdStyle, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', fontSize: 11 }}>{new Date(q.received_at).toLocaleDateString('fr-FR')}</td>
                     </tr>
                   ))}</tbody>
                 </table>
-
-                {/* Comparateur */}
                 {tender.quotes.length > 1 && stats?.min_quote && stats?.max_quote && (
-                  <div className="bg-white/5 rounded-md p-3 mt-2">
-                    <div className="font-mono text-[10px] text-slate-500 uppercase tracking-widest mb-2">Comparatif</div>
-                    <div className="flex gap-6 text-xs">
-                      <div>
-                        <div className="text-slate-500 mb-1">Moins cher</div>
-                        <div className="font-mono text-emerald-400 font-semibold">{stats.min_quote.toLocaleString('fr-FR')} € HT</div>
-                      </div>
-                      <div>
-                        <div className="text-slate-500 mb-1">Plus cher</div>
-                        <div className="font-mono text-red-400 font-semibold">{stats.max_quote.toLocaleString('fr-FR')} € HT</div>
-                      </div>
-                      <div>
-                        <div className="text-slate-500 mb-1">Écart</div>
-                        <div className="font-mono text-amber-400 font-semibold">
-                          {(stats.max_quote - stats.min_quote).toLocaleString('fr-FR')} € HT
-                        </div>
-                      </div>
-                    </div>
+                  <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '12px 14px', marginTop: 12, display: 'flex', gap: 32 }}>
+                    <div><div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', marginBottom: 4 }}>Moins cher</div><div style={{ fontFamily: 'DM Mono, monospace', color: '#4ade80', fontWeight: 600 }}>{stats.min_quote.toLocaleString('fr-FR')} EUR</div></div>
+                    <div><div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', marginBottom: 4 }}>Plus cher</div><div style={{ fontFamily: 'DM Mono, monospace', color: '#f87171', fontWeight: 600 }}>{stats.max_quote.toLocaleString('fr-FR')} EUR</div></div>
+                    <div><div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', marginBottom: 4 }}>Ecart</div><div style={{ fontFamily: 'DM Mono, monospace', color: '#fbbf24', fontWeight: 600 }}>{(stats.max_quote - stats.min_quote).toLocaleString('fr-FR')} EUR</div></div>
                   </div>
                 )}
               </>
@@ -297,155 +259,107 @@ export default function TenderDetailPage() {
         </div>
 
         {/* Droite */}
-        <div className="flex flex-col gap-3">
-          <div className="bg-white/5 border border-white/10 rounded-lg p-4">
-            <div className="font-mono text-[10px] text-slate-500 uppercase tracking-widest mb-3">Avancement</div>
-            <div className="mb-3">
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-slate-400">Taux de réponse</span><span className="font-mono">{respPct}%</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 14 }}>Avancement</div>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Taux de reponse</span>
+                <span style={{ fontFamily: 'DM Mono, monospace' }}>{respPct}%</span>
               </div>
               <ProgressBar value={respPct} variant={respPct >= 80 ? 'success' : respPct >= 50 ? 'warn' : 'danger'} />
             </div>
             <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-slate-400">Délai consommé</span>
-                <span className={`font-mono ${delayPct >= 85 ? 'text-red-400' : ''}`}>{delayPct}%</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Delai consomme</span>
+                <span style={{ fontFamily: 'DM Mono, monospace', color: delayPct >= 85 ? '#f87171' : 'inherit' }}>{delayPct}%</span>
               </div>
               <ProgressBar value={delayPct} variant={delayPct >= 85 ? 'danger' : delayPct >= 60 ? 'warn' : 'accent'} />
             </div>
           </div>
 
-          {/* Actions rapides */}
-          <div className="bg-white/5 border border-white/10 rounded-lg p-4">
-            <div className="font-mono text-[10px] text-slate-500 uppercase tracking-widest mb-3">Actions rapides</div>
-            <div className="flex flex-col gap-2">
-              <Button variant="primary" className="w-full justify-center" onClick={openConsultComposer}>Envoyer consultation</Button>
-              <Button variant="ghost" className="w-full justify-center" onClick={() => setShowAddQuote(true)}>+ Enregistrer un devis</Button>
-              <Button variant="success" className="w-full justify-center" loading={loadingAction === 'won'} onClick={() => action('won', () => markStatus('gagne'), 'AO Gagné ✓')}>Marquer Gagné</Button>
-              <Button variant="danger" className="w-full justify-center" loading={loadingAction === 'lost'} onClick={() => action('lost', () => markStatus('perdu'), 'AO Perdu')}>Marquer Perdu</Button>
-            </div>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 4 }}>Actions rapides</div>
+            <Button variant="primary" onClick={openConsultComposer} style={{ width: '100%', justifyContent: 'center' }}>Envoyer consultation</Button>
+            <Button variant="ghost" onClick={() => setShowAddQuote(true)} style={{ width: '100%', justifyContent: 'center' }}>+ Enregistrer un devis</Button>
+            <Button variant="success" loading={loadingAction === 'won'} onClick={() => action('won', () => markStatus('gagne'), 'AO Gagne')} style={{ width: '100%', justifyContent: 'center' }}>Marquer Gagne</Button>
+            <Button variant="danger" loading={loadingAction === 'lost'} onClick={() => action('lost', () => markStatus('perdu'), 'AO Perdu')} style={{ width: '100%', justifyContent: 'center' }}>Marquer Perdu</Button>
           </div>
         </div>
       </div>
 
-      {/* ── MODAL : Ajouter fournisseur ── */}
+      {/* Modal ajouter fournisseur */}
       <Modal open={showAddSupplier} onClose={() => setShowAddSupplier(false)} title="Ajouter un fournisseur">
-        <div className="mb-4">
-          <div className="font-mono text-[10px] text-slate-500 uppercase tracking-widest mb-1.5">Fournisseur</div>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 6 }}>Fournisseur</div>
           <select value={selectedSupplierId} onChange={e => setSelectedSupplierId(e.target.value)}
-            className="w-full bg-white/5 border border-blue-500/35 rounded-md px-3 py-2 text-sm text-white outline-none">
-            <option value="">Sélectionner...</option>
-            {availableSuppliers.map(s => <option key={s.id} value={s.id}>{s.name} — {s.email}</option>)}
+            style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-hi)', borderRadius: 8, padding: '9px 13px', fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui', outline: 'none' }}>
+            <option value="">Selectionner...</option>
+            {availableSuppliers.map((s: any) => <option key={s.id} value={s.id}>{s.name} — {s.email}</option>)}
           </select>
         </div>
-        <div className="flex gap-2 justify-end">
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Button variant="ghost" onClick={() => setShowAddSupplier(false)}>Annuler</Button>
-          <Button variant="primary" loading={loadingAction === 'add-supplier'}
-            onClick={async () => {
-              if (!selectedSupplierId) return
-              await action('add-supplier', () => addSupplier(selectedSupplierId), 'Fournisseur ajouté ✓')
-              setShowAddSupplier(false)
-              setSelectedSupplierId('')
-            }}>Ajouter</Button>
+          <Button variant="primary" loading={loadingAction === 'add-supplier'} onClick={async () => {
+            if (!selectedSupplierId) return
+            await action('add-supplier', () => addSupplier(selectedSupplierId), 'Fournisseur ajoute')
+            setShowAddSupplier(false); setSelectedSupplierId('')
+          }}>Ajouter</Button>
         </div>
       </Modal>
 
-      {/* ── MODAL : Enregistrer devis ── */}
-      <Modal open={showAddQuote} onClose={() => setShowAddQuote(false)} title="Enregistrer un devis reçu">
-        <div className="mb-4">
-          <div className="font-mono text-[10px] text-slate-500 uppercase tracking-widest mb-1.5">Fournisseur *</div>
+      {/* Modal devis */}
+      <Modal open={showAddQuote} onClose={() => setShowAddQuote(false)} title="Enregistrer un devis recu">
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 6 }}>Fournisseur *</div>
           <select value={quoteSupplier} onChange={e => setQuoteSupplier(e.target.value)}
-            className="w-full bg-white/5 border border-blue-500/35 rounded-md px-3 py-2 text-sm text-white outline-none">
-            <option value="">Sélectionner...</option>
-            {tender.consultations.map(c => (
-              <option key={c.supplier_id} value={c.supplier_id}>{c.supplier.name}</option>
-            ))}
+            style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-hi)', borderRadius: 8, padding: '9px 13px', fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui', outline: 'none' }}>
+            <option value="">Selectionner...</option>
+            {tender.consultations.map((c: any) => <option key={c.supplier_id} value={c.supplier_id}>{c.supplier.name}</option>)}
           </select>
         </div>
-        <Field label="Montant HT (€)" value={quotePriceHT} onChange={setQuotePriceHT} placeholder="Ex: 84500" />
+        <Field label="Montant HT (EUR)" value={quotePriceHT} onChange={setQuotePriceHT} placeholder="Ex: 84500" />
         <Field label="Notes" value={quoteNotes} onChange={setQuoteNotes} placeholder="Observations, conditions..." />
-        <div className="flex gap-2 justify-end mt-2">
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
           <Button variant="ghost" onClick={() => setShowAddQuote(false)}>Annuler</Button>
           <Button variant="primary" loading={savingQuote} onClick={saveQuote}>Enregistrer</Button>
         </div>
       </Modal>
 
-      {/* ── MODAL : Compositeur consultation ── */}
+      {/* Compositeur consultation */}
       {showComposer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#021246]/88"
-          onClick={e => { if (e.target === e.currentTarget) setShowComposer(false) }}>
-          <div className="bg-[#0d1f5c] border border-blue-500/35 rounded-xl w-[600px] max-w-[95vw] max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 flex-shrink-0">
-              <div className="text-sm font-bold">Envoyer la consultation</div>
-              <button onClick={() => setShowComposer(false)} className="text-slate-500 hover:text-white text-xl">×</button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-5">
-              <div className="mb-4">
-                <div className="font-mono text-[10px] text-slate-500 uppercase tracking-widest mb-2">Destinataires</div>
-                {tender.consultations.map(c => (
-                  <label key={c.supplier_id} className="flex items-center gap-2 py-1.5 cursor-pointer">
-                    <input type="checkbox" checked={selectedConsultSuppliers.includes(c.supplier_id)}
-                      onChange={e => {
-                        if (e.target.checked) setSelectedConsultSuppliers(p => [...p, c.supplier_id])
-                        else setSelectedConsultSuppliers(p => p.filter(x => x !== c.supplier_id))
-                      }} className="accent-blue-500" />
-                    <span className="text-xs text-white">{c.supplier.name}</span>
-                    <span className="text-[10px] font-mono text-slate-500">{c.supplier.email}</span>
-                    <ConsultationStatusBadge status={c.status} />
-                  </label>
-                ))}
-              </div>
-              <div className="mb-3">
-                <div className="font-mono text-[10px] text-slate-500 uppercase tracking-widest mb-1.5">Objet</div>
-                <input type="text" value={composerSubject} onChange={e => setComposerSubject(e.target.value)}
-                  className="w-full bg-white/5 border border-blue-500/35 rounded-md px-3 py-2 text-sm text-white outline-none focus:border-blue-500" />
-              </div>
-              <div>
-                <div className="font-mono text-[10px] text-slate-500 uppercase tracking-widest mb-1.5">Message</div>
-                <textarea value={composerBody} onChange={e => setComposerBody(e.target.value)} rows={10}
-                  className="w-full bg-white/5 border border-blue-500/35 rounded-md px-3 py-2 text-sm text-white outline-none focus:border-blue-500 resize-none font-mono" />
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end px-5 py-4 border-t border-white/10 flex-shrink-0">
-              <Button variant="ghost" onClick={() => setShowComposer(false)}>Annuler</Button>
-              <Button variant="primary" loading={sendingConsult} onClick={sendConsultation}>
-                → Envoyer à {selectedConsultSuppliers.length} fournisseur(s)
-              </Button>
-            </div>
+        <Composer title="Envoyer la consultation" onClose={() => setShowComposer(false)}
+          subject={composerSubject} body={composerBody}
+          onSubjectChange={setComposerSubject} onBodyChange={setComposerBody}
+          onSend={sendConsultation} sending={sendingConsult}
+          to={`Envoyer a ${selectedConsultSuppliers.length} fournisseur(s)`}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 8 }}>Destinataires</div>
+            {tender.consultations.map((c: any) => (
+              <label key={c.supplier_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', cursor: 'pointer' }}>
+                <input type="checkbox" checked={selectedConsultSuppliers.includes(c.supplier_id)}
+                  onChange={e => { if (e.target.checked) setSelectedConsultSuppliers(p => [...p, c.supplier_id]); else setSelectedConsultSuppliers(p => p.filter(x => x !== c.supplier_id)) }}
+                  style={{ accentColor: 'var(--accent)' }} />
+                <span style={{ fontSize: 12, fontWeight: 500 }}>{c.supplier.name}</span>
+                <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>{c.supplier.email}</span>
+                <ConsultationStatusBadge status={c.status} />
+              </label>
+            ))}
           </div>
-        </div>
+        </Composer>
       )}
 
-      {/* ── MODAL : Compositeur relance ── */}
+      {/* Compositeur relance */}
       {showRelaunchComposer && relaunchTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#021246]/88"
-          onClick={e => { if (e.target === e.currentTarget) setShowRelaunchComposer(false) }}>
-          <div className="bg-[#0d1f5c] border border-blue-500/35 rounded-xl w-[600px] max-w-[95vw] max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 flex-shrink-0">
-              <div className="text-sm font-bold">Relancer — {relaunchTarget.supplier.name}</div>
-              <button onClick={() => setShowRelaunchComposer(false)} className="text-slate-500 hover:text-white text-xl">×</button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-5">
-              <div className="bg-white/5 border border-white/10 rounded-md px-3 py-2 mb-3 text-xs text-slate-400 font-mono">
-                À : {relaunchTarget.supplier.email}
-              </div>
-              <div className="mb-3">
-                <div className="font-mono text-[10px] text-slate-500 uppercase tracking-widest mb-1.5">Objet</div>
-                <input type="text" value={relaunchSubject} onChange={e => setRelaunchSubject(e.target.value)}
-                  className="w-full bg-white/5 border border-blue-500/35 rounded-md px-3 py-2 text-sm text-white outline-none focus:border-blue-500" />
-              </div>
-              <div>
-                <div className="font-mono text-[10px] text-slate-500 uppercase tracking-widest mb-1.5">Message</div>
-                <textarea value={relaunchBody} onChange={e => setRelaunchBody(e.target.value)} rows={10}
-                  className="w-full bg-white/5 border border-blue-500/35 rounded-md px-3 py-2 text-sm text-white outline-none focus:border-blue-500 resize-none font-mono" />
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end px-5 py-4 border-t border-white/10 flex-shrink-0">
-              <Button variant="ghost" onClick={() => setShowRelaunchComposer(false)}>Annuler</Button>
-              <Button variant="primary" loading={sendingRelaunch} onClick={sendRelaunch}>→ Envoyer la relance</Button>
-            </div>
+        <Composer title={`Relancer — ${relaunchTarget.supplier.name}`} onClose={() => setShowRelaunchComposer(false)}
+          subject={relaunchSubject} body={relaunchBody}
+          onSubjectChange={setRelaunchSubject} onBodyChange={setRelaunchBody}
+          onSend={sendRelaunch} sending={sendingRelaunch}
+          to="Envoyer la relance">
+          <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '9px 13px', marginBottom: 14, fontSize: 12, fontFamily: 'DM Mono, monospace', color: 'var(--text-secondary)' }}>
+            A : {relaunchTarget.supplier.email}
           </div>
-        </div>
+        </Composer>
       )}
     </div>
   )

@@ -1,10 +1,10 @@
 'use client'
-// v3
+
 export const dynamic = 'force-dynamic'
 
 import { useRouter } from 'next/navigation'
 import { useTenders } from '@/hooks'
-import { KpiCard, TenderStatusBadge, Badge, Spinner } from '@/components/ui'
+import { KpiCard, TenderStatusBadge, Badge, Spinner, useToast } from '@/components/ui'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Email } from '@/types/database'
@@ -17,14 +17,9 @@ const getToken = async () => {
 export default function DashboardPage() {
   const router = useRouter()
   const { tenders, loading } = useTenders()
+  const { show, ToastComponent } = useToast()
   const [emails, setEmails] = useState<Email[]>([])
   const [creatingAo, setCreatingAo] = useState<string | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
-
-  const showToast = (msg: string) => {
-    setToast(msg)
-    setTimeout(() => setToast(null), 3500)
-  }
 
   useEffect(() => {
     const load = async () => {
@@ -49,16 +44,16 @@ export default function DashboardPage() {
       })
       const data = await res.json()
       if (data.success) {
-        showToast('AO cree !')
+        show('AO cree avec succes')
         router.push(`/tenders/${data.data.tender_id}`)
       } else {
-        showToast(`Erreur : ${data.error}`)
+        show(`Erreur : ${data.error}`)
       }
-    } catch (e: any) { showToast(`Erreur : ${e.message}`) }
+    } catch (e: any) { show(`Erreur : ${e.message}`) }
     setCreatingAo(null)
   }
 
-  if (loading) return <div className="flex items-center justify-center h-64"><Spinner size={32} /></div>
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><Spinner size={28} /></div>
 
   const actifs = tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status))
   const urgents = tenders.filter(t => t.days_remaining !== null && t.days_remaining <= 3 && ['nouveau', 'en_cours', 'urgence'].includes(t.status))
@@ -71,117 +66,117 @@ export default function DashboardPage() {
 
   return (
     <div>
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-[200] bg-[#0a1f6e] border border-blue-500 rounded-lg px-4 py-2.5 text-xs text-blue-300 font-mono">
-          {toast}
-        </div>
-      )}
+      {ToastComponent}
 
-      <div className="grid grid-cols-4 gap-3 mb-6">
+      {/* KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
         <KpiCard label="AO actifs" value={actifs.length}
           delta={urgents.length > 0 ? `${urgents.length} urgent(s)` : 'Aucune urgence'}
           deltaVariant={urgents.length > 0 ? 'danger' : 'success'} />
         <KpiCard label="Taux reponse" value={`${tauxReponse}%`}
           delta={`${totalResp}/${totalSupp} fournisseurs`} />
         <KpiCard label="Devis recus" value={totalDevis}
-          delta={emails.length > 0 ? `${emails.length} AO a traiter` : 'Tout traite'}
+          delta={emails.length > 0 ? `${emails.length} emails AO` : 'Tout traite'}
           deltaVariant={emails.length > 0 ? 'warn' : 'success'} />
         <KpiCard label="Taux reussite" value={`${tauxReussite}%`}
           delta={`${gagnes} AO gagnes`} deltaVariant="success" />
       </div>
 
+      {/* Urgences */}
       {urgents.length > 0 && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-5">
-          <div className="font-mono text-[10px] text-red-400 uppercase tracking-widest mb-2">Urgences - deadline dans moins de 3 jours</div>
+        <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '14px 18px', marginBottom: 20 }}>
+          <div style={{ fontSize: 11, color: '#f87171', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 10 }}>
+            Urgences — deadline dans moins de 3 jours
+          </div>
           {urgents.map(t => (
             <div key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
-              className="flex items-center gap-3 py-2 cursor-pointer hover:opacity-80 transition-opacity">
-              <span className="text-xs font-semibold text-white flex-1">{t.title}</span>
-              <span className="font-mono text-xs text-red-400">{t.days_remaining}j restants</span>
+              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0', cursor: 'pointer' }}>
+              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', flex: 1 }}>{t.title}</span>
+              <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: '#f87171' }}>{t.days_remaining}j</span>
               <Badge color={t.nb_responses > 0 ? 'amber' : 'red'}>{t.nb_responses}/{t.nb_suppliers}</Badge>
             </div>
           ))}
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">AO en cours</span>
-        <button onClick={() => router.push('/tenders')}
-          className="text-xs text-slate-400 hover:text-white border border-white/10 hover:bg-white/5 px-3 py-1 rounded-md transition-colors">
-          Voir tous
+      {/* AO en cours */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>
+          AO en cours
+        </span>
+        <button onClick={() => router.push('/tenders')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
+          Voir tous →
         </button>
       </div>
 
-      <table className="w-full text-sm border-collapse mb-6">
-        <thead>
-          <tr>{['Titre','Client','Deadline','Statut','Fournisseurs','Reponses'].map(h => (
-            <th key={h} className="font-mono text-[10px] text-slate-500 uppercase tracking-widest text-left px-3 py-2 border-b border-white/10">{h}</th>
-          ))}</tr>
-        </thead>
-        <tbody>
-          {actifs.slice(0, 7).map(t => {
-            const daysLeft = t.days_remaining
-            const deadlineColor = daysLeft !== null && daysLeft <= 3 ? 'text-red-400' : 'text-slate-400'
-            const respPct = t.nb_suppliers > 0 ? Math.round((t.nb_responses / t.nb_suppliers) * 100) : 0
-            return (
-              <tr key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
-                className="hover:bg-white/5 cursor-pointer transition-colors group">
-                <td className="px-3 py-2.5 font-semibold border-b border-white/5 group-hover:text-blue-300 transition-colors">{t.title}</td>
-                <td className="px-3 py-2.5 text-slate-400 border-b border-white/5">{t.client}</td>
-                <td className="px-3 py-2.5 border-b border-white/5">
-                  <span className={`font-mono text-xs ${deadlineColor}`}>{daysLeft !== null ? `${daysLeft}j` : '-'}</span>
-                </td>
-                <td className="px-3 py-2.5 border-b border-white/5"><TenderStatusBadge status={t.status} /></td>
-                <td className="px-3 py-2.5 border-b border-white/5"><Badge>{t.nb_suppliers}</Badge></td>
-                <td className="px-3 py-2.5 border-b border-white/5">
-                  <Badge color={respPct === 100 ? 'green' : respPct >= 50 ? 'amber' : t.nb_suppliers > 0 ? 'red' : 'gray'}>
-                    {t.nb_responses}/{t.nb_suppliers}
-                  </Badge>
-                </td>
-              </tr>
-            )
-          })}
-          {actifs.length === 0 && (
-            <tr><td colSpan={6} className="text-center text-slate-500 py-8 text-xs">
-              Aucun AO en cours
-            </td></tr>
-          )}
-        </tbody>
-      </table>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 24 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              {['Titre', 'Client', 'Deadline', 'Statut', 'Fournisseurs', 'Reponses'].map(h => (
+                <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {actifs.slice(0, 7).map(t => {
+              const respPct = t.nb_suppliers > 0 ? Math.round((t.nb_responses / t.nb_suppliers) * 100) : 0
+              return (
+                <tr key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
+                  style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', transition: 'background 0.1s' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                  <td style={{ padding: '11px 14px', fontWeight: 500 }}>{t.title}</td>
+                  <td style={{ padding: '11px 14px', color: 'var(--text-secondary)' }}>{t.client}</td>
+                  <td style={{ padding: '11px 14px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: t.days_remaining !== null && t.days_remaining <= 3 ? '#f87171' : 'var(--text-secondary)' }}>
+                    {t.days_remaining !== null ? `${t.days_remaining}j` : '—'}
+                  </td>
+                  <td style={{ padding: '11px 14px' }}><TenderStatusBadge status={t.status} /></td>
+                  <td style={{ padding: '11px 14px' }}><Badge>{t.nb_suppliers}</Badge></td>
+                  <td style={{ padding: '11px 14px' }}>
+                    <Badge color={respPct === 100 ? 'green' : respPct >= 50 ? 'amber' : t.nb_suppliers > 0 ? 'red' : 'gray'}>
+                      {t.nb_responses}/{t.nb_suppliers}
+                    </Badge>
+                  </td>
+                </tr>
+              )
+            })}
+            {actifs.length === 0 && (
+              <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                Aucun AO en cours —{' '}
+                <button onClick={() => router.push('/tenders')} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>
+                  creer un AO
+                </button>
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
+      {/* Emails AO */}
       {emails.length > 0 && (
         <>
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">
-              Emails AO a traiter ({emails.length})
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>
+              Emails AO detectes ({emails.length})
             </span>
-            <button onClick={() => router.push('/mail')}
-              className="text-xs text-slate-400 hover:text-white border border-white/10 hover:bg-white/5 px-3 py-1 rounded-md transition-colors">
-              Voir tous
+            <button onClick={() => router.push('/mail')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
+              Voir tous →
             </button>
           </div>
-          <div className="bg-white/5 border border-white/10 rounded-lg overflow-hidden">
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
             {emails.slice(0, 6).map(email => (
-              <div key={email.id}
-                className="flex items-center gap-3 px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
-                <div className="w-7 h-7 rounded-md bg-amber-500/15 border border-amber-500/25 flex items-center justify-center text-[9px] text-amber-400 font-mono flex-shrink-0">
-                  AO
+              <div key={email.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#fbbf24', fontFamily: 'DM Mono, monospace', flexShrink: 0 }}>AO</div>
+                <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => router.push('/mail')}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.subject}</div>
+                  <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.from_address}</div>
                 </div>
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => router.push('/mail')}>
-                  <div className="text-xs font-semibold text-white truncate">{email.subject}</div>
-                  <div className="text-[10px] font-mono text-slate-500 truncate">{email.from_address}</div>
-                </div>
-                <span className={`font-mono text-[9px] px-2 py-0.5 rounded border ${
-                  email.ao_score >= 60
-                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/25'
-                    : 'bg-blue-500/15 text-blue-400 border-blue-500/25'
-                }`}>
-                  Score {email.ao_score}
-                </span>
+                <Badge color={email.ao_score >= 60 ? 'amber' : 'blue'}>Score {email.ao_score}</Badge>
                 <button
-                  onClick={() => handleCreateAo(email)}
+                  onClick={(e) => { e.stopPropagation(); handleCreateAo(email) }}
                   disabled={creatingAo === email.id}
-                  className="bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white text-[10px] font-semibold px-3 py-1.5 rounded-md transition-colors flex-shrink-0"
+                  style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0, opacity: creatingAo === email.id ? 0.5 : 1, fontFamily: 'DM Sans, system-ui' }}
                 >
                   {creatingAo === email.id ? '...' : '+ Creer AO'}
                 </button>
