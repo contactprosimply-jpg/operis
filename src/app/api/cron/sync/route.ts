@@ -6,11 +6,42 @@ import { simpleParser } from 'mailparser'
 export const maxDuration = 60
 
 const AO_KEYWORDS = [
-  "appel d'offres", "appel d'offre", "dce", "rfp", "consultation",
-  "tender", "bid", "devis", "marché", "cahier des charges", "ao "
+  { term: "appel d'offres", weight: 40 },
+  { term: "appel d'offre", weight: 40 },
+  { term: "dce", weight: 40 },
+  { term: "dossier de consultation", weight: 40 },
+  { term: "rfp", weight: 35 },
+  { term: "consultation", weight: 25 },
+  { term: "mise en concurrence", weight: 25 },
+  { term: "marché", weight: 25 },
+  { term: "tender", weight: 25 },
+  { term: "devis", weight: 15 },
+  { term: "cahier des charges", weight: 15 },
 ]
 
-async function syncUser(userId: string, account: any) {
+const NEGATIVE_KEYWORDS = [
+  'reset your password', 'supabase auth', 'vercel', 'newsletter',
+  'unsubscribe', 'désabonner', 'relance de paiement',
+]
+
+const OWN_SUBJECTS = ['consultation —', 'relance —', 'relance 2 —']
+
+function detectAo(subject: string, bodyText: string) {
+  const subjectLower = (subject ?? '').toLowerCase()
+  const textLower = `${subject ?? ''} ${bodyText ?? ''}`.toLowerCase()
+  for (const s of OWN_SUBJECTS) { if (subjectLower.startsWith(s)) return { isAo: false, score: 0 } }
+  for (const neg of NEGATIVE_KEYWORDS) { if (textLower.includes(neg)) return { isAo: false, score: 0 } }
+  let score = 0
+  for (const { term, weight } of AO_KEYWORDS) {
+    if (textLower.includes(term)) {
+      score += weight
+      if (subjectLower.includes(term)) score += 10
+    }
+  }
+  return { isAo: Math.min(100, score) >= 30, score: Math.min(100, score) }
+}
+
+async function syncAccount(userId: string, account: any) {
   const db = createAdminClient()
   const client = new ImapFlow({
     host: account.imap_host,
@@ -21,12 +52,11 @@ async function syncUser(userId: string, account: any) {
   })
 
   let stored = 0
-
   try {
     await client.connect()
     await client.mailboxOpen('INBOX')
 
-    // Emails des dernières 3 heures
+    // Emails des 3 dernières heures pour le cron (plus léger)
     const since = new Date()
     since.setHours(since.getHours() - 3)
 
@@ -37,20 +67,15 @@ async function syncUser(userId: string, account: any) {
         const parsed = await simpleParser(message.source)
         const messageId = parsed.messageId ?? `msg-${message.uid}`
 
-        const { data: existing } = await db
-          .from('emails')
-          .select('id')
-          .eq('message_id', messageId)
-          .single()
+        const fromEmail = parsed.from?.value?.[0]?.address ?? ''
+        if (fromEmail === account.imap_user) continue
 
+        const { data: existing } = await db.from('emails').select('id').eq('message_id', messageId).single()
         if (existing) continue
 
-        const text = `${parsed.subject ?? ''} ${parsed.text ?? ''}`.toLowerCase()
-        let score = 0
-        for (const kw of AO_KEYWORDS) { if (text.includes(kw)) score += 20 }
-        score = Math.min(100, score)
+        const { isAo, score } = detectAo(parsed.subject ?? '', parsed.text ?? '')
 
-        await db.from('emails').insert({
+        const { error } = await db.from('emails').insert({
           user_id: userId,
           message_id: messageId,
           subject: parsed.subject ?? '(sans objet)',
@@ -60,54 +85,46 @@ async function syncUser(userId: string, account: any) {
           body_html: parsed.html || '',
           received_at: (parsed.date ?? new Date()).toISOString(),
           is_read: false,
-          is_ao: score >= 30,
+          is_ao: isAo,
           ao_score: score,
           tender_id: null,
         })
 
-        stored++
+        if (!error) stored++
       } catch { continue }
     }
 
-    await db
-      .from('mail_accounts')
-      .update({ last_sync: new Date().toISOString() })
-      .eq('id', account.id)
-
+    await db.from('mail_accounts').update({ last_sync: new Date().toISOString() }).eq('id', account.id)
     await client.logout()
   } catch (e: any) {
-    console.error(`[Cron] Erreur sync user ${userId}:`, e.message)
+    console.error(`[Cron] Erreur sync ${userId}:`, e.message)
+    try { await client.logout() } catch {}
   }
-
   return stored
 }
 
 export async function GET(req: NextRequest) {
-  // Vérifier que c'est bien Vercel qui appelle (sécurité)
   const authHeader = req.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const db = createAdminClient()
-
-  // Récupérer tous les comptes mail actifs
-  const { data: accounts, error } = await db
+  const { data: accounts } = await db
     .from('mail_accounts')
-    .select('*, profiles!inner(id)')
+    .select('*')
     .eq('is_active', true)
 
-  if (error || !accounts?.length) {
-    return Response.json({ success: true, message: 'Aucun compte à synchroniser' })
+  if (!accounts?.length) {
+    return Response.json({ success: true, message: 'Aucun compte actif' })
   }
 
   let totalStored = 0
   for (const account of accounts) {
-    const userId = account.user_id
-    const stored = await syncUser(userId, account)
+    const stored = await syncAccount(account.user_id, account)
     totalStored += stored
   }
 
-  console.log(`[Cron] Sync terminée — ${totalStored} nouveaux emails`)
+  console.log(`[Cron] Sync terminée — ${totalStored} nouveaux emails, ${accounts.length} comptes`)
   return Response.json({ success: true, data: { stored: totalStored, accounts: accounts.length } })
 }

@@ -6,13 +6,61 @@ import { simpleParser } from 'mailparser'
 
 export const maxDuration = 60
 
+const AO_KEYWORDS = [
+  { term: "appel d'offres", weight: 40 },
+  { term: "appel d'offre", weight: 40 },
+  { term: "dce", weight: 40 },
+  { term: "dossier de consultation", weight: 40 },
+  { term: "rfp", weight: 35 },
+  { term: "request for proposal", weight: 35 },
+  { term: "consultation", weight: 25 },
+  { term: "mise en concurrence", weight: 25 },
+  { term: "marché", weight: 25 },
+  { term: "tender", weight: 25 },
+  { term: "bid", weight: 20 },
+  { term: "devis", weight: 15 },
+  { term: "cahier des charges", weight: 15 },
+  { term: "cctp", weight: 15 },
+  { term: "dpgf", weight: 15 },
+  { term: "date limite de réponse", weight: 15 },
+  { term: "remise des offres", weight: 15 },
+]
+
+const NEGATIVE_KEYWORDS = [
+  'reset your password', 'supabase auth', 'vercel', 'newsletter',
+  'unsubscribe', 'désabonner', 'relance de paiement', 'offre spéciale',
+]
+
+const OWN_SUBJECTS = ['consultation —', 'relance —', 'relance 2 —']
+
+function detectAo(subject: string, bodyText: string) {
+  const subjectLower = (subject ?? '').toLowerCase()
+  const textLower = `${subject ?? ''} ${bodyText ?? ''}`.toLowerCase()
+  
+  for (const s of OWN_SUBJECTS) {
+    if (subjectLower.startsWith(s)) return { isAo: false, score: 0 }
+  }
+  for (const neg of NEGATIVE_KEYWORDS) {
+    if (textLower.includes(neg)) return { isAo: false, score: 0 }
+  }
+  
+  let score = 0
+  for (const { term, weight } of AO_KEYWORDS) {
+    if (textLower.includes(term)) {
+      score += weight
+      if (subjectLower.includes(term)) score += 10
+    }
+  }
+  score = Math.min(100, score)
+  return { isAo: score >= 30, score }
+}
+
 export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
   const db = createAdminClient()
 
-  // Récupérer les identifiants IMAP depuis la DB
   const { data: account, error: accountError } = await db
     .from('mail_accounts')
     .select('*')
@@ -23,7 +71,7 @@ export async function POST(req: NextRequest) {
   if (accountError || !account) {
     return Response.json({
       success: false,
-      error: 'Aucun compte mail configuré. Va dans Paramètres pour configurer ta boîte mail.'
+      error: 'Aucun compte mail configuré. Va dans Paramètres > Messagerie.'
     }, { status: 400 })
   }
 
@@ -37,26 +85,25 @@ export async function POST(req: NextRequest) {
 
   const result = { fetched: 0, stored: 0, aoDetected: 0, duplicates: 0, errors: 0 }
 
-  const AO_KEYWORDS = [
-    'appel d\'offres', 'appel d\'offre', 'dce', 'rfp', 'consultation',
-    'tender', 'bid', 'devis', 'marché', 'cahier des charges', 'ao '
-  ]
-
   try {
     await client.connect()
     await client.mailboxOpen('INBOX')
 
-    // Récupérer uniquement les 20 emails les plus récents
-    const messages = client.fetch('*:1', { uid: true, source: true })
+    // Récupérer les 30 derniers jours
+    const since = new Date()
+    since.setDate(since.getDate() - 30)
 
-    let count = 0
+    const messages = client.fetch({ since }, { uid: true, source: true })
+
     for await (const message of messages) {
-      if (count >= 20) break
-      count++
-
+      result.fetched++
       try {
         const parsed = await simpleParser(message.source)
         const messageId = parsed.messageId ?? `msg-${message.uid}`
+
+        // Ignorer nos propres envois
+        const fromEmail = parsed.from?.value?.[0]?.address ?? ''
+        if (fromEmail === account.imap_user) { result.duplicates++; continue }
 
         // Vérifier doublon
         const { data: existing } = await db
@@ -67,16 +114,8 @@ export async function POST(req: NextRequest) {
 
         if (existing) { result.duplicates++; continue }
 
-        // Détecter AO
-        const text = `${parsed.subject ?? ''} ${parsed.text ?? ''}`.toLowerCase()
-        let score = 0
-        for (const kw of AO_KEYWORDS) {
-          if (text.includes(kw)) score += 20
-        }
-        score = Math.min(100, score)
-        const isAo = score >= 30
+        const { isAo, score } = detectAo(parsed.subject ?? '', parsed.text ?? '')
 
-        // Stocker
         const { error } = await db.from('emails').insert({
           user_id: userId,
           message_id: messageId,
@@ -95,7 +134,6 @@ export async function POST(req: NextRequest) {
         if (error) { result.errors++; continue }
 
         result.stored++
-        result.fetched++
         if (isAo) result.aoDetected++
 
       } catch { result.errors++ }
@@ -111,6 +149,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ success: true, data: result })
 
   } catch (e: any) {
+    try { await client.logout() } catch {}
     return Response.json({ success: false, error: `Erreur IMAP: ${e.message}` }, { status: 500 })
   }
 }
