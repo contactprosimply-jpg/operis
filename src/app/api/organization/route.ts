@@ -1,3 +1,5 @@
+﻿export const dynamic = 'force-dynamic'
+
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
@@ -100,3 +102,4 @@ if (action === 'invite') {
 
   return Response.json({ success: false, error: 'Action inconnue' }, { status: 400 })
 }
+

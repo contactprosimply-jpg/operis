@@ -1,3 +1,5 @@
+﻿export const dynamic = 'force-dynamic'
+
 // ============================================================
 // OPERIS — app/api/quotes/route.ts
 // POST /api/quotes → enregistrer un devis
@@ -68,3 +70,4 @@ export async function GET(req: NextRequest) {
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
   return Response.json({ success: true, data })
 }
+

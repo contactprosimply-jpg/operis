@@ -1,3 +1,5 @@
+﻿export const dynamic = 'force-dynamic'
+
 // ============================================================
 // OPERIS — app/api/tenders/route.ts
 // GET  /api/tenders → liste tous les AO
@@ -24,3 +26,4 @@ export async function POST(req: NextRequest) {
   const result = await tenderService.create(userId, body)
   return Response.json(result, { status: result.success ? 201 : 400 })
 }
+

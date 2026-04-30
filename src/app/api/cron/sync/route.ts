@@ -1,3 +1,5 @@
+﻿export const dynamic = 'force-dynamic'
+
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { ImapFlow } from 'imapflow'
@@ -128,3 +130,4 @@ export async function GET(req: NextRequest) {
   console.log(`[Cron] Sync terminée — ${totalStored} nouveaux emails, ${accounts.length} comptes`)
   return Response.json({ success: true, data: { stored: totalStored, accounts: accounts.length } })
 }
+

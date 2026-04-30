@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { NextRequest } from 'next/server'
 import { createTenderFromEmail } from '@/services/mailSync.service'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'

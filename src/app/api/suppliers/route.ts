@@ -1,3 +1,5 @@
+﻿export const dynamic = 'force-dynamic'
+
 // ============================================================
 // OPERIS — app/api/suppliers/route.ts
 // GET  /api/suppliers → liste fournisseurs
@@ -24,3 +26,4 @@ export async function POST(req: NextRequest) {
   const result = await supplierService.create(userId, body)
   return Response.json(result, { status: result.success ? 201 : 400 })
 }
+
