@@ -4,12 +4,15 @@ import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
+  const { id } = await params
   const db = createAdminClient()
-  const id = params.id
 
   const { data: tender, error } = await db
     .from('tenders')
@@ -18,7 +21,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .eq('user_id', userId)
     .single()
 
-  if (error || !tender) return Response.json({ success: false, error: 'AO introuvable' }, { status: 404 })
+  if (error || !tender) {
+    return Response.json({ success: false, error: 'AO introuvable' }, { status: 404 })
+  }
 
   const { data: consultations } = await db
     .from('consultation_suppliers')
@@ -48,14 +53,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   })
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
+  const { id } = await params
   const body = await req.json()
   const db = createAdminClient()
 
-  // Champs autorisés à modifier
   const allowed = [
     'title', 'client', 'description', 'deadline', 'status',
     'budget_ht', 'zone_geo', 'maitre_ouvrage', 'notes_internes',
@@ -70,7 +78,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const { data, error } = await db
     .from('tenders')
     .update(payload)
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', userId)
     .select()
     .single()
@@ -79,15 +87,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return Response.json({ success: true, data })
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
+  const { id } = await params
   const db = createAdminClient()
+
   const { error } = await db
     .from('tenders')
     .delete()
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', userId)
 
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
