@@ -9,5 +9,8 @@ const nextConfig: NextConfig = {
   generateBuildId: async () => {
     return `build-${Date.now()}`
   },
+  experimental: {
+    missingSuspenseWithCSRBailout: false,
+  }
 }
 export default nextConfig
