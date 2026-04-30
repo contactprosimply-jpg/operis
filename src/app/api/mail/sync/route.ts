@@ -1,3 +1,5 @@
+﻿export const dynamic = 'force-dynamic'
+
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
@@ -15,23 +17,23 @@ const AO_KEYWORDS = [
   { term: "request for proposal", weight: 35 },
   { term: "consultation", weight: 25 },
   { term: "mise en concurrence", weight: 25 },
-  { term: "marché", weight: 25 },
+  { term: "marchÃ©", weight: 25 },
   { term: "tender", weight: 25 },
   { term: "bid", weight: 20 },
   { term: "devis", weight: 15 },
   { term: "cahier des charges", weight: 15 },
   { term: "cctp", weight: 15 },
   { term: "dpgf", weight: 15 },
-  { term: "date limite de réponse", weight: 15 },
+  { term: "date limite de rÃ©ponse", weight: 15 },
   { term: "remise des offres", weight: 15 },
 ]
 
 const NEGATIVE_KEYWORDS = [
   'reset your password', 'supabase auth', 'vercel', 'newsletter',
-  'unsubscribe', 'désabonner', 'relance de paiement', 'offre spéciale',
+  'unsubscribe', 'dÃ©sabonner', 'relance de paiement', 'offre spÃ©ciale',
 ]
 
-const OWN_SUBJECTS = ['consultation —', 'relance —', 'relance 2 —']
+const OWN_SUBJECTS = ['consultation â€”', 'relance â€”', 'relance 2 â€”']
 
 function detectAo(subject: string, bodyText: string) {
   const subjectLower = (subject ?? '').toLowerCase()
@@ -71,7 +73,7 @@ export async function POST(req: NextRequest) {
   if (accountError || !account) {
     return Response.json({
       success: false,
-      error: 'Aucun compte mail configuré. Va dans Paramètres > Messagerie.'
+      error: 'Aucun compte mail configurÃ©. Va dans ParamÃ¨tres > Messagerie.'
     }, { status: 400 })
   }
 
@@ -89,7 +91,7 @@ export async function POST(req: NextRequest) {
     await client.connect()
     await client.mailboxOpen('INBOX')
 
-    // Récupérer les 30 derniers jours
+    // RÃ©cupÃ©rer les 30 derniers jours
     const since = new Date()
     since.setDate(since.getDate() - 30)
 
@@ -105,7 +107,7 @@ export async function POST(req: NextRequest) {
         const fromEmail = parsed.from?.value?.[0]?.address ?? ''
         if (fromEmail === account.imap_user) { result.duplicates++; continue }
 
-        // Vérifier doublon
+        // VÃ©rifier doublon
         const { data: existing } = await db
           .from('emails')
           .select('id')
@@ -139,7 +141,7 @@ export async function POST(req: NextRequest) {
       } catch { result.errors++ }
     }
 
-    // Mettre à jour last_sync
+    // Mettre Ã  jour last_sync
     await db
       .from('mail_accounts')
       .update({ last_sync: new Date().toISOString() })
@@ -153,3 +155,4 @@ export async function POST(req: NextRequest) {
     return Response.json({ success: false, error: `Erreur IMAP: ${e.message}` }, { status: 500 })
   }
 }
+

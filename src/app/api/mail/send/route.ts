@@ -1,3 +1,5 @@
+﻿export const dynamic = 'force-dynamic'
+
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
@@ -25,7 +27,7 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (error || !account) {
-    return Response.json({ success: false, error: 'Aucun compte mail configuré' }, { status: 400 })
+    return Response.json({ success: false, error: 'Aucun compte mail configurÃ©' }, { status: 400 })
   }
 
   const transporter = nodemailer.createTransport({
@@ -35,15 +37,15 @@ export async function POST(req: NextRequest) {
     auth: { user: account.smtp_user, pass: account.smtp_pass },
   })
 
-  // ── Construction du HTML avec signature injectée ─────────────
-  // Le body texte est converti en HTML puis la signature est ajoutée
+  // â”€â”€ Construction du HTML avec signature injectÃ©e â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Le body texte est converti en HTML puis la signature est ajoutÃ©e
   const bodyHtml = body.replace(/\n/g, '<br>')
 
   let finalHtml: string
   let finalText: string
 
   if (signature && signature.trim()) {
-    // Signature HTML fournie : l'injecter après le body avec un séparateur
+    // Signature HTML fournie : l'injecter aprÃ¨s le body avec un sÃ©parateur
     const isHtmlSignature = signature.includes('<') && signature.includes('>')
     
     if (isHtmlSignature) {
@@ -86,10 +88,11 @@ ${signature}`
       sent_at: new Date().toISOString(),
       success: true,
       error_message: null,
-    }).catch(() => {}) // Ne pas bloquer si le log échoue
+    }).catch(() => {}) // Ne pas bloquer si le log Ã©choue
 
     return Response.json({ success: true, data: { sent: true } })
   } catch (e: any) {
     return Response.json({ success: false, error: `Erreur envoi: ${e.message}` }, { status: 500 })
   }
 }
+

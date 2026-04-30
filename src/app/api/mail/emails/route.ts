@@ -1,3 +1,5 @@
+﻿export const dynamic = 'force-dynamic'
+
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
