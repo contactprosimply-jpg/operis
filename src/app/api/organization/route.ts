@@ -65,31 +65,28 @@ export async function PUT(req: NextRequest) {
   const { action, email, display_name, color, member_id, tender_id, assigned_to } = await req.json()
   const db = createAdminClient()
 
-  if (action === 'invite') {
-    // Find user by email
-    const { data: profile } = await db
-      .from('profiles')
-      .select('id, email')
-      .eq('email', email)
-      .single()
+if (action === 'invite') {
+  // Chercher dans auth.users via admin
+  const { data: { users }, error: usersError } = await db.auth.admin.listUsers()
+  
+  const targetUser = users?.find(u => u.email === email)
+  if (!targetUser) return Response.json({ success: false, error: 'Utilisateur non trouve. Il doit dabord creer un compte Operis.' }, { status: 404 })
 
-    if (!profile) return Response.json({ success: false, error: 'Utilisateur non trouve. Il doit dabord creer un compte Operis.' }, { status: 404 })
+  const { data: org } = await db.from('organizations').select('id').eq('owner_id', userId).single()
+  if (!org) return Response.json({ success: false, error: 'Organisation introuvable' }, { status: 404 })
 
-    const { data: org } = await db.from('organizations').select('id').eq('owner_id', userId).single()
-    if (!org) return Response.json({ success: false, error: 'Organisation introuvable' }, { status: 404 })
+  const { error } = await db.from('organization_members').insert({
+    organization_id: org.id,
+    user_id: targetUser.id,
+    role: 'member',
+    display_name: display_name || email,
+    email,
+    color: color || '#3b7ef6',
+  })
 
-    const { error } = await db.from('organization_members').insert({
-      organization_id: org.id,
-      user_id: profile.id,
-      role: 'member',
-      display_name: display_name || email,
-      email,
-      color: color || '#3b7ef6',
-    })
-
-    if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
-    return Response.json({ success: true, data: { invited: true } })
-  }
+  if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
+  return Response.json({ success: true, data: { invited: true } })
+}
 
   if (action === 'remove') {
     await db.from('organization_members').delete().eq('id', member_id)
