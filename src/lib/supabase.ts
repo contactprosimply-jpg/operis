@@ -1,6 +1,6 @@
 import { createBrowserClient } from "@supabase/ssr"
 
-let _supabase: ReturnType<typeof createBrowserClient> | null = null
+let _supabase: any = null
 
 export function getSupabase() {
   if (!_supabase) {
@@ -12,7 +12,7 @@ export function getSupabase() {
   return _supabase
 }
 
-export const supabase = new Proxy({} as ReturnType<typeof createBrowserClient>, {
+export const supabase = new Proxy({} as any, {
   get(_target, prop) {
     return (getSupabase() as any)[prop]
   }
