@@ -1,22 +1,15 @@
+'use client'
+
 import { createBrowserClient } from "@supabase/ssr"
 
-let _supabase: any = null
+const getClient = () => createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
-export function getSupabase() {
-  if (!_supabase) {
-    _supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-  }
-  return _supabase
-}
-
-export const supabase = new Proxy({} as any, {
-  get(_target, prop) {
-    return (getSupabase() as any)[prop]
-  }
-})
+export const supabase = typeof window !== 'undefined' 
+  ? getClient() 
+  : null as any
 
 export function createAdminClient() {
   const { createClient } = require("@supabase/supabase-js")
@@ -28,7 +21,9 @@ export function createAdminClient() {
 }
 
 export async function getCurrentUser() {
-  const { data: { user }, error } = await getSupabase().auth.getUser()
+  if (typeof window === 'undefined') return null
+  const client = getClient()
+  const { data: { user }, error } = await client.auth.getUser()
   if (error || !user) return null
   return user
 }
