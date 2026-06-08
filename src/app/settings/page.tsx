@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { authFetch } from '@/lib/auth-client'
 import { Button, Field, useToast, Spinner } from '@/components/ui'
+import { buildFieldsSignatureHtml, saveSignatureToStorage } from '@/lib/email-signature'
 
 const THEMES = [
   { id: 'dark',    label: 'Sombre',    vars: { '--bg-primary': '#0f1117', '--bg-secondary': '#1a1d27', '--bg-card': '#1e2130', '--bg-hover': '#252839', '--text-primary': '#f1f3f9', '--text-secondary': '#8b92a5', '--text-muted': '#4a5168' } },
@@ -125,9 +126,36 @@ export default function SettingsPage() {
   }
 
   const handleSaveSig = () => {
-    localStorage.setItem('operis_signature', JSON.stringify(sig))
-    localStorage.setItem('operis_signature_mode', sigMode)
+    saveSignatureToStorage(sig, sigMode, accentColor)
     show('Signature sauvegardee')
+  }
+
+  const handleSignatureFile = (file: File) => {
+    const isHtml = file.name.toLowerCase().endsWith('.html') || file.type === 'text/html'
+    const reader = new FileReader()
+    reader.onload = () => {
+      const content = String(reader.result ?? '').trim()
+      if (isHtml && content) {
+        const updated = { ...sig, html: content }
+        setSig(updated)
+        setSigMode('html')
+        setAttachmentName(file.name)
+        saveSignatureToStorage(updated, 'html', accentColor)
+        localStorage.setItem('operis_signature_attachment', file.name)
+        show('Signature HTML importée et sauvegardée')
+        return
+      }
+      setAttachmentName(file.name)
+      localStorage.setItem('operis_signature_attachment', file.name)
+      show(`PJ "${file.name}" configurée (non utilisée comme signature)`)
+    }
+    reader.onerror = () => show('Erreur : impossible de lire le fichier')
+    if (isHtml) reader.readAsText(file)
+    else {
+      setAttachmentName(file.name)
+      localStorage.setItem('operis_signature_attachment', file.name)
+      show(`PJ "${file.name}" configurée`)
+    }
   }
 
   const handleSaveTheme = () => {
@@ -173,14 +201,7 @@ export default function SettingsPage() {
     show(`${name} retire`)
   }
 
-  const generatedHtml = `<table style="font-family: DM Sans, Arial, sans-serif; font-size: 13px; color: #374151;">
-  <tr><td style="font-weight: 600; font-size: 14px; color: #111827; padding-bottom: 2px;">${sig.name}</td></tr>
-  ${sig.title ? `<tr><td style="color: #6b7280; padding-bottom: 2px;">${sig.title}</td></tr>` : ''}
-  ${sig.company ? `<tr><td style="color: #6b7280; padding-bottom: 8px;">${sig.company}</td></tr>` : ''}
-  <tr><td style="border-top: 2px solid ${accentColor}; padding-top: 8px; color: #6b7280; line-height: 1.8;">
-    ${sig.phone ? `📞 ${sig.phone}<br>` : ''}${sig.email ? `✉ ${sig.email}<br>` : ''}${sig.website ? `🌐 ${sig.website}` : ''}
-  </td></tr>
-</table>`
+  const generatedHtml = buildFieldsSignatureHtml(sig, accentColor)
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><Spinner size={28} /></div>
 
@@ -291,7 +312,7 @@ export default function SettingsPage() {
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginTop: 4, marginBottom: 16 }}>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>Piece jointe automatique</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <input ref={fileInputRef} type="file" onChange={e => { const f = e.target.files?.[0]; if (f) { setAttachmentName(f.name); localStorage.setItem('operis_signature_attachment', f.name); show(`PJ "${f.name}" configuree`) } }} style={{ display: 'none' }} accept=".pdf,.png,.jpg,.jpeg,.html" />
+                <input ref={fileInputRef} type="file" onChange={e => { const f = e.target.files?.[0]; if (f) handleSignatureFile(f); e.target.value = '' }} style={{ display: 'none' }} accept=".html,.htm,text/html,.pdf,.png,.jpg,.jpeg" />
                 <button onClick={() => fileInputRef.current?.click()} style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--border-hi)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Choisir un fichier</button>
                 {attachmentName && <span style={{ fontSize: 12, fontFamily: 'DM Mono, monospace', color: '#4ade80' }}>{attachmentName} <button onClick={() => { setAttachmentName(''); localStorage.removeItem('operis_signature_attachment') }} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer' }}>×</button></span>}
               </div>

@@ -13,8 +13,14 @@ export async function POST(req: NextRequest) {
 
   const { to, subject, body, cc, signature } = await req.json()
 
-  if (!to || !subject || !body) {
-    return Response.json({ success: false, error: 'Destinataire, sujet et corps requis' }, { status: 400 })
+  const bodyText = typeof body === 'string' ? body : ''
+  const signatureText = typeof signature === 'string' ? signature.trim() : ''
+
+  if (!to || !subject) {
+    return Response.json({ success: false, error: 'Destinataire et sujet requis' }, { status: 400 })
+  }
+  if (!bodyText.trim() && !signatureText) {
+    return Response.json({ success: false, error: 'Message ou signature requis' }, { status: 400 })
   }
 
   const db = createAdminClient()
@@ -39,34 +45,29 @@ export async function POST(req: NextRequest) {
 
   // â”€â”€ Construction du HTML avec signature injectÃ©e â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Le body texte est converti en HTML puis la signature est ajoutÃ©e
-  const bodyHtml = body.replace(/\n/g, '<br>')
+  const bodyHtml = bodyText.replace(/\n/g, '<br>')
 
   let finalHtml: string
   let finalText: string
 
-  if (signature && signature.trim()) {
-    // Signature HTML fournie : l'injecter aprÃ¨s le body avec un sÃ©parateur
-    const isHtmlSignature = signature.includes('<') && signature.includes('>')
-    
+  if (signatureText) {
+    const isHtmlSignature = signatureText.includes('<') && signatureText.includes('>')
+    const bodyBlock = bodyText.trim()
+      ? `<div style="font-family: DM Sans, Arial, sans-serif; font-size: 14px; color: #374151; line-height: 1.6;">${bodyHtml}</div>`
+      : ''
+
     if (isHtmlSignature) {
-      // Signature HTML : injecter directement
-      finalHtml = `<div style="font-family: DM Sans, Arial, sans-serif; font-size: 14px; color: #374151; line-height: 1.6;">${bodyHtml}</div>
-<br>
-<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;">
-${signature}`
-      finalText = `${body}\n\n--\n${signature.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`
+      finalHtml = `${bodyBlock}${bodyBlock ? '<br>' : ''}<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;">${signatureText}`
+      finalText = bodyText.trim()
+        ? `${bodyText}\n\n--\n${signatureText.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`
+        : signatureText.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
     } else {
-      // Signature texte : convertir en HTML
-      finalHtml = `<div style="font-family: DM Sans, Arial, sans-serif; font-size: 14px; color: #374151; line-height: 1.6;">${bodyHtml}</div>
-<br>
-<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;">
-<div style="font-family: DM Sans, Arial, sans-serif; font-size: 12px; color: #6b7280; line-height: 1.6;">${signature.replace(/\n/g, '<br>')}</div>`
-      finalText = `${body}\n\n--\n${signature}`
+      finalHtml = `${bodyBlock}${bodyBlock ? '<br>' : ''}<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;"><div style="font-family: DM Sans, Arial, sans-serif; font-size: 12px; color: #6b7280; line-height: 1.6;">${signatureText.replace(/\n/g, '<br>')}</div>`
+      finalText = bodyText.trim() ? `${bodyText}\n\n--\n${signatureText}` : signatureText
     }
   } else {
-    // Pas de signature
     finalHtml = `<div style="font-family: DM Sans, Arial, sans-serif; font-size: 14px; color: #374151; line-height: 1.6;">${bodyHtml}</div>`
-    finalText = body
+    finalText = bodyText
   }
 
   try {

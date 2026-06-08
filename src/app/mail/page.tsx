@@ -7,44 +7,7 @@ import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
 import { Email } from '@/types/database'
 import { Spinner } from '@/components/ui'
-
-// ── Récupérer la signature depuis localStorage ─────────────────
-const getSignatureData = (): { text: string; html: string } => {
-  try {
-    const mode = localStorage.getItem('operis_signature_mode') ?? 'fields'
-    const sig = JSON.parse(localStorage.getItem('operis_signature') ?? '{}')
-
-    if (mode === 'html') {
-      const htmlSig = sig.html ?? ''
-      const textSig = htmlSig.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
-      return { text: textSig ? `\n\n--\n${textSig}` : '', html: htmlSig }
-    }
-
-    if (!sig.name) return { text: '', html: '' }
-
-    const textSig = `${sig.name}${sig.title ? ` | ${sig.title}` : ''}${sig.company ? ` | ${sig.company}` : ''}${sig.phone ? `\n${sig.phone}` : ''}${sig.email ? ` | ${sig.email}` : ''}`
-    const accentColor = localStorage.getItem('operis_accent') ?? '#3b7ef6'
-    const htmlSig = `<table cellpadding="0" cellspacing="0" style="font-family: DM Sans, Arial, sans-serif; font-size: 13px; color: #374151; margin-top: 8px;">
-  <tr><td style="font-weight: 600; font-size: 14px; color: #111827; padding-bottom: 2px;">${sig.name}</td></tr>
-  ${sig.title ? `<tr><td style="color: #6b7280; padding-bottom: 2px;">${sig.title}</td></tr>` : ''}
-  ${sig.company ? `<tr><td style="color: #6b7280; padding-bottom: 8px;">${sig.company}</td></tr>` : ''}
-  <tr><td style="border-top: 2px solid ${accentColor}; padding-top: 8px; color: #6b7280; line-height: 1.8;">
-    ${sig.phone ? `📞 ${sig.phone}<br>` : ''}${sig.email ? `✉ ${sig.email}<br>` : ''}${sig.website ? `🌐 ${sig.website}` : ''}
-  </td></tr>
-</table>`
-
-    return { text: `\n\n--\n${textSig}`, html: htmlSig }
-  } catch { return { text: '', html: '' } }
-}
-
-const stripSignatureFromBody = (body: string, sigText: string): string => {
-  const sigIndex = body.indexOf('\n\n--\n')
-  if (sigIndex !== -1) return body.slice(0, sigIndex).trimEnd()
-  if (sigText && body.endsWith(sigText.replace(/^\n\n--\n/, ''))) {
-    return body.slice(0, body.length - sigText.length).trimEnd()
-  }
-  return body
-}
+import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 
 const inputStyle: React.CSSProperties = {
   flex: 1, background: 'transparent', border: 'none', outline: 'none',
@@ -175,16 +138,22 @@ export default function MailPage() {
     })
   }
 
+  const signaturePreview = composing ? getSignatureData() : { text: '', html: '' }
+
   const handleSend = async () => {
-    if (!compose.to || !compose.subject || !compose.body) {
-      setSendError('Destinataire, sujet et corps requis')
+    const sig = getSignatureData()
+    const bodyWithoutSig = stripSignatureFromBody(compose.body, sig.text)
+    if (!compose.to || !compose.subject) {
+      setSendError('Destinataire et sujet requis')
+      return
+    }
+    if (!bodyWithoutSig.trim() && !sig.html.trim()) {
+      setSendError('Message ou signature requis')
       return
     }
     setSending(true); setSendError(null)
     try {
-      const sig = getSignatureData()
-      const bodyWithoutSig = stripSignatureFromBody(compose.body, sig.text)
-      const signatureHtml = sig.html
+      const signatureHtml = sig.html.trim()
 
       const token = await getAccessToken()
       if (!token) return
@@ -324,7 +293,18 @@ export default function MailPage() {
               ))}
               <textarea ref={bodyRef} value={compose.body} onChange={e => setCompose(c => ({ ...c, body: e.target.value }))}
                 placeholder="Écris ton message ici..."
-                style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui', resize: 'none', paddingTop: 8 }} />
+                style={{ flex: 1, minHeight: 120, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui', resize: 'none', paddingTop: 8 }} />
+
+              {signaturePreview.html && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, flexShrink: 0 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 8 }}>
+                    Signature (ajoutée à l&apos;envoi)
+                  </div>
+                  <div style={{ background: '#fff', borderRadius: 8, padding: 12, maxHeight: 140, overflow: 'auto' }}>
+                    <div dangerouslySetInnerHTML={{ __html: signaturePreview.html }} />
+                  </div>
+                </div>
+              )}
 
               {attachments.length > 0 && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
