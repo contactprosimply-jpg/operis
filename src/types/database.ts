@@ -111,6 +111,8 @@ export interface TenderStats {
   min_quote: number | null
   max_quote: number | null
   days_remaining: number | null
+  budget_ht?: number | null
+  priorite?: string | null
 }
 
 export interface ConsultationWithSupplier extends ConsultationSupplier {

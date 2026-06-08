@@ -13,19 +13,18 @@ const getSignatureData = (): { text: string; html: string } => {
   try {
     const mode = localStorage.getItem('operis_signature_mode') ?? 'fields'
     const sig = JSON.parse(localStorage.getItem('operis_signature') ?? '{}')
-    
+
     if (mode === 'html') {
       const htmlSig = sig.html ?? ''
       const textSig = htmlSig.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
-      return { text: `\n\n--\n${textSig}`, html: htmlSig }
+      return { text: textSig ? `\n\n--\n${textSig}` : '', html: htmlSig }
     }
-    
+
     if (!sig.name) return { text: '', html: '' }
-    
+
     const textSig = `${sig.name}${sig.title ? ` | ${sig.title}` : ''}${sig.company ? ` | ${sig.company}` : ''}${sig.phone ? `\n${sig.phone}` : ''}${sig.email ? ` | ${sig.email}` : ''}`
-    
     const accentColor = localStorage.getItem('operis_accent') ?? '#3b7ef6'
-    const htmlSig = `<table style="font-family: DM Sans, Arial, sans-serif; font-size: 13px; color: #374151;">
+    const htmlSig = `<table cellpadding="0" cellspacing="0" style="font-family: DM Sans, Arial, sans-serif; font-size: 13px; color: #374151; margin-top: 8px;">
   <tr><td style="font-weight: 600; font-size: 14px; color: #111827; padding-bottom: 2px;">${sig.name}</td></tr>
   ${sig.title ? `<tr><td style="color: #6b7280; padding-bottom: 2px;">${sig.title}</td></tr>` : ''}
   ${sig.company ? `<tr><td style="color: #6b7280; padding-bottom: 8px;">${sig.company}</td></tr>` : ''}
@@ -33,9 +32,18 @@ const getSignatureData = (): { text: string; html: string } => {
     ${sig.phone ? `📞 ${sig.phone}<br>` : ''}${sig.email ? `✉ ${sig.email}<br>` : ''}${sig.website ? `🌐 ${sig.website}` : ''}
   </td></tr>
 </table>`
-    
+
     return { text: `\n\n--\n${textSig}`, html: htmlSig }
   } catch { return { text: '', html: '' } }
+}
+
+const stripSignatureFromBody = (body: string, sigText: string): string => {
+  const sigIndex = body.indexOf('\n\n--\n')
+  if (sigIndex !== -1) return body.slice(0, sigIndex).trimEnd()
+  if (sigText && body.endsWith(sigText.replace(/^\n\n--\n/, ''))) {
+    return body.slice(0, body.length - sigText.length).trimEnd()
+  }
+  return body
 }
 
 const inputStyle: React.CSSProperties = {
@@ -174,26 +182,9 @@ export default function MailPage() {
     }
     setSending(true); setSendError(null)
     try {
-      // Récupérer la signature HTML pour l'injection dans le mail
       const sig = getSignatureData()
-      
-      // Extraire la signature du body (si elle commence par \n\n--)
-      let bodyWithoutSig = compose.body
-      let signatureHtml = ''
-      
-      const sigIndex = compose.body.indexOf('\n\n--\n')
-      if (sigIndex !== -1) {
-        bodyWithoutSig = compose.body.slice(0, sigIndex)
-        signatureHtml = sig.html // Utiliser le HTML de la signature
-      }
-
-      const formData = new FormData()
-      formData.append('to', compose.to)
-      formData.append('cc', compose.cc)
-      formData.append('subject', compose.subject)
-      formData.append('body', bodyWithoutSig)
-      formData.append('signature', signatureHtml)
-      attachments.forEach(f => formData.append('attachments', f))
+      const bodyWithoutSig = stripSignatureFromBody(compose.body, sig.text)
+      const signatureHtml = sig.html
 
       const token = await getAccessToken()
       if (!token) return

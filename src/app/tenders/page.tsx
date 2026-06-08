@@ -3,7 +3,19 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTenders } from '@/hooks'
-import { Button, Modal, Field, TenderStatusBadge, Badge, Spinner, useToast } from '@/components/ui'
+import { Button, Modal, Field, TenderStatusBadge, Badge, Spinner, useToast, Card, KpiCard, tableRowHoverHandlers } from '@/components/ui'
+
+const PRIORITE_LABEL: Record<string, { label: string; color: string }> = {
+  basse: { label: 'Basse', color: '#475569' },
+  normale: { label: 'Normale', color: '#94a3b8' },
+  haute: { label: 'Haute', color: '#f59e0b' },
+  urgente: { label: 'Urgente', color: '#ef4444' },
+}
+
+function formatBudget(v?: number | null) {
+  if (!v) return '—'
+  return `${v.toLocaleString('fr-FR')} €`
+}
 
 export default function TendersPage() {
   const router = useRouter()
@@ -41,76 +53,80 @@ export default function TendersPage() {
     total: tenders.length,
   }
 
+  const filters = [{ key: 'actifs', label: 'Actifs' }, { key: 'tous', label: 'Tous' }, { key: 'gagne', label: 'Gagnes' }, { key: 'perdu', label: 'Perdus' }]
+
   return (
-    <div>
+    <div className="animate-fade">
       {ToastComponent}
 
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
-        {[
-          { label: 'Actifs', value: stats.actifs, color: '#60a5fa' },
-          { label: 'Gagnes', value: stats.gagnes, color: '#4ade80' },
-          { label: 'Perdus', value: stats.perdus, color: '#f87171' },
-          { label: 'Total', value: stats.total, color: 'var(--text-secondary)' },
-        ].map(s => (
-          <div key={s.label} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 8 }}>{s.label}</div>
-            <div style={{ fontSize: 24, fontWeight: 600, color: s.color, fontFamily: 'DM Mono, monospace' }}>{s.value}</div>
-          </div>
-        ))}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
+        <KpiCard label="Actifs" value={stats.actifs} color="blue" delay={0} />
+        <KpiCard label="Gagnes" value={stats.gagnes} color="green" delay={60} />
+        <KpiCard label="Perdus" value={stats.perdus} color="amber" delay={120} />
+        <KpiCard label="Total" value={stats.total} color="purple" delay={180} />
       </div>
 
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 4 }}>
-          {[{ key: 'actifs', label: 'Actifs' }, { key: 'tous', label: 'Tous' }, { key: 'gagne', label: 'Gagnes' }, { key: 'perdu', label: 'Perdus' }].map(f => (
+        <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+          {filters.map(f => (
             <button key={f.key} onClick={() => setFilter(f.key)} style={{
-              padding: '5px 14px', borderRadius: 7, fontSize: 12, cursor: 'pointer', border: 'none',
-              background: filter === f.key ? 'var(--accent-soft)' : 'transparent',
+              padding: '8px 16px', fontSize: 12, cursor: 'pointer', border: 'none', background: 'transparent',
               color: filter === f.key ? 'var(--accent)' : 'var(--text-muted)',
-              fontFamily: 'DM Sans, system-ui',
+              fontFamily: 'DM Sans, system-ui', fontWeight: filter === f.key ? 600 : 400,
+              borderBottom: filter === f.key ? '2px solid var(--accent)' : '2px solid transparent',
+              marginBottom: -1, transition: 'all 0.2s ease',
             }}>{f.label}</button>
           ))}
         </div>
         <Button variant="primary" onClick={() => setShowModal(true)}>+ Nouvel AO</Button>
       </div>
 
-      {/* Table */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+      <Card hover={false} style={{ padding: 0, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Titre', 'Client', 'Deadline', 'Statut', 'Fournisseurs', 'Reponses', 'Devis'].map(h => (
-                <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
+              {['Titre', 'Client', 'Deadline', 'Budget HT', 'Priorite', 'Statut', 'Fournisseurs', 'Reponses', 'Devis'].map(h => (
+                <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {filtered.map(t => {
+            {filtered.map((t, i) => {
               const respPct = t.nb_suppliers > 0 ? Math.round((t.nb_responses / t.nb_suppliers) * 100) : 0
+              const priorite = PRIORITE_LABEL[t.priorite ?? 'normale'] ?? PRIORITE_LABEL.normale
+              const rowHandlers = tableRowHoverHandlers(t.status)
               return (
                 <tr key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
-                  style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', transition: 'background 0.1s' }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-                  <td style={{ padding: '11px 14px', fontWeight: 500 }}>{t.title}</td>
-                  <td style={{ padding: '11px 14px', color: 'var(--text-secondary)' }}>{t.client}</td>
-                  <td style={{ padding: '11px 14px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: t.days_remaining !== null && t.days_remaining <= 3 ? '#f87171' : 'var(--text-secondary)' }}>
+                  className="animate-fade"
+                  style={{
+                    borderBottom: '1px solid var(--border)', cursor: 'pointer',
+                    borderLeft: '3px solid transparent',
+                    background: i % 2 === 1 ? 'rgba(148,163,184,0.02)' : 'transparent',
+                    animationDelay: `${i * 30}ms`, opacity: 0,
+                  }}
+                  {...rowHandlers}>
+                  <td style={{ padding: '12px 14px', fontWeight: 600 }}>{t.title}</td>
+                  <td style={{ padding: '12px 14px', color: 'var(--text-secondary)' }}>{t.client}</td>
+                  <td style={{ padding: '12px 14px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: t.days_remaining !== null && t.days_remaining <= 3 ? '#f87171' : 'var(--text-secondary)' }}>
                     {t.days_remaining !== null ? `${t.days_remaining}j` : '—'}
                   </td>
-                  <td style={{ padding: '11px 14px' }}><TenderStatusBadge status={t.status} /></td>
-                  <td style={{ padding: '11px 14px' }}><Badge>{t.nb_suppliers}</Badge></td>
-                  <td style={{ padding: '11px 14px' }}><Badge color={respPct === 100 ? 'green' : respPct >= 50 ? 'amber' : t.nb_suppliers > 0 ? 'red' : 'gray'}>{t.nb_responses}/{t.nb_suppliers}</Badge></td>
-                  <td style={{ padding: '11px 14px' }}><Badge color={t.nb_quotes > 0 ? 'green' : 'gray'}>{t.nb_quotes}</Badge></td>
+                  <td style={{ padding: '12px 14px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#34d399' }}>{formatBudget(t.budget_ht)}</td>
+                  <td style={{ padding: '12px 14px' }}>
+                    <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: priorite.color, fontWeight: 600 }}>{priorite.label}</span>
+                  </td>
+                  <td style={{ padding: '12px 14px' }}><TenderStatusBadge status={t.status} pulse={t.status === 'urgence'} /></td>
+                  <td style={{ padding: '12px 14px' }}><Badge>{t.nb_suppliers}</Badge></td>
+                  <td style={{ padding: '12px 14px' }}><Badge color={respPct === 100 ? 'green' : respPct >= 50 ? 'amber' : t.nb_suppliers > 0 ? 'red' : 'gray'}>{t.nb_responses}/{t.nb_suppliers}</Badge></td>
+                  <td style={{ padding: '12px 14px' }}><Badge color={t.nb_quotes > 0 ? 'green' : 'gray'} glow={t.nb_quotes > 0}>{t.nb_quotes}</Badge></td>
                 </tr>
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>Aucun AO</td></tr>
+              <tr><td colSpan={9} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>Aucun AO</td></tr>
             )}
           </tbody>
         </table>
-      </div>
+      </Card>
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouvel appel d'offres">
         <Field label="Titre *" value={form.title} onChange={v => setForm(f => ({ ...f, title: v }))} placeholder="Ex: Rehabilitation facades R+5" />

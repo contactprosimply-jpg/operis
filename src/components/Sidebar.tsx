@@ -262,23 +262,33 @@ export default function Sidebar() {
         .nav-item { position: relative; }
         .nav-tooltip {
           position: absolute; left: 56px; top: 50%; transform: translateY(-50%);
-          background: #1e2130; border: 1px solid rgba(255,255,255,0.12);
-          border-radius: 7px; padding: 5px 10px;
-          font-size: 12px; color: #f1f3f9; font-weight: 500;
+          background: var(--bg-card); border: 1px solid var(--border-hi);
+          border-radius: 8px; padding: 6px 12px;
+          font-size: 12px; color: var(--text-primary); font-weight: 600;
           white-space: nowrap; pointer-events: none;
           opacity: 0; visibility: hidden;
-          transition: opacity 0.15s, visibility 0.15s;
-          z-index: 1000; box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+          transition: opacity 0.2s ease, visibility 0.2s, transform 0.2s ease;
+          z-index: 1000; box-shadow: var(--shadow-card);
           font-family: 'DM Sans', system-ui, sans-serif;
         }
-        .nav-item:hover .nav-tooltip { opacity: 1; visibility: visible; }
+        .nav-item:hover .nav-tooltip { opacity: 1; visibility: visible; animation: fadeIn 0.2s ease; }
         @media (min-width: 768px) { .desktop-sidebar { display: flex !important; } .mobile-bottom-bar { display: none !important; } }
         @media (max-width: 767px) { .desktop-sidebar { display: none !important; } .mobile-bottom-bar { display: flex !important; } }
       `}</style>
 
       {/* DESKTOP */}
-      <nav className="desktop-sidebar" style={{ width: 60, background: 'var(--bg-secondary)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 0', flexShrink: 0, gap: 4, position: 'relative' }}>
-        <div style={{ width: 36, height: 36, background: 'var(--accent)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white', fontFamily: 'DM Mono, monospace', marginBottom: 16, flexShrink: 0 }}>OP</div>
+      <nav className="desktop-sidebar" style={{
+        width: 60, background: 'linear-gradient(180deg, #111827 0%, #0a0f1e 100%)',
+        borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', padding: '16px 0', flexShrink: 0, gap: 4, position: 'relative',
+      }}>
+        <div style={{
+          width: 38, height: 38, background: 'var(--gradient-1)', borderRadius: 11,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 12, fontWeight: 700, color: 'white', fontFamily: 'DM Mono, monospace',
+          marginBottom: 16, flexShrink: 0,
+          boxShadow: '0 4px 16px rgba(59,126,246,0.4)',
+        }}>OP</div>
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, width: '100%', alignItems: 'center' }}>
           {nav.map(item => {
@@ -286,8 +296,15 @@ export default function Sidebar() {
             const isMail = item.href === '/mail'
             return (
               <div key={item.href} className="nav-item" style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-                <Link href={item.href} style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 10, textDecoration: 'none', color: active ? 'var(--accent)' : 'var(--text-muted)', background: active ? 'var(--accent-soft)' : 'transparent', transition: 'all 0.12s', position: 'relative' }}
-                  onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)' }}
+                <Link href={item.href} style={{
+                  width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  borderRadius: 11, textDecoration: 'none',
+                  color: active ? '#fff' : 'var(--text-muted)',
+                  background: active ? 'var(--gradient-1)' : 'transparent',
+                  boxShadow: active ? '0 4px 14px rgba(59,126,246,0.35)' : 'none',
+                  transition: 'all 0.15s ease', position: 'relative',
+                }}
+                  onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(148,163,184,0.08)' }}
                   onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
                   {item.icon(active)}
                   {isMail && unreadCount > 0 && (
@@ -302,7 +319,9 @@ export default function Sidebar() {
           })}
         </div>
 
-        {/* Icône compte - remplace le bouton déconnexion */}
+        <div style={{ width: 32, height: 1, background: 'var(--border-hi)', margin: '8px 0 12px' }} />
+
+        {/* Icône compte */}
         <div style={{ position: 'relative' }}>
           {showAccountPanel && <AccountPanel />}
           <button

@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { authFetch } from '@/lib/auth-client'
-import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast } from '@/components/ui'
+import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast, Card } from '@/components/ui'
 
 const STATUS_OPTIONS = [
   { value: 'nouveau', label: 'Nouveau', color: '#60a5fa' },
@@ -179,35 +179,45 @@ export default function TenderDetailPage() {
   const availableSuppliers = suppliers.filter(s => !alreadyAdded.has(s.id))
 
   const prioriteOpt = PRIORITE_OPTIONS.find(p => p.value === tender.priorite)
+  const headerGradient = tender.priorite === 'urgente'
+    ? 'linear-gradient(135deg, rgba(239,68,68,0.2) 0%, rgba(245,158,11,0.08) 100%)'
+    : tender.priorite === 'haute'
+    ? 'linear-gradient(135deg, rgba(245,158,11,0.18) 0%, rgba(59,126,246,0.08) 100%)'
+    : 'var(--gradient-1)'
+
+  const sortedQuotes = [...quotes].sort((a: any, b: any) => (parseFloat(a.price_ht) || 0) - (parseFloat(b.price_ht) || 0))
+  const bestQuoteId = sortedQuotes[0]?.id
 
   return (
-    <div>
+    <div className="animate-fade">
       {ToastComponent}
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, gap: 16 }}>
-        <div style={{ flex: 1 }}>
-          <button onClick={() => router.push('/tenders')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, padding: 0, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'DM Sans, system-ui' }}>
-            ← Retour aux AO
-          </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>{tender.title}</h1>
-            <TenderStatusBadge status={tender.status} />
-            {prioriteOpt && tender.priorite !== 'normale' && (
-              <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: prioriteOpt.color, background: `${prioriteOpt.color}15`, border: `1px solid ${prioriteOpt.color}30`, borderRadius: 5, padding: '2px 7px' }}>{prioriteOpt.label}</span>
-            )}
+      <Card hover={false} style={{
+        padding: '22px 26px', marginBottom: 24,
+        background: `linear-gradient(135deg, rgba(26,34,54,0.95) 0%, rgba(10,15,30,0.9) 100%), ${headerGradient}`,
+        border: '1px solid var(--border-hi)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            <button onClick={() => router.push('/tenders')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, padding: 0, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'DM Sans, system-ui' }}>
+              ← Retour aux AO
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>{tender.title}</h1>
+              <TenderStatusBadge status={tender.status} pulse={tender.status === 'urgence'} />
+              {prioriteOpt && tender.priorite !== 'normale' && (
+                <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: prioriteOpt.color, background: `${prioriteOpt.color}20`, border: `1px solid ${prioriteOpt.color}40`, borderRadius: 6, padding: '3px 9px', fontWeight: 600 }}>{prioriteOpt.label}</span>
+              )}
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>{tender.client}</div>
           </div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>{tender.client}</div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <Button variant="ghost" onClick={() => setShowEdit(true)}>Modifier</Button>
+            <Button variant="danger" onClick={handleDelete}>Supprimer</Button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-          <Button variant="ghost" onClick={() => setShowEdit(true)}>
-            ✏️ Modifier
-          </Button>
-          <Button variant="danger" onClick={handleDelete}>
-            🗑 Supprimer
-          </Button>
-        </div>
-      </div>
+      </Card>
 
       {/* Infos AO */}
       <div style={card}>
@@ -255,9 +265,9 @@ export default function TenderDetailPage() {
           </div>
         )}
         {tender.notes_internes && (
-          <div style={{ marginTop: 16, background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 8, padding: '12px 14px' }}>
-            <div style={{ ...label, color: '#fbbf24', marginBottom: 6 }}>Notes internes</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{tender.notes_internes}</div>
+          <div style={{ marginTop: 16, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: '14px 16px', borderLeft: '4px solid #f59e0b' }}>
+            <div style={{ ...label, color: '#fbbf24', marginBottom: 8, fontWeight: 600 }}>Notes internes</div>
+            <div style={{ fontSize: 13, color: '#fde68a', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{tender.notes_internes}</div>
           </div>
         )}
       </div>
@@ -284,34 +294,39 @@ export default function TenderDetailPage() {
             Aucun fournisseur — <button onClick={() => setShowAddSupplierModal(true)} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>en ajouter un</button>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Fournisseur', 'Email', 'Statut', 'Dernière action', 'Relances', 'Actions'].map(h => (
-                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {consultations.map((c: any) => (
-                  <tr key={c.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '10px 12px', fontWeight: 500 }}>{c.supplier?.name ?? '—'}</td>
-                    <td style={{ padding: '10px 12px', fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--text-muted)' }}>{c.supplier?.email ?? '—'}</td>
-                    <td style={{ padding: '10px 12px' }}><ConsultationStatusBadge status={c.status} /></td>
-                    <td style={{ padding: '10px 12px', fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--text-muted)' }}>
-                      {c.last_sent_at ? new Date(c.last_sent_at).toLocaleDateString('fr-FR') : '—'}
-                    </td>
-                    <td style={{ padding: '10px 12px' }}><Badge>{c.relaunch_count}</Badge></td>
-                    <td style={{ padding: '10px 12px' }}>
-                      {['envoye', 'relance', 'relance_2'].includes(c.status) && (
-                        <Button variant="ghost" onClick={() => handleRelaunch(c.supplier_id)} style={{ fontSize: 11, padding: '4px 10px' }}>Relancer</Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {consultations.map((c: any, i: number) => (
+              <div key={c.id} className="animate-slide" style={{
+                display: 'flex', gap: 16, padding: '14px 4px',
+                borderBottom: i < consultations.length - 1 ? '1px solid var(--border)' : 'none',
+                animationDelay: `${i * 50}ms`, opacity: 0,
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 20, flexShrink: 0 }}>
+                  <div style={{
+                    width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+                    background: c.status === 'repondu' ? '#10b981' : c.status === 'refuse' ? '#ef4444' : '#3b7ef6',
+                    boxShadow: `0 0 8px ${c.status === 'repondu' ? 'rgba(16,185,129,0.5)' : 'rgba(59,126,246,0.4)'}`,
+                  }} />
+                  {i < consultations.length - 1 && <div style={{ width: 2, flex: 1, background: 'var(--border-hi)', marginTop: 4 }} />}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>{c.supplier?.name ?? '—'}</span>
+                    <ConsultationStatusBadge status={c.status} />
+                    {c.relaunch_count > 0 && <Badge color="amber">{c.relaunch_count} relance{c.relaunch_count > 1 ? 's' : ''}</Badge>}
+                  </div>
+                  <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 8 }}>{c.supplier?.email ?? '—'}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      {c.last_sent_at ? `Derniere action : ${new Date(c.last_sent_at).toLocaleDateString('fr-FR')}` : 'Pas encore contacte'}
+                    </span>
+                    {['envoye', 'relance', 'relance_2'].includes(c.status) && (
+                      <Button variant="ghost" onClick={() => handleRelaunch(c.supplier_id)} style={{ fontSize: 11, padding: '4px 10px' }}>Relancer</Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -333,13 +348,25 @@ export default function TenderDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {quotes.map((q: any, i: number) => (
-                  <tr key={q.id} style={{ borderBottom: '1px solid var(--border)', background: i === 0 ? 'rgba(34,197,94,0.04)' : 'transparent' }}>
+                {sortedQuotes.map((q: any) => {
+                  const isBest = q.id === bestQuoteId && sortedQuotes.length > 1
+                  return (
+                  <tr key={q.id} style={{
+                    borderBottom: '1px solid var(--border)',
+                    background: isBest ? 'rgba(16,185,129,0.08)' : 'transparent',
+                    borderLeft: isBest ? '3px solid #10b981' : '3px solid transparent',
+                  }}>
                     <td style={{ padding: '10px 12px', fontWeight: 500 }}>
-                      {i === 0 && <span style={{ fontSize: 10, color: '#4ade80', marginRight: 6 }}>★</span>}
+                      {isBest && (
+                        <span style={{
+                          fontSize: 10, color: '#10b981', marginRight: 8, fontWeight: 700,
+                          background: 'rgba(16,185,129,0.15)', padding: '2px 8px', borderRadius: 5,
+                          boxShadow: '0 0 10px rgba(16,185,129,0.3)',
+                        }}>Meilleur prix</span>
+                      )}
                       {q.supplier?.name ?? '—'}
                     </td>
-                    <td style={{ padding: '10px 12px', fontFamily: 'DM Mono, monospace', color: i === 0 ? '#4ade80' : 'var(--text-primary)', fontWeight: i === 0 ? 600 : 400 }}>
+                    <td style={{ padding: '10px 12px', fontFamily: 'DM Mono, monospace', color: isBest ? '#34d399' : 'var(--text-primary)', fontWeight: isBest ? 700 : 400 }}>
                       {q.price_ht ? `${parseFloat(q.price_ht).toLocaleString('fr-FR')} €` : '—'}
                     </td>
                     <td style={{ padding: '10px 12px', fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--text-muted)' }}>
@@ -347,7 +374,7 @@ export default function TenderDetailPage() {
                     </td>
                     <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', fontSize: 12 }}>{q.notes ?? '—'}</td>
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
           </div>
