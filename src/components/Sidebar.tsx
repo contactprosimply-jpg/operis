@@ -41,6 +41,25 @@ function getAvatarColor(email: string): string {
   return colors[Math.abs(hash)]
 }
 
+const NOTIF_ICONS: Record<string, string> = {
+  deadline_urgent: '🔴',
+  deadline_warning: '🟡',
+  missing_quote: '📋',
+  no_response: '🔔',
+  new_ao: '📄',
+  quote_received: '✅',
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  if (days > 0) return `il y a ${days}j`
+  if (hours > 0) return `il y a ${hours}h`
+  return mins <= 1 ? "à l'instant" : `il y a ${mins}min`
+}
+
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
@@ -50,6 +69,10 @@ export default function Sidebar() {
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([])
   const [switching, setSwitching] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const [notifCount, setNotifCount] = useState(0)
+  const [notifList, setNotifList] = useState<any[]>([])
+  const [showNotifPanel, setShowNotifPanel] = useState(false)
+  const notifPanelRef = useRef<HTMLDivElement>(null)
 
   // Charger l'utilisateur courant et les comptes sauvegardés
   useEffect(() => {
@@ -98,6 +121,35 @@ export default function Sidebar() {
     const interval = setInterval(fetchUnread, 60000)
     return () => clearInterval(interval)
   }, [])
+
+  // Notifications
+  useEffect(() => {
+    const fetchNotifs = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) return
+        const res = await fetch('/api/notifications?unread=true', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        const data = await res.json()
+        if (data.success) { setNotifList(data.data); setNotifCount(data.data.length) }
+      } catch {}
+    }
+    fetchNotifs()
+    const iv = setInterval(fetchNotifs, 30000)
+    return () => clearInterval(iv)
+  }, [])
+
+  // Fermer panel notifications si clic extérieur
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      if (notifPanelRef.current && !notifPanelRef.current.contains(e.target as Node)) {
+        setShowNotifPanel(false)
+      }
+    }
+    if (showNotifPanel) document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [showNotifPanel])
 
   // Fermer le panel si clic à l'extérieur
   useEffect(() => {

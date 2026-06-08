@@ -26,12 +26,27 @@ function createTransporter() {
 
 export async function sendEmail({ to, subject, body }: SendEmailOptions): Promise<void> {
   const transporter = createTransporter()
-
   await transporter.sendMail({
     from: `"Operis" <${process.env.SMTP_USER}>`,
     to,
     subject,
     text: body,
     html: body.replace(/\n/g, '<br>'),
+  })
+}
+
+export async function sendHtmlEmail(opts: {
+  to: string
+  subject: string
+  html: string
+  text?: string
+}): Promise<void> {
+  const transporter = createTransporter()
+  await transporter.sendMail({
+    from: `"Operis Alertes" <${process.env.SMTP_USER}>`,
+    to: opts.to,
+    subject: opts.subject,
+    html: opts.html,
+    text: opts.text ?? opts.html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(),
   })
 }
