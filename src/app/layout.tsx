@@ -3,8 +3,16 @@ import './globals.css'
 import AppShell from '@/components/AppShell'
 
 export const metadata: Metadata = {
-  title: 'Operis — Gestion AO BTP',
-  description: "Plateforme SaaS de gestion des appels d'offres BTP",
+  title: 'Operis — Gestion des Appels d\'Offres BTP',
+  description: 'Plateforme SaaS de gestion des AO pour les entreprises BTP. Centralisez vos consultations, suivez vos devis, ne ratez plus une opportunité.',
+  icons: { icon: '/favicon.svg' },
+  openGraph: {
+    title: 'Operis — Gestion des Appels d\'Offres BTP',
+    description: 'Plateforme SaaS de gestion des AO pour les entreprises BTP. Centralisez vos consultations, suivez vos devis, ne ratez plus une opportunité.',
+    type: 'website',
+    url: 'https://operis-f26g78.vercel.app',
+    siteName: 'Operis',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -14,7 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-        <meta name="theme-color" content="#0f1117" />
+        <meta name="theme-color" content="#080d18" />
       </head>
       <body style={{ fontFamily: "'DM Sans', system-ui, sans-serif", overflow: 'hidden' }}>
         <AppShell>{children}</AppShell>

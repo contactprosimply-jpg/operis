@@ -341,7 +341,7 @@ export default function TenderDetailPage() {
         )}
         {tender.notes_internes && (
           <div style={{ marginTop: 16, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: '14px 16px', borderLeft: '4px solid #f59e0b' }}>
-            <div style={{ ...label, color: '#fbbf24', marginBottom: 8, fontWeight: 600 }}>Notes internes</div>
+            <div style={{ ...label, color: '#fbbf24', marginBottom: 8, fontWeight: 600 }}>🔒 Notes internes</div>
             <div style={{ fontSize: 13, color: '#fde68a', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{tender.notes_internes}</div>
           </div>
         )}

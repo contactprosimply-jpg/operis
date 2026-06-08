@@ -108,7 +108,7 @@ export default function MailPage() {
         const data = await res.json()
         if (data.success) {
           await loadEmails(true)
-          setAutoSyncStatus(`Synchro ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
+          setAutoSyncStatus(`Dernière sync : ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
         }
       } catch {}
     }
@@ -143,7 +143,7 @@ export default function MailPage() {
       const data = await res.json()
       if (data.success) {
         showToast(`Synchro terminée — ${data.data.stored} nouveaux, ${data.data.aoDetected} AO`)
-        setAutoSyncStatus(`Synchro ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
+        setAutoSyncStatus(`Dernière sync : ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
         await loadEmails()
       } else showToast(`Erreur : ${data.error}`)
     } catch (e: any) { showToast(`Erreur : ${e.message}`) }

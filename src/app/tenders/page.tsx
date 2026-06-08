@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTenders } from '@/hooks'
-import { Button, Modal, Field, Badge, Spinner, useToast, Card, KpiCard, tableRowHoverHandlers } from '@/components/ui'
+import { Button, Modal, Field, Badge, useToast, Card, KpiCard, tableRowHoverHandlers, TableSkeleton } from '@/components/ui'
 import type { TenderStatus } from '@/types/database'
 
 const STATUS_OPTIONS: { value: TenderStatus; label: string }[] = [
@@ -15,11 +15,18 @@ const STATUS_OPTIONS: { value: TenderStatus; label: string }[] = [
   { value: 'cloture', label: 'Clôturé' },
 ]
 
-const PRIORITE_LABEL: Record<string, { label: string; color: string }> = {
-  basse: { label: 'Basse', color: '#475569' },
-  normale: { label: 'Normale', color: '#94a3b8' },
-  haute: { label: 'Haute', color: '#f59e0b' },
-  urgente: { label: 'Urgente', color: '#ef4444' },
+const PRIORITE_LABEL: Record<string, { label: string; color: string; icon: string }> = {
+  basse: { label: 'Basse', color: '#475569', icon: '↓' },
+  normale: { label: 'Normale', color: '#94a3b8', icon: '→' },
+  haute: { label: 'Haute', color: '#f59e0b', icon: '↑' },
+  urgente: { label: 'Urgente', color: '#ef4444', icon: '⚡' },
+}
+
+function deadlineColor(days: number | null) {
+  if (days === null) return 'var(--text-secondary)'
+  if (days < 0 || days <= 3) return '#f87171'
+  if (days <= 7) return '#fbbf24'
+  return '#34d399'
 }
 
 function formatBudget(v?: number | null) {
@@ -61,7 +68,14 @@ export default function TendersPage() {
     else show(`Erreur : ${res.error}`)
   }
 
-  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><Spinner size={28} /></div>
+  if (loading) return (
+    <div className="animate-fade-in">
+      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
+        {[0,1,2,3].map(i => <div key={i} className="skeleton" style={{ height: 100, borderRadius: 14 }} />)}
+      </div>
+      <Card hover={false}><TableSkeleton rows={8} cols={9} /></Card>
+    </div>
+  )
 
   const stats = {
     actifs: tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status)).length,
@@ -76,7 +90,7 @@ export default function TendersPage() {
     <div className="animate-fade">
       {ToastComponent}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
+      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
         <KpiCard label="Actifs" value={stats.actifs} color="blue" delay={0} />
         <KpiCard label="Gagnes" value={stats.gagnes} color="green" delay={60} />
         <KpiCard label="Perdus" value={stats.perdus} color="amber" delay={120} />
@@ -102,7 +116,8 @@ export default function TendersPage() {
       </div>
 
       <Card hover={false} style={{ padding: 0, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <div className="table-scroll">
+        <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
               {['Titre', 'Client', 'Deadline', 'Budget HT', 'Priorite', 'Statut', 'Fournisseurs', 'Reponses', 'Devis'].map(h => (
@@ -127,12 +142,14 @@ export default function TendersPage() {
                   {...rowHandlers}>
                   <td style={{ padding: '12px 14px', fontWeight: 600 }}>{t.title}</td>
                   <td style={{ padding: '12px 14px', color: 'var(--text-secondary)' }}>{t.client}</td>
-                  <td style={{ padding: '12px 14px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: t.days_remaining !== null && t.days_remaining <= 3 ? '#f87171' : 'var(--text-secondary)' }}>
+                  <td style={{ padding: '12px 14px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: deadlineColor(t.days_remaining), fontWeight: t.days_remaining !== null && t.days_remaining <= 3 ? 600 : 400 }}>
                     {t.days_remaining !== null ? `${t.days_remaining}j` : '—'}
                   </td>
                   <td style={{ padding: '12px 14px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#34d399' }}>{formatBudget(t.budget_ht)}</td>
                   <td style={{ padding: '12px 14px' }}>
-                    <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: priorite.color, fontWeight: 600 }}>{priorite.label}</span>
+                    <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: priorite.color, fontWeight: 600 }}>
+                      {priorite.icon} {priorite.label}
+                    </span>
                   </td>
                   <td style={{ padding: '12px 14px' }} onClick={e => e.stopPropagation()}>
                     <select
@@ -160,6 +177,7 @@ export default function TendersPage() {
             )}
           </tbody>
         </table>
+        </div>
       </Card>
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouvel appel d'offres">

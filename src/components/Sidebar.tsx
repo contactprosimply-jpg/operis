@@ -268,7 +268,7 @@ export default function Sidebar() {
           white-space: nowrap; pointer-events: none;
           opacity: 0; visibility: hidden;
           transition: opacity 0.2s ease, visibility 0.2s, transform 0.2s ease;
-          z-index: 1000; box-shadow: var(--shadow-card);
+          z-index: 1000; box-shadow: var(--shadow-sm);
           font-family: 'DM Sans', system-ui, sans-serif;
         }
         .nav-item:hover .nav-tooltip { opacity: 1; visibility: visible; animation: fadeIn 0.2s ease; }
@@ -278,15 +278,15 @@ export default function Sidebar() {
 
       {/* DESKTOP */}
       <nav className="desktop-sidebar" style={{
-        width: 60, background: 'var(--bg-secondary)',
+        width: 60, background: '#0a0f1a',
         borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column',
         alignItems: 'center', padding: '16px 0', flexShrink: 0, gap: 4, position: 'relative',
       }}>
         <div style={{
-          width: 38, height: 38, background: 'var(--accent)', borderRadius: 11,
+          width: 38, height: 38, background: 'var(--gradient-logo)', borderRadius: 11,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 12, fontWeight: 700, color: 'white', fontFamily: 'DM Mono, monospace',
-          marginBottom: 16, flexShrink: 0,
+          marginBottom: 16, flexShrink: 0, boxShadow: 'var(--shadow-glow)',
         }}>OP</div>
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, width: '100%', alignItems: 'center' }}>
@@ -298,16 +298,17 @@ export default function Sidebar() {
                 <Link href={item.href} style={{
                   width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   borderRadius: 11, textDecoration: 'none',
-                  color: active ? 'var(--accent)' : 'var(--text-muted)',
+                  color: active ? '#6ba3f9' : 'var(--text-muted)',
                   background: active ? 'var(--accent-soft)' : 'transparent',
-                  border: active ? '1px solid rgba(59,126,246,0.2)' : '1px solid transparent',
+                  border: active ? '1px solid rgba(79,142,247,0.25)' : '1px solid transparent',
+                  boxShadow: active ? 'var(--shadow-glow)' : 'none',
                   transition: 'all 0.15s ease', position: 'relative',
                 }}
                   onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
                   onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
                   {item.icon(active)}
                   {isMail && unreadCount > 0 && (
-                    <span style={{ position: 'absolute', top: 6, right: 6, minWidth: 16, height: 16, borderRadius: 8, background: '#ef4444', color: '#fff', fontSize: 9, fontWeight: 700, fontFamily: 'DM Mono, monospace', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '2px solid var(--bg-secondary)' }}>
+                    <span style={{ position: 'absolute', top: 6, right: 6, minWidth: 16, height: 16, borderRadius: 8, background: '#ef4444', color: '#fff', fontSize: 9, fontWeight: 700, fontFamily: 'DM Mono, monospace', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '2px solid #0a0f1a', animation: 'pulse 1.5s ease infinite' }}>
                       {unreadCount > 99 ? '99+' : unreadCount}
                     </span>
                   )}
@@ -333,13 +334,14 @@ export default function Sidebar() {
       </nav>
 
       {/* MOBILE */}
-      <nav className="mobile-bottom-bar" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 64, background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-around', zIndex: 50 }}>
+      <nav className="mobile-bottom-bar" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 64, background: 'rgba(15,22,36,0.92)', backdropFilter: 'blur(16px)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-around', zIndex: 50 }}>
         {nav.map(item => {
           const active = pathname.startsWith(item.href)
           const isMail = item.href === '/mail'
           return (
-            <Link key={item.href} href={item.href} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, textDecoration: 'none', padding: '6px 10px', borderRadius: 10, color: active ? 'var(--accent)' : 'var(--text-muted)', background: active ? 'var(--accent-soft)' : 'transparent', minWidth: 44, position: 'relative' }}>
-              {item.icon(active)}
+            <Link key={item.href} href={item.href} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, textDecoration: 'none', padding: '6px 10px', borderRadius: 10, color: active ? '#6ba3f9' : 'var(--text-muted)', background: active ? 'var(--accent-soft)' : 'transparent', minWidth: 48, position: 'relative' }}>
+              <div style={{ transform: 'scale(1.1)' }}>{item.icon(active)}</div>
+              {active && <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--gradient-primary)' }} />}
               {isMail && unreadCount > 0 && (
                 <span style={{ position: 'absolute', top: 4, right: 4, minWidth: 14, height: 14, borderRadius: 7, background: '#ef4444', color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}>
                   {unreadCount > 9 ? '9+' : unreadCount}

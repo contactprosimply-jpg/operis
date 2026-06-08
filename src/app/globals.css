@@ -3,43 +3,60 @@
 @tailwind utilities;
 
 :root {
-  --bg-primary: #0c0e14;
-  --bg-secondary: #13161f;
-  --bg-card: #1a1e28;
-  --bg-hover: #222733;
-  --accent: #3b7ef6;
-  --accent-soft: rgba(59,126,246,0.1);
-  --accent-2: #6366f1;
+  --bg-primary: #080d18;
+  --bg-secondary: #0f1624;
+  --bg-card: #141c2e;
+  --bg-hover: #1a2340;
+  --accent: #4f8ef7;
+  --accent-soft: rgba(79,142,247,0.1);
+  --accent-2: #818cf8;
   --success: #10b981;
-  --success-soft: rgba(16,185,129,0.12);
+  --success-soft: rgba(16,185,129,0.1);
   --warn: #f59e0b;
+  --warn-soft: rgba(245,158,11,0.1);
   --danger: #ef4444;
-  --danger-soft: rgba(239,68,68,0.12);
+  --danger-soft: rgba(239,68,68,0.1);
   --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
-  --border: rgba(255,255,255,0.06);
-  --border-hi: rgba(255,255,255,0.11);
-  --gradient-1: linear-gradient(135deg, #3b7ef6 0%, #6366f1 100%);
-  --gradient-2: linear-gradient(135deg, #10b981 0%, #3b7ef6 100%);
-  --shadow-card: 0 2px 12px rgba(0,0,0,0.35);
-  --shadow-hover: 0 4px 20px rgba(0,0,0,0.45);
+  --text-secondary: #94a3b8;
+  --text-muted: #475569;
+  --border: rgba(148,163,184,0.07);
+  --border-hi: rgba(148,163,184,0.13);
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 20px rgba(0,0,0,0.5);
+  --shadow-glow: 0 0 24px rgba(79,142,247,0.15);
+  --gradient-primary: linear-gradient(135deg, #4f8ef7 0%, #818cf8 100%);
+  --gradient-logo: linear-gradient(135deg, #4f8ef7 0%, #818cf8 100%);
 }
 
-@keyframes fadeIn { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
-@keyframes slideIn { from { opacity: 0; transform: translateX(-12px) } to { opacity: 1; transform: translateX(0) } }
-@keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.5 } }
-@keyframes shimmer { from { background-position: -200% 0 } to { background-position: 200% 0 } }
-@keyframes scaleIn { from { opacity: 0; transform: scale(0.95) } to { opacity: 1; transform: scale(1) } }
-@keyframes spin { to { transform: rotate(360deg) } }
+@keyframes fadeUp { from { opacity:0; transform:translateY(10px) } to { opacity:1; transform:translateY(0) } }
+@keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
+@keyframes spin { to { transform:rotate(360deg) } }
+@keyframes scaleIn { from { opacity:0; transform:scale(0.96) } to { opacity:1; transform:scale(1) } }
+@keyframes slideRight { from { opacity:0; transform:translateX(-8px) } to { opacity:1; transform:translateX(0) } }
+@keyframes slideUp { from { opacity:0; transform:translateY(16px) } to { opacity:1; transform:translateY(0) } }
+@keyframes shimmer {
+  0% { background-position: -400px 0 }
+  100% { background-position: 400px 0 }
+}
 
-.animate-fade { animation: fadeIn 0.3s ease forwards; }
-.animate-slide { animation: slideIn 0.25s ease forwards; }
-.animate-scale { animation: scaleIn 0.2s ease forwards; }
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-hover) 50%, var(--bg-card) 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 6px;
+}
+
+.animate-fade { animation: fadeUp 0.35s ease forwards; }
+.animate-fade-in { animation: fadeIn 0.35s ease forwards; }
+.animate-slide { animation: slideRight 0.3s ease forwards; }
+.animate-scale { animation: scaleIn 0.22s ease forwards; }
+.animate-slide-up { animation: slideUp 0.35s ease forwards; }
 
 * { box-sizing: border-box; }
 
 html, body {
+  margin: 0;
   background: var(--bg-primary);
   color: var(--text-primary);
   font-family: 'DM Sans', system-ui, sans-serif;
@@ -48,4 +65,10 @@ html, body {
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+@media (max-width: 767px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}

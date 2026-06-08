@@ -5,10 +5,10 @@ import { TenderStatus, ConsultationStatus } from '@/types/database'
 
 // ── BADGE ────────────────────────────────────────────────────
 const badgeMap: Record<string, { bg: string; color: string; border: string; glow: string }> = {
-  blue:  { bg: 'rgba(59,126,246,0.15)',  color: '#60a5fa', border: 'rgba(59,126,246,0.35)', glow: '0 0 12px rgba(59,126,246,0.25)' },
-  green: { bg: 'rgba(16,185,129,0.15)',   color: '#34d399', border: 'rgba(16,185,129,0.35)', glow: '0 0 12px rgba(16,185,129,0.25)' },
-  red:   { bg: 'rgba(239,68,68,0.15)',    color: '#f87171', border: 'rgba(239,68,68,0.35)', glow: '0 0 12px rgba(239,68,68,0.25)' },
-  amber: { bg: 'rgba(245,158,11,0.15)',  color: '#fbbf24', border: 'rgba(245,158,11,0.35)', glow: '0 0 12px rgba(245,158,11,0.25)' },
+  blue:  { bg: 'rgba(79,142,247,0.12)',  color: '#6ba3f9', border: 'rgba(79,142,247,0.3)', glow: '0 0 14px rgba(79,142,247,0.2)' },
+  green: { bg: 'rgba(16,185,129,0.12)',  color: '#34d399', border: 'rgba(16,185,129,0.3)', glow: '0 0 14px rgba(16,185,129,0.2)' },
+  red:   { bg: 'rgba(239,68,68,0.12)',   color: '#f87171', border: 'rgba(239,68,68,0.3)', glow: '0 0 14px rgba(239,68,68,0.2)' },
+  amber: { bg: 'rgba(245,158,11,0.12)',  color: '#fbbf24', border: 'rgba(245,158,11,0.3)', glow: '0 0 14px rgba(245,158,11,0.2)' },
   gray:  { bg: 'rgba(148,163,184,0.08)', color: '#94a3b8', border: 'rgba(148,163,184,0.15)', glow: 'none' },
 }
 
@@ -17,7 +17,8 @@ export function Badge({ color = 'gray', children, glow }: { color?: string; chil
   return (
     <span style={{
       fontFamily: 'DM Mono, monospace', fontSize: 10, fontWeight: 600,
-      padding: '3px 8px', borderRadius: 6,
+      letterSpacing: '0.04em',
+      padding: '4px 10px', borderRadius: 20,
       background: s.bg, color: s.color, border: `1px solid ${s.border}`,
       display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
       boxShadow: glow ? s.glow : 'none',
@@ -26,7 +27,7 @@ export function Badge({ color = 'gray', children, glow }: { color?: string; chil
 }
 
 const statusBorderColor: Record<TenderStatus, string> = {
-  nouveau: '#3b7ef6', en_cours: '#3b7ef6', urgence: '#f59e0b',
+  nouveau: '#4f8ef7', en_cours: '#4f8ef7', urgence: '#f59e0b',
   gagne: '#10b981', perdu: '#ef4444', cloture: '#475569',
 }
 
@@ -39,9 +40,9 @@ export function TenderStatusBadge({ status, pulse }: { status: TenderStatus; pul
     nouveau:  { color: 'blue',  label: 'Nouveau' },
     en_cours: { color: 'blue',  label: 'En cours' },
     urgence:  { color: 'amber', label: 'Urgent' },
-    gagne:    { color: 'green', label: 'Gagne' },
+    gagne:    { color: 'green', label: 'Gagné' },
     perdu:    { color: 'red',   label: 'Perdu' },
-    cloture:  { color: 'gray',  label: 'Cloture' },
+    cloture:  { color: 'gray',  label: 'Clôturé' },
   }
   const { color, label } = m[status] ?? { color: 'gray', label: status }
   const showPulse = pulse ?? status === 'urgence'
@@ -61,14 +62,33 @@ export function TenderStatusBadge({ status, pulse }: { status: TenderStatus; pul
 export function ConsultationStatusBadge({ status }: { status: ConsultationStatus }) {
   const m: Record<ConsultationStatus, { color: string; label: string }> = {
     en_attente: { color: 'gray',  label: 'En attente' },
-    envoye:     { color: 'blue',  label: 'Envoye' },
+    envoye:     { color: 'blue',  label: 'Envoyé' },
     relance:    { color: 'amber', label: 'Relance' },
     relance_2:  { color: 'amber', label: 'Relance 2' },
-    repondu:    { color: 'green', label: 'Repondu' },
-    refuse:     { color: 'red',   label: 'Refuse' },
+    repondu:    { color: 'green', label: 'Répondu' },
+    refuse:     { color: 'red',   label: 'Refusé' },
   }
   const { color, label } = m[status] ?? { color: 'gray', label: status }
   return <Badge color={color}>{label}</Badge>
+}
+
+// ── SKELETON ─────────────────────────────────────────────────
+export function Skeleton({ width = '100%', height = 14, style = {} }: { width?: string | number; height?: number; style?: React.CSSProperties }) {
+  return <div className="skeleton" style={{ width, height, ...style }} />
+}
+
+export function TableSkeleton({ rows = 5, cols = 6 }: { rows?: number; cols?: number }) {
+  return (
+    <div style={{ padding: 16 }}>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 12, marginBottom: 12 }}>
+          {Array.from({ length: cols }).map((_, j) => (
+            <Skeleton key={j} height={12} />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 // ── CARD ─────────────────────────────────────────────────────
@@ -81,19 +101,14 @@ export function Card({ children, style = {}, hover = true }: { children: ReactNo
       style={{
         background: 'var(--bg-card)',
         border: `1px solid ${hov ? 'var(--border-hi)' : 'var(--border)'}`,
-        borderRadius: 12,
-        boxShadow: hov ? 'var(--shadow-hover)' : 'var(--shadow-card)',
-        transition: 'all 0.2s ease',
+        borderRadius: 14,
+        boxShadow: hov ? 'var(--shadow-md)' : 'var(--shadow-sm)',
+        transition: 'all 0.22s ease',
         position: 'relative',
         overflow: 'hidden',
         ...style,
       }}
     >
-      <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, height: 1,
-        background: 'var(--border-hi)', opacity: hov ? 1 : 0.5,
-        transition: 'opacity 0.2s',
-      }} />
       {children}
     </div>
   )
@@ -107,26 +122,49 @@ export function Button({
   children: ReactNode; className?: string; type?: 'button' | 'submit'; style?: React.CSSProperties
 }) {
   const variants: Record<string, React.CSSProperties> = {
-    primary: { background: 'var(--gradient-1)', color: '#fff', border: 'none', boxShadow: '0 4px 14px rgba(59,126,246,0.35)' },
-    ghost:   { background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-hi)' },
-    danger:  { background: 'var(--danger-soft)', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.25)' },
-    success: { background: 'var(--success-soft)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.25)' },
+    primary: {
+      background: 'var(--gradient-primary)', color: '#fff', border: 'none',
+      boxShadow: 'var(--shadow-glow)',
+    },
+    ghost: {
+      background: 'transparent', color: 'var(--text-secondary)',
+      border: '1px solid var(--border-hi)',
+    },
+    danger: {
+      background: 'var(--danger-soft)', color: 'var(--danger)',
+      border: '1px solid rgba(239,68,68,0.25)',
+    },
+    success: {
+      background: 'var(--success-soft)', color: 'var(--success)',
+      border: '1px solid rgba(16,185,129,0.25)',
+    },
   }
   return (
     <button
       type={type} onClick={onClick} disabled={loading || disabled} className={className}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: '7px 16px', borderRadius: 8,
+        padding: '8px 16px', borderRadius: 9,
         fontSize: 12, fontWeight: 600, cursor: (loading || disabled) ? 'not-allowed' : 'pointer',
-        transition: 'transform 0.15s ease, opacity 0.15s, box-shadow 0.15s',
-        whiteSpace: 'nowrap', opacity: (loading || disabled) ? 0.5 : 1,
+        transition: 'filter 0.15s ease, transform 0.15s ease, opacity 0.15s',
+        whiteSpace: 'nowrap', opacity: (loading || disabled) ? 0.55 : 1,
         fontFamily: 'DM Sans, system-ui, sans-serif',
         ...variants[variant] ?? variants.ghost,
         ...style,
       }}
-      onMouseEnter={e => { if (!loading && !disabled && variant === 'primary') (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.02)' }}
-      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)' }}
+      onMouseEnter={e => {
+        if (!loading && !disabled) {
+          if (variant === 'primary') (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.1)'
+          else (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-hover)'
+        }
+      }}
+      onMouseLeave={e => {
+        const el = e.currentTarget as HTMLButtonElement
+        el.style.filter = ''
+        if (variant !== 'primary' && variant !== 'danger' && variant !== 'success') {
+          el.style.background = 'transparent'
+        }
+      }}
     >
       {loading && <Spinner size={11} />}
       {children}
@@ -139,9 +177,10 @@ export function Spinner({ size = 16 }: { size?: number }) {
   return (
     <div style={{
       width: size, height: size, borderRadius: '50%',
-      border: '2px solid rgba(59,126,246,0.15)',
-      borderTopColor: 'var(--accent)',
-      animation: 'spin 0.7s linear infinite',
+      background: 'conic-gradient(from 0deg, var(--accent), var(--accent-2), transparent)',
+      WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px))',
+      mask: 'radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px))',
+      animation: 'spin 0.75s linear infinite',
     }} />
   )
 }
@@ -159,43 +198,61 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{
       position: 'fixed', inset: 0, zIndex: 100,
-      background: 'rgba(10,15,30,0.75)', backdropFilter: 'blur(12px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
     }}>
       <div className="animate-scale" style={{
         background: 'var(--bg-card)', border: '1px solid var(--border-hi)',
-        borderRadius: 16, padding: '24px 28px',
-        width: 440, maxWidth: '94vw',
-        boxShadow: '0 24px 80px rgba(0,0,0,0.5)',
+        borderRadius: 16, width: 460, maxWidth: '100%',
+        maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+        boxShadow: 'var(--shadow-md)',
       }}>
-        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, color: 'var(--text-primary)' }}>{title}</div>
-        {children}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '20px 24px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0,
+        }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</div>
+          <button type="button" onClick={onClose} style={{
+            width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border-hi)',
+            background: 'var(--bg-hover)', color: 'var(--text-secondary)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, lineHeight: 1,
+          }}>×</button>
+        </div>
+        <div style={{ padding: '20px 24px 24px', overflowY: 'auto', flex: 1 }}>{children}</div>
       </div>
     </div>
   )
 }
 
 // ── TOAST ────────────────────────────────────────────────────
-export function Toast({ message, onDone }: { message: string; onDone: () => void }) {
+export function Toast({ message, type = 'success', onDone }: { message: string; type?: 'success' | 'error'; onDone: () => void }) {
   useEffect(() => { const t = setTimeout(onDone, 3200); return () => clearTimeout(t) }, [onDone])
+  const isError = type === 'error'
   return (
-    <div className="animate-fade" style={{
+    <div className="animate-slide-up" style={{
       position: 'fixed', bottom: 24, right: 24, zIndex: 200,
-      background: 'var(--bg-card)', border: '1px solid var(--border-hi)',
-      borderRadius: 10, padding: '10px 16px',
+      background: 'var(--bg-card)', border: `1px solid ${isError ? 'rgba(239,68,68,0.3)' : 'var(--border-hi)'}`,
+      borderRadius: 12, padding: '12px 16px',
       fontSize: 12, color: 'var(--text-primary)',
-      fontFamily: 'DM Mono, monospace',
-      boxShadow: 'var(--shadow-card)',
+      fontFamily: 'DM Sans, system-ui',
+      boxShadow: 'var(--shadow-md)',
+      display: 'flex', alignItems: 'center', gap: 10, maxWidth: 360,
     }}>
-      {message}
+      <span style={{ fontSize: 16 }}>{isError ? '✕' : '✓'}</span>
+      <span style={{ color: isError ? '#f87171' : 'var(--text-primary)' }}>{message}</span>
     </div>
   )
 }
 
 export function useToast() {
-  const [message, setMessage] = useState<string | null>(null)
-  const show = useCallback((msg: string) => setMessage(msg), [])
-  const ToastComponent = message ? <Toast message={message} onDone={() => setMessage(null)} /> : null
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
+  const show = useCallback((msg: string, type?: 'success' | 'error') => {
+    const t = type ?? (msg.toLowerCase().startsWith('erreur') ? 'error' : 'success')
+    setToast({ msg, type: t })
+  }, [])
+  const ToastComponent = toast ? (
+    <Toast message={toast.msg} type={toast.type} onDone={() => setToast(null)} />
+  ) : null
   return { show, ToastComponent }
 }
 
@@ -206,7 +263,10 @@ export function Field({ label, value, onChange, placeholder, type = 'text' }: {
   const [focused, setFocused] = useState(false)
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>
+      <div style={{
+        fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6,
+        textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'DM Mono, monospace',
+      }}>
         {label}
       </div>
       <input
@@ -215,11 +275,11 @@ export function Field({ label, value, onChange, placeholder, type = 'text' }: {
         style={{
           width: '100%', background: 'var(--bg-secondary)',
           border: `1px solid ${focused ? 'var(--accent)' : 'var(--border-hi)'}`,
-          borderRadius: 8,
-          padding: '9px 13px', fontSize: 13, color: 'var(--text-primary)',
+          borderRadius: 9,
+          padding: '10px 14px', fontSize: 13, color: 'var(--text-primary)',
           fontFamily: 'DM Sans, system-ui, sans-serif', outline: 'none',
-          display: 'block', transition: 'border-color 0.15s',
-          boxShadow: focused ? '0 0 0 3px var(--accent-soft)' : 'none',
+          display: 'block', transition: 'border-color 0.15s, box-shadow 0.15s',
+          boxShadow: focused ? '0 0 0 3px var(--accent-soft), var(--shadow-glow)' : 'none',
         }}
       />
     </div>
@@ -228,42 +288,56 @@ export function Field({ label, value, onChange, placeholder, type = 'text' }: {
 
 // ── KPI CARD ─────────────────────────────────────────────────
 const kpiAccent: Record<string, string> = {
-  blue: '#3b7ef6',
-  green: '#10b981',
-  amber: '#f59e0b',
-  purple: '#8b5cf6',
+  blue: '#4f8ef7', green: '#10b981', amber: '#f59e0b', purple: '#818cf8',
 }
 
-export function KpiCard({ label, value, delta, deltaVariant = 'success', icon, color = 'blue', delay = 0 }: {
+export function KpiCard({ label, value, delta, deltaVariant = 'success', icon, color = 'blue', delay = 0, progress }: {
   label: string; value: string | number; delta?: string;
   deltaVariant?: 'success' | 'warn' | 'danger';
-  icon?: ReactNode; color?: string; delay?: number
+  icon?: ReactNode; color?: string; delay?: number; progress?: number
 }) {
+  const [hov, setHov] = useState(false)
+  const accent = kpiAccent[color] ?? kpiAccent.blue
   const deltaColor = { success: '#34d399', warn: '#fbbf24', danger: '#f87171' }
   return (
-    <div className="animate-fade" style={{
-      background: 'var(--bg-card)',
-      border: '1px solid var(--border)',
-      borderLeft: `3px solid ${kpiAccent[color] ?? kpiAccent.blue}`,
-      borderRadius: 12, padding: '18px 20px',
-      boxShadow: 'var(--shadow-card)',
-      animationDelay: `${delay}ms`,
-      opacity: 0,
-      position: 'relative', overflow: 'hidden',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', fontWeight: 500 }}>{label}</div>
+    <div
+      className="animate-fade"
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        background: 'var(--bg-card)',
+        border: `1px solid ${hov ? accent + '40' : 'var(--border)'}`,
+        borderRadius: 14, padding: '18px 20px 14px',
+        boxShadow: hov ? 'var(--shadow-glow)' : 'var(--shadow-sm)',
+        animationDelay: `${delay}ms`, opacity: 0,
+        position: 'relative', overflow: 'hidden', transition: 'all 0.22s ease',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
         {icon && (
           <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: 'var(--bg-hover)',
+            width: 38, height: 38, borderRadius: 10,
+            background: `${accent}18`, border: `1px solid ${accent}30`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: kpiAccent[color] ?? kpiAccent.blue,
+            color: accent,
           }}>{icon}</div>
         )}
+        <div style={{
+          fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase',
+          letterSpacing: '0.07em', fontFamily: 'DM Mono, monospace', fontWeight: 600,
+          marginLeft: icon ? 0 : 'auto', textAlign: icon ? 'right' : 'left', flex: icon ? 1 : undefined,
+        }}>{label}</div>
       </div>
-      <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace', letterSpacing: '-0.02em' }}>{value}</div>
-      {delta && <div style={{ fontSize: 11, color: deltaColor[deltaVariant], marginTop: 6, fontWeight: 500 }}>{delta}</div>}
+      <div style={{
+        fontSize: 30, fontWeight: 700, color: 'var(--text-primary)',
+        fontFamily: 'DM Mono, monospace', letterSpacing: '-0.03em', lineHeight: 1,
+      }}>{value}</div>
+      {delta && (
+        <div style={{ fontSize: 11, color: deltaColor[deltaVariant], marginTop: 8, fontWeight: 500 }}>{delta}</div>
+      )}
+      <div style={{ marginTop: 14 }}>
+        <ProgressBar value={progress ?? (typeof value === 'number' ? Math.min(value, 100) : 50)} variant={color === 'green' ? 'success' : color === 'amber' ? 'warn' : 'accent'} />
+      </div>
     </div>
   )
 }
@@ -289,10 +363,18 @@ export function tableRowHoverHandlers(status?: TenderStatus) {
 
 // ── PROGRESS BAR ─────────────────────────────────────────────
 export function ProgressBar({ value, variant = 'accent' }: { value: number; variant?: string }) {
-  const colors: Record<string, string> = { accent: 'var(--accent)', warn: 'var(--warn)', danger: 'var(--danger)', success: 'var(--success)' }
+  const colors: Record<string, string> = {
+    accent: 'var(--gradient-primary)', warn: 'var(--warn)', danger: 'var(--danger)', success: 'var(--success)',
+  }
+  const bg = colors[variant] ?? colors.accent
+  const isGrad = variant === 'accent'
   return (
-    <div style={{ height: 5, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
-      <div style={{ height: '100%', width: `${Math.min(100, value)}%`, background: colors[variant] ?? colors.accent, borderRadius: 3, transition: 'width 0.4s ease' }} />
+    <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+      <div style={{
+        height: '100%', width: `${Math.min(100, Math.max(0, value))}%`,
+        background: bg, borderRadius: 2, transition: 'width 0.5s ease',
+        ...(isGrad ? { background: 'var(--gradient-primary)' } : {}),
+      }} />
     </div>
   )
 }

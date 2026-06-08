@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic'
 
 import { useRouter } from 'next/navigation'
 import { useTenders } from '@/hooks'
-import { KpiCard, TenderStatusBadge, Badge, Spinner, useToast, Card, tableRowHoverHandlers } from '@/components/ui'
+import { KpiCard, TenderStatusBadge, Badge, useToast, Card, tableRowHoverHandlers, TableSkeleton, Skeleton } from '@/components/ui'
 import { useState, useEffect } from 'react'
 import { authFetch } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
@@ -51,7 +51,7 @@ function ResponseBarChart({ pct }: { pct: number }) {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { ready, accessToken } = useAuth()
+  const { ready, accessToken, session } = useAuth()
   const { tenders, loading } = useTenders()
   const { show, ToastComponent } = useToast()
   const [emails, setEmails] = useState<Email[]>([])
@@ -80,7 +80,11 @@ export default function DashboardPage() {
     setCreatingAo(null)
   }
 
-  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><Spinner size={28} /></div>
+  const firstName = session?.user?.user_metadata?.full_name?.split(' ')[0]
+    ?? session?.user?.email?.split('@')[0]
+    ?? 'vous'
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bon après-midi' : 'Bonsoir'
 
   const actifs = tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status))
   const urgents = tenders.filter(t => t.days_remaining !== null && t.days_remaining <= 3 && ['nouveau', 'en_cours', 'urgence'].includes(t.status))
@@ -91,12 +95,32 @@ export default function DashboardPage() {
   const gagnes = tenders.filter(t => t.status === 'gagne').length
   const tauxReussite = tenders.length > 0 ? Math.round((gagnes / tenders.length) * 100) : 0
 
+  if (loading) return (
+    <div className="animate-fade-in">
+      <div style={{ marginBottom: 24 }}><Skeleton height={28} width={320} style={{ marginBottom: 8 }} /><Skeleton height={14} width={200} /></div>
+      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
+        {[0,1,2,3].map(i => <div key={i} className="skeleton" style={{ height: 120, borderRadius: 14 }} />)}
+      </div>
+      <Card hover={false}><TableSkeleton rows={5} cols={6} /></Card>
+    </div>
+  )
+
   return (
     <div className="animate-fade">
       {ToastComponent}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>
+          {greeting} {firstName}, {actifs.length} AO en cours
+        </h1>
+        <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+          {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+        </p>
+      </div>
+
+      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
         <KpiCard label="AO actifs" value={actifs.length} icon={<IconDoc />} color="blue" delay={0}
+          progress={actifs.length > 0 ? Math.min(100, actifs.length * 10) : 0}
           delta={urgents.length > 0 ? `${urgents.length} urgent(s)` : 'Aucune urgence'}
           deltaVariant={urgents.length > 0 ? 'danger' : 'success'} />
         <div>
@@ -149,7 +173,7 @@ export default function DashboardPage() {
               const rowHandlers = tableRowHoverHandlers(t.status)
               return (
                 <tr key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
-                  className="animate-fade"
+                  className="animate-slide"
                   style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', borderLeft: '3px solid transparent', animationDelay: `${i * 40}ms`, opacity: 0 }}
                   {...rowHandlers}>
                   <td style={{ padding: '12px 14px', fontWeight: 600 }}>{t.title}</td>
@@ -197,7 +221,7 @@ export default function DashboardPage() {
                 <button
                   onClick={(e) => { e.stopPropagation(); handleCreateAo(email) }}
                   disabled={creatingAo === email.id}
-                  style={{ background: 'var(--gradient-1)', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0, opacity: creatingAo === email.id ? 0.5 : 1, fontFamily: 'DM Sans, system-ui', boxShadow: '0 4px 12px rgba(59,126,246,0.3)' }}
+                  style={{ background: 'var(--gradient-primary)', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0, opacity: creatingAo === email.id ? 0.5 : 1, fontFamily: 'DM Sans, system-ui', boxShadow: 'var(--shadow-glow)' }}
                 >
                   {creatingAo === email.id ? '...' : '+ Creer AO'}
                 </button>
