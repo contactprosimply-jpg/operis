@@ -3,7 +3,7 @@
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
-import { ImapFlow } from 'imapflow'
+import { fetchRecentMessages, formatImapError, type MailAccountConfig } from '@/lib/imap-client'
 import { simpleParser } from 'mailparser'
 
 export const maxDuration = 60
@@ -11,41 +11,41 @@ export const maxDuration = 60
 const AO_KEYWORDS = [
   { term: "appel d'offres", weight: 40 },
   { term: "appel d'offre", weight: 40 },
-  { term: "dce", weight: 40 },
-  { term: "dossier de consultation", weight: 40 },
-  { term: "rfp", weight: 35 },
-  { term: "request for proposal", weight: 35 },
-  { term: "consultation", weight: 25 },
-  { term: "mise en concurrence", weight: 25 },
-  { term: "marchÃ©", weight: 25 },
-  { term: "tender", weight: 25 },
-  { term: "bid", weight: 20 },
-  { term: "devis", weight: 15 },
-  { term: "cahier des charges", weight: 15 },
-  { term: "cctp", weight: 15 },
-  { term: "dpgf", weight: 15 },
-  { term: "date limite de rÃ©ponse", weight: 15 },
-  { term: "remise des offres", weight: 15 },
+  { term: 'dce', weight: 40 },
+  { term: 'dossier de consultation', weight: 40 },
+  { term: 'rfp', weight: 35 },
+  { term: 'request for proposal', weight: 35 },
+  { term: 'consultation', weight: 25 },
+  { term: 'mise en concurrence', weight: 25 },
+  { term: 'marche', weight: 25 },
+  { term: 'tender', weight: 25 },
+  { term: 'bid', weight: 20 },
+  { term: 'devis', weight: 15 },
+  { term: 'cahier des charges', weight: 15 },
+  { term: 'cctp', weight: 15 },
+  { term: 'dpgf', weight: 15 },
+  { term: 'date limite de reponse', weight: 15 },
+  { term: 'remise des offres', weight: 15 },
 ]
 
 const NEGATIVE_KEYWORDS = [
   'reset your password', 'supabase auth', 'vercel', 'newsletter',
-  'unsubscribe', 'dÃ©sabonner', 'relance de paiement', 'offre spÃ©ciale',
+  'unsubscribe', 'desabonner', 'relance de paiement', 'offre speciale',
 ]
 
-const OWN_SUBJECTS = ['consultation â€”', 'relance â€”', 'relance 2 â€”']
+const OWN_SUBJECTS = ['consultation —', 'relance —', 'relance 2 —']
 
 function detectAo(subject: string, bodyText: string) {
   const subjectLower = (subject ?? '').toLowerCase()
   const textLower = `${subject ?? ''} ${bodyText ?? ''}`.toLowerCase()
-  
+
   for (const s of OWN_SUBJECTS) {
     if (subjectLower.startsWith(s)) return { isAo: false, score: 0 }
   }
   for (const neg of NEGATIVE_KEYWORDS) {
     if (textLower.includes(neg)) return { isAo: false, score: 0 }
   }
-  
+
   let score = 0
   for (const { term, weight } of AO_KEYWORDS) {
     if (textLower.includes(term)) {
@@ -57,64 +57,104 @@ function detectAo(subject: string, bodyText: string) {
   return { isAo: score >= 30, score }
 }
 
-export async function POST(req: NextRequest) {
-  const userId = await getUserFromRequest(req)
-  if (!userId) return unauthorized()
-
+async function resolveMailAccount(userId: string): Promise<(MailAccountConfig & { id?: string }) | null> {
   const db = createAdminClient()
 
-  const { data: account, error: accountError } = await db
+  const { data: account } = await db
     .from('mail_accounts')
     .select('*')
     .eq('user_id', userId)
     .eq('is_active', true)
-    .single()
+    .maybeSingle()
 
-  if (accountError || !account) {
+  if (account?.imap_user && account?.imap_pass) {
+    return {
+      id: account.id,
+      imap_host: account.imap_host || 'mail.gandi.net',
+      imap_port: Number(account.imap_port) || 993,
+      imap_user: account.imap_user,
+      imap_pass: account.imap_pass,
+    }
+  }
+
+  if (process.env.IMAP_USER && process.env.IMAP_PASS) {
+    return {
+      imap_host: process.env.IMAP_HOST || 'mail.gandi.net',
+      imap_port: Number(process.env.IMAP_PORT) || 993,
+      imap_user: process.env.IMAP_USER,
+      imap_pass: process.env.IMAP_PASS,
+    }
+  }
+
+  return null
+}
+
+function getEnvMailAccount(): MailAccountConfig | null {
+  if (!process.env.IMAP_USER || !process.env.IMAP_PASS) return null
+  return {
+    imap_host: process.env.IMAP_HOST || 'mail.gandi.net',
+    imap_port: Number(process.env.IMAP_PORT) || 993,
+    imap_user: process.env.IMAP_USER,
+    imap_pass: process.env.IMAP_PASS,
+  }
+}
+
+async function fetchMessagesWithFallback(account: MailAccountConfig & { id?: string }) {
+  try {
+    return await fetchRecentMessages(account, { sinceDays: 30, limit: 40 })
+  } catch (primaryError) {
+    const envAccount = getEnvMailAccount()
+    if (!envAccount) throw primaryError
+    const sameConfig =
+      envAccount.imap_host === account.imap_host &&
+      envAccount.imap_port === account.imap_port &&
+      envAccount.imap_user === account.imap_user &&
+      envAccount.imap_pass === account.imap_pass
+    if (sameConfig) throw primaryError
+    return fetchRecentMessages(envAccount, { sinceDays: 30, limit: 40 })
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const userId = await getUserFromRequest(req)
+  if (!userId) return unauthorized()
+
+  const account = await resolveMailAccount(userId)
+  if (!account) {
     return Response.json({
       success: false,
-      error: 'Aucun compte mail configurÃ©. Va dans ParamÃ¨tres > Messagerie.'
+      error: 'Aucun compte mail configure. Va dans Parametres > Messagerie.',
     }, { status: 400 })
   }
 
-  const client = new ImapFlow({
-    host: account.imap_host,
-    port: account.imap_port,
-    secure: true,
-    auth: { user: account.imap_user, pass: account.imap_pass },
-    logger: false,
-  })
-
+  const db = createAdminClient()
   const result = { fetched: 0, stored: 0, aoDetected: 0, duplicates: 0, errors: 0 }
 
   try {
-    await client.connect()
-    await client.mailboxOpen('INBOX')
+    const messages = await fetchMessagesWithFallback(account)
+    result.fetched = messages.length
 
-    // RÃ©cupÃ©rer les 30 derniers jours
-    const since = new Date()
-    since.setDate(since.getDate() - 30)
-
-    const messages = client.fetch({ since }, { uid: true, source: true })
-
-    for await (const message of messages) {
-      result.fetched++
+    for (const message of messages) {
       try {
         const parsed = await simpleParser(message.source)
         const messageId = parsed.messageId ?? `msg-${message.uid}`
 
-        // Ignorer nos propres envois
         const fromEmail = parsed.from?.value?.[0]?.address ?? ''
-        if (fromEmail === account.imap_user) { result.duplicates++; continue }
+        if (fromEmail.toLowerCase() === account.imap_user.toLowerCase()) {
+          result.duplicates++
+          continue
+        }
 
-        // VÃ©rifier doublon
         const { data: existing } = await db
           .from('emails')
           .select('id')
           .eq('message_id', messageId)
-          .single()
+          .maybeSingle()
 
-        if (existing) { result.duplicates++; continue }
+        if (existing) {
+          result.duplicates++
+          continue
+        }
 
         const { isAo, score } = detectAo(parsed.subject ?? '', parsed.text ?? '')
 
@@ -133,26 +173,30 @@ export async function POST(req: NextRequest) {
           tender_id: null,
         })
 
-        if (error) { result.errors++; continue }
+        if (error) {
+          result.errors++
+          continue
+        }
 
         result.stored++
         if (isAo) result.aoDetected++
-
-      } catch { result.errors++ }
+      } catch {
+        result.errors++
+      }
     }
 
-    // Mettre Ã  jour last_sync
-    await db
-      .from('mail_accounts')
-      .update({ last_sync: new Date().toISOString() })
-      .eq('id', account.id)
+    if (account.id) {
+      await db
+        .from('mail_accounts')
+        .update({ last_sync: new Date().toISOString() })
+        .eq('id', account.id)
+    }
 
-    await client.logout()
     return Response.json({ success: true, data: result })
-
-  } catch (e: any) {
-    try { await client.logout() } catch {}
-    return Response.json({ success: false, error: `Erreur IMAP: ${e.message}` }, { status: 500 })
+  } catch (e) {
+    return Response.json({
+      success: false,
+      error: `Erreur IMAP: ${formatImapError(e)}`,
+    }, { status: 500 })
   }
 }
-

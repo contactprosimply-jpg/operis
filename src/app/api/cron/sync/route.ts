@@ -2,7 +2,7 @@
 
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
-import { ImapFlow } from 'imapflow'
+import { fetchRecentMessages } from '@/lib/imap-client'
 import { simpleParser } from 'mailparser'
 
 export const maxDuration = 60
@@ -45,26 +45,16 @@ function detectAo(subject: string, bodyText: string) {
 
 async function syncAccount(userId: string, account: any) {
   const db = createAdminClient()
-  const client = new ImapFlow({
-    host: account.imap_host,
-    port: account.imap_port,
-    secure: true,
-    auth: { user: account.imap_user, pass: account.imap_pass },
-    logger: false,
-  })
-
   let stored = 0
   try {
-    await client.connect()
-    await client.mailboxOpen('INBOX')
+    const messages = await fetchRecentMessages({
+      imap_host: account.imap_host || 'mail.gandi.net',
+      imap_port: Number(account.imap_port) || 993,
+      imap_user: account.imap_user,
+      imap_pass: account.imap_pass,
+    }, { sinceDays: 1, limit: 20 })
 
-    // Emails des 3 dernières heures pour le cron (plus léger)
-    const since = new Date()
-    since.setHours(since.getHours() - 3)
-
-    const messages = client.fetch({ since }, { uid: true, source: true })
-
-    for await (const message of messages) {
+    for (const message of messages) {
       try {
         const parsed = await simpleParser(message.source)
         const messageId = parsed.messageId ?? `msg-${message.uid}`
@@ -97,10 +87,8 @@ async function syncAccount(userId: string, account: any) {
     }
 
     await db.from('mail_accounts').update({ last_sync: new Date().toISOString() }).eq('id', account.id)
-    await client.logout()
   } catch (e: any) {
     console.error(`[Cron] Erreur sync ${userId}:`, e.message)
-    try { await client.logout() } catch {}
   }
   return stored
 }
