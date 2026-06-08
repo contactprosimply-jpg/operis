@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { authFetch } from '@/lib/auth-client'
+import { useRefreshOnFocus } from '@/hooks'
 import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast, Card } from '@/components/ui'
 
 const STATUS_OPTIONS = [
@@ -43,6 +44,8 @@ export default function TenderDetailPage() {
   const [tender, setTender] = useState<any>(null)
   const [suppliers, setSuppliers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
   const [showEdit, setShowEdit] = useState(false)
   const [showConsult, setShowConsult] = useState(false)
   const [showConsultModal, setShowConsultModal] = useState(false)
@@ -62,8 +65,9 @@ export default function TenderDetailPage() {
     notes_internes: '', priorite: 'normale', status: 'nouveau',
   })
 
-  const loadTender = useCallback(async () => {
-    setLoading(true)
+  const loadTender = useCallback(async (silent = false) => {
+    if (silent) setRefreshing(true)
+    else setLoading(true)
     try {
       const res = await authFetch(`/api/tenders/${id}`)
       const data = await res.json()
@@ -81,10 +85,13 @@ export default function TenderDetailPage() {
           priorite: data.data.priorite ?? 'normale',
           status: data.data.status ?? 'nouveau',
         })
-      } else { show(`Erreur : ${data.error}`); router.push('/tenders') }
+      } else if (!silent) { show(`Erreur : ${data.error}`); router.push('/tenders') }
     } catch {}
-    setLoading(false)
-  }, [id])
+    if (silent) setRefreshing(false)
+    else setLoading(false)
+  }, [id, router, show])
+
+  const refreshTender = useCallback(() => loadTender(true), [loadTender])
 
   const loadAllSuppliers = useCallback(async () => {
     const res = await authFetch('/api/suppliers')
@@ -92,7 +99,33 @@ export default function TenderDetailPage() {
     if (data.success) setSuppliers(data.data)
   }, [])
 
-  useEffect(() => { loadTender(); loadAllSuppliers() }, [loadTender, loadAllSuppliers])
+  useEffect(() => { loadTender(false); loadAllSuppliers() }, [loadTender, loadAllSuppliers])
+  useRefreshOnFocus(refreshTender)
+
+  const handleQuickStatus = async (status: string) => {
+    if (!tender || tender.status === status) return
+    setUpdatingStatus(status)
+    const prev = tender.status
+    setTender((t: any) => ({ ...t, status }))
+    setEditForm(f => ({ ...f, status }))
+    try {
+      const res = await authFetch(`/api/tenders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
+      const data = await res.json()
+      if (data.success) {
+        show('Statut mis à jour')
+        await refreshTender()
+      } else {
+        setTender((t: any) => ({ ...t, status: prev }))
+        setEditForm(f => ({ ...f, status: prev }))
+        show(`Erreur : ${data.error}`)
+      }
+    } catch (e: any) {
+      setTender((t: any) => ({ ...t, status: prev }))
+      setEditForm(f => ({ ...f, status: prev }))
+      show(`Erreur : ${e.message}`)
+    }
+    setUpdatingStatus(null)
+  }
 
   const handleSaveEdit = async () => {
     setSavingEdit(true)
@@ -111,7 +144,12 @@ export default function TenderDetailPage() {
       }
       const res = await authFetch(`/api/tenders/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
       const data = await res.json()
-      if (data.success) { show('AO mis à jour ✓'); setShowEdit(false); await loadTender() }
+      if (data.success) {
+        setTender((prev: any) => ({ ...prev, ...data.data }))
+        setShowEdit(false)
+        show('AO mis à jour ✓')
+        await refreshTender()
+      }
       else show(`Erreur : ${data.error}`)
     } catch (e: any) { show(`Erreur : ${e.message}`) }
     setSavingEdit(false)
@@ -120,7 +158,7 @@ export default function TenderDetailPage() {
   const handleAddSupplier = async (supplierId: string) => {
     const res = await authFetch(`/api/tenders/${id}/suppliers`, { method: 'POST', body: JSON.stringify({ supplier_id: supplierId }) })
     const data = await res.json()
-    if (data.success) { show('Fournisseur ajouté'); await loadTender() }
+    if (data.success) { show('Fournisseur ajouté'); await refreshTender() }
     else show(`Erreur : ${data.error}`)
   }
 
@@ -129,7 +167,7 @@ export default function TenderDetailPage() {
     setSendingConsult(true)
     const res = await authFetch(`/api/tenders/${id}/consult`, { method: 'POST', body: JSON.stringify({ supplier_ids: selectedSuppliers, message: consultMsg }) })
     const data = await res.json()
-    if (data.success) { show(`${data.data.sent} consultation(s) envoyée(s)`); setShowConsultModal(false); await loadTender() }
+    if (data.success) { show(`${data.data.sent} consultation(s) envoyée(s)`); setShowConsultModal(false); await refreshTender() }
     else show(`Erreur : ${data.error}`)
     setSendingConsult(false)
   }
@@ -137,14 +175,14 @@ export default function TenderDetailPage() {
   const handleRelaunch = async (supplierId: string) => {
     const res = await authFetch(`/api/tenders/${id}/relaunch`, { method: 'POST', body: JSON.stringify({ supplier_id: supplierId }) })
     const data = await res.json()
-    if (data.success) { show('Relance envoyée'); await loadTender() }
+    if (data.success) { show('Relance envoyée'); await refreshTender() }
     else show(`Erreur : ${data.error}`)
   }
 
   const handleRelaunchAll = async () => {
     const res = await authFetch(`/api/tenders/${id}/relaunch`, { method: 'POST', body: JSON.stringify({ all: true }) })
     const data = await res.json()
-    if (data.success) { show(`${data.data.sent} relance(s) envoyée(s)`); await loadTender() }
+    if (data.success) { show(`${data.data.sent} relance(s) envoyée(s)`); await refreshTender() }
     else show(`Erreur : ${data.error}`)
   }
 
@@ -153,7 +191,7 @@ export default function TenderDetailPage() {
     setValidatingQuote(true)
     const res = await authFetch(`/api/tenders/${id}/validate-quote`, { method: 'POST', body: JSON.stringify({ winner_supplier_id: selectedWinner }) })
     const data = await res.json()
-    if (data.success) { show('Devis validé — notifications envoyées'); setShowValidateModal(false); await loadTender() }
+    if (data.success) { show('Devis validé — notifications envoyées'); setShowValidateModal(false); await refreshTender() }
     else show(`Erreur : ${data.error}`)
     setValidatingQuote(false)
   }
@@ -209,8 +247,35 @@ export default function TenderDetailPage() {
               )}
             </div>
             <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>{tender.client}</div>
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Suivi de l&apos;AO</span>
+                {refreshing && <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>↻ sync</span>}
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {STATUS_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => handleQuickStatus(opt.value)}
+                    disabled={updatingStatus !== null}
+                    style={{
+                      padding: '6px 12px', fontSize: 11, cursor: updatingStatus ? 'wait' : 'pointer',
+                      borderRadius: 6, fontFamily: 'DM Sans, system-ui', fontWeight: tender.status === opt.value ? 600 : 400,
+                      border: tender.status === opt.value ? `2px solid ${opt.color}` : '1px solid var(--border)',
+                      background: tender.status === opt.value ? `${opt.color}18` : 'transparent',
+                      color: tender.status === opt.value ? opt.color : 'var(--text-secondary)',
+                      opacity: updatingStatus && updatingStatus !== opt.value ? 0.45 : 1,
+                    }}
+                  >
+                    {updatingStatus === opt.value ? '…' : opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <Button variant="ghost" onClick={() => refreshTender()} disabled={refreshing}>Actualiser</Button>
             <Button variant="ghost" onClick={() => setShowEdit(true)}>Modifier</Button>
             <Button variant="danger" onClick={handleDelete}>Supprimer</Button>
           </div>

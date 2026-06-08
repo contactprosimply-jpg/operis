@@ -75,7 +75,7 @@ export const tenderService = {
     status: TenderStatus
   ): Promise<ApiResponse<Tender>> {
     try {
-      const allowed: TenderStatus[] = ['gagne', 'perdu', 'cloture', 'en_cours', 'urgence']
+      const allowed: TenderStatus[] = ['nouveau', 'en_cours', 'urgence', 'gagne', 'perdu', 'cloture']
       if (!allowed.includes(status)) {
         return { success: false, error: 'Statut invalide' }
       }

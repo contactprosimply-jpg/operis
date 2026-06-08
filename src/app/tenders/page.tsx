@@ -3,7 +3,17 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTenders } from '@/hooks'
-import { Button, Modal, Field, TenderStatusBadge, Badge, Spinner, useToast, Card, KpiCard, tableRowHoverHandlers } from '@/components/ui'
+import { Button, Modal, Field, Badge, Spinner, useToast, Card, KpiCard, tableRowHoverHandlers } from '@/components/ui'
+import type { TenderStatus } from '@/types/database'
+
+const STATUS_OPTIONS: { value: TenderStatus; label: string }[] = [
+  { value: 'nouveau', label: 'Nouveau' },
+  { value: 'en_cours', label: 'En cours' },
+  { value: 'urgence', label: 'Urgence' },
+  { value: 'gagne', label: 'Gagné' },
+  { value: 'perdu', label: 'Perdu' },
+  { value: 'cloture', label: 'Clôturé' },
+]
 
 const PRIORITE_LABEL: Record<string, { label: string; color: string }> = {
   basse: { label: 'Basse', color: '#475569' },
@@ -19,7 +29,7 @@ function formatBudget(v?: number | null) {
 
 export default function TendersPage() {
   const router = useRouter()
-  const { tenders, loading, create } = useTenders()
+  const { tenders, loading, refreshing, create, markStatus } = useTenders()
   const { show, ToastComponent } = useToast()
   const [showModal, setShowModal] = useState(false)
   const [filter, setFilter] = useState('actifs')
@@ -42,6 +52,13 @@ export default function TendersPage() {
       show('AO cree')
       router.push(`/tenders/${(res.data as any).id}`)
     } else show(`Erreur : ${res.error}`)
+  }
+
+  const handleStatusChange = async (e: React.MouseEvent | React.ChangeEvent, tenderId: string, status: TenderStatus) => {
+    e.stopPropagation()
+    const res = await markStatus(tenderId, status)
+    if (res.success) show('Statut mis à jour')
+    else show(`Erreur : ${res.error}`)
   }
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><Spinner size={28} /></div>
@@ -78,7 +95,10 @@ export default function TendersPage() {
             }}>{f.label}</button>
           ))}
         </div>
-        <Button variant="primary" onClick={() => setShowModal(true)}>+ Nouvel AO</Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {refreshing && <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>↻ sync</span>}
+          <Button variant="primary" onClick={() => setShowModal(true)}>+ Nouvel AO</Button>
+        </div>
       </div>
 
       <Card hover={false} style={{ padding: 0, overflow: 'hidden' }}>
@@ -114,7 +134,21 @@ export default function TendersPage() {
                   <td style={{ padding: '12px 14px' }}>
                     <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: priorite.color, fontWeight: 600 }}>{priorite.label}</span>
                   </td>
-                  <td style={{ padding: '12px 14px' }}><TenderStatusBadge status={t.status} pulse={t.status === 'urgence'} /></td>
+                  <td style={{ padding: '12px 14px' }} onClick={e => e.stopPropagation()}>
+                    <select
+                      value={t.status}
+                      onChange={e => handleStatusChange(e, t.tender_id, e.target.value as TenderStatus)}
+                      style={{
+                        fontSize: 11, fontFamily: 'DM Sans, system-ui', fontWeight: 500,
+                        background: 'var(--bg-card)', border: '1px solid var(--border)',
+                        borderRadius: 6, padding: '5px 8px', color: 'var(--text-primary)', cursor: 'pointer',
+                      }}
+                    >
+                      {STATUS_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </td>
                   <td style={{ padding: '12px 14px' }}><Badge>{t.nb_suppliers}</Badge></td>
                   <td style={{ padding: '12px 14px' }}><Badge color={respPct === 100 ? 'green' : respPct >= 50 ? 'amber' : t.nb_suppliers > 0 ? 'red' : 'gray'}>{t.nb_responses}/{t.nb_suppliers}</Badge></td>
                   <td style={{ padding: '12px 14px' }}><Badge color={t.nb_quotes > 0 ? 'green' : 'gray'} glow={t.nb_quotes > 0}>{t.nb_quotes}</Badge></td>
