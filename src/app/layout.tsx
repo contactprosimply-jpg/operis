@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import Sidebar from '@/components/Sidebar'
+import AppShell from '@/components/AppShell'
 
 export const metadata: Metadata = {
   title: 'Operis — Gestion AO BTP',
@@ -17,14 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="theme-color" content="#0f1117" />
       </head>
       <body style={{ fontFamily: "'DM Sans', system-ui, sans-serif", overflow: 'hidden' }}>
-        <div style={{ display: 'flex', height: '100vh', width: '100vw' }}>
-          <Sidebar />
-          <main style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-primary)', minWidth: 0 }}>
-            <div className="page-content">
-              {children}
-            </div>
-          </main>
-        </div>
+        <AppShell>{children}</AppShell>
         <style>{`
           .page-content { padding: 24px 28px 80px; }
           @media (max-width: 767px) { .page-content { padding: 16px 16px 80px; } }

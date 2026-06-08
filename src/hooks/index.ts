@@ -4,6 +4,7 @@
 // ============================================================
 
 import { useState, useEffect, useCallback } from 'react'
+import { useAuth } from '@/components/AuthProvider'
 import { tendersApi, suppliersApi, mailApi } from '@/lib/api'
 import {
   TenderStats,
@@ -17,19 +18,27 @@ import {
 
 // ── Hook : liste des AO ──────────────────────────────────────
 export function useTenders() {
+  const { ready, accessToken } = useAuth()
   const [tenders, setTenders] = useState<TenderStats[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const fetch = useCallback(async () => {
+    if (!accessToken) return
     setLoading(true)
-    const res = await tendersApi.getAll()
-    if (res.success) setTenders(res.data)
-    else setError(res.error)
-    setLoading(false)
-  }, [])
+    try {
+      const res = await tendersApi.getAll()
+      if (res.success) setTenders(res.data)
+      else setError(res.error ?? null)
+    } finally {
+      setLoading(false)
+    }
+  }, [accessToken])
 
-  useEffect(() => { fetch() }, [fetch])
+  useEffect(() => {
+    if (!ready || !accessToken) return
+    fetch()
+  }, [fetch, ready, accessToken])
 
   const create = async (payload: CreateTenderPayload) => {
     const res = await tendersApi.create(payload)
@@ -54,20 +63,27 @@ export function useTenders() {
 
 // ── Hook : détail d'un AO ─────────────────────────────────────
 export function useTenderDetail(id: string) {
+  const { ready, accessToken } = useAuth()
   const [tender, setTender] = useState<TenderDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const fetch = useCallback(async () => {
-    if (!id) return
+    if (!id || !accessToken) return
     setLoading(true)
-    const res = await tendersApi.getById(id)
-    if (res.success) setTender(res.data)
-    else setError(res.error)
-    setLoading(false)
-  }, [id])
+    try {
+      const res = await tendersApi.getById(id)
+      if (res.success) setTender(res.data)
+      else setError(res.error ?? null)
+    } finally {
+      setLoading(false)
+    }
+  }, [id, accessToken])
 
-  useEffect(() => { fetch() }, [fetch])
+  useEffect(() => {
+    if (!ready || !accessToken) return
+    fetch()
+  }, [fetch, ready, accessToken])
 
   const addSupplier = async (supplierId: string) => {
     const res = await tendersApi.addSupplier(id, supplierId)
@@ -107,17 +123,25 @@ export function useTenderDetail(id: string) {
 
 // ── Hook : fournisseurs ───────────────────────────────────────
 export function useSuppliers() {
+  const { ready, accessToken } = useAuth()
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetch = useCallback(async () => {
+    if (!accessToken) return
     setLoading(true)
-    const res = await suppliersApi.getAll()
-    if (res.success) setSuppliers(res.data)
-    setLoading(false)
-  }, [])
+    try {
+      const res = await suppliersApi.getAll()
+      if (res.success) setSuppliers(res.data)
+    } finally {
+      setLoading(false)
+    }
+  }, [accessToken])
 
-  useEffect(() => { fetch() }, [fetch])
+  useEffect(() => {
+    if (!ready || !accessToken) return
+    fetch()
+  }, [fetch, ready, accessToken])
 
   const create = async (payload: CreateSupplierPayload) => {
     const res = await suppliersApi.create(payload)
@@ -136,18 +160,26 @@ export function useSuppliers() {
 
 // ── Hook : boîte mail ─────────────────────────────────────────
 export function useMail(filters?: { ao?: boolean; unread?: boolean }) {
+  const { ready, accessToken } = useAuth()
   const [emails, setEmails] = useState<Email[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
 
   const fetch = useCallback(async () => {
+    if (!accessToken) return
     setLoading(true)
-    const res = await mailApi.getEmails(filters)
-    if (res.success) setEmails(res.data)
-    setLoading(false)
-  }, [])
+    try {
+      const res = await mailApi.getEmails(filters)
+      if (res.success) setEmails(res.data)
+    } finally {
+      setLoading(false)
+    }
+  }, [accessToken, filters?.ao, filters?.unread])
 
-  useEffect(() => { fetch() }, [fetch])
+  useEffect(() => {
+    if (!ready || !accessToken) return
+    fetch()
+  }, [fetch, ready, accessToken])
 
   const sync = async () => {
     setSyncing(true)

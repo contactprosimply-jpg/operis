@@ -3,12 +3,7 @@
 import { useState } from 'react'
 import { useSuppliers } from '@/hooks'
 import { Button, Modal, Field, Spinner, useToast } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
-
-const getToken = async () => {
-  const { data: { session } } = await supabase.auth.getSession()
-  return session?.access_token ?? ''
-}
+import { authFetch } from '@/lib/auth-client'
 
 export default function SuppliersPage() {
   const { suppliers, loading, create, remove, refetch } = useSuppliers()
@@ -47,10 +42,8 @@ export default function SuppliersPage() {
   const saveEdit = async (id: string) => {
     setSaving(true)
     try {
-      const token = await getToken()
-      const res = await fetch(`/api/suppliers/${id}`, {
+      const res = await authFetch(`/api/suppliers/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(editForm),
       })
       const data = await res.json()

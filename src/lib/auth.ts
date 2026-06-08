@@ -1,16 +1,15 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
+import { createAdminClient } from '@/lib/supabase'
 
 export async function getUserFromRequest(req: NextRequest): Promise<string | null> {
   try {
     const authHeader = req.headers.get('authorization')
     if (!authHeader?.startsWith('Bearer ')) return null
-    const token = authHeader.replace('Bearer ', '')
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-    const { data: { user }, error } = await supabase.auth.getUser(token)
+    const token = authHeader.slice(7).trim()
+    if (!token) return null
+
+    const admin = createAdminClient()
+    const { data: { user }, error } = await admin.auth.getUser(token)
     if (error || !user) return null
     return user.id
   } catch {

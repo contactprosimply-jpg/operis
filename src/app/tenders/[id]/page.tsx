@@ -4,18 +4,8 @@ export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-client'
 import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast } from '@/components/ui'
-
-const getToken = async () => {
-  const { data: { session } } = await supabase.auth.getSession()
-  return session?.access_token ?? ''
-}
-
-const authFetch = async (url: string, options: RequestInit = {}) => {
-  const token = await getToken()
-  return fetch(url, { ...options, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(options.headers ?? {}) } })
-}
 
 const STATUS_OPTIONS = [
   { value: 'nouveau', label: 'Nouveau', color: '#60a5fa' },

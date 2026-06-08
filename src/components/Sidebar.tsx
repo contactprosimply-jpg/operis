@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/components/AuthProvider'
 import { useState, useEffect, useRef } from 'react'
 
 const nav = [
@@ -63,6 +64,7 @@ function timeAgo(dateStr: string): string {
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
+  const { session, accessToken } = useAuth()
   const [unreadCount, setUnreadCount] = useState(0)
   const [showAccountPanel, setShowAccountPanel] = useState(false)
   const [currentUser, setCurrentUser] = useState<{ email: string; name: string } | null>(null)
@@ -76,10 +78,8 @@ export default function Sidebar() {
 
   // Charger l'utilisateur courant et les comptes sauvegardés
   useEffect(() => {
+    if (!session) return
     const load = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
-
       const email = session.user.email ?? ''
       const name = session.user.user_metadata?.full_name ?? ''
       setCurrentUser({ email, name })
@@ -102,16 +102,15 @@ export default function Sidebar() {
       }
     }
     load()
-  }, [])
+  }, [session])
 
   // Compter les emails non lus toutes les 60 secondes
   useEffect(() => {
+    if (!accessToken) return
     const fetchUnread = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) return
         const res = await fetch('/api/mail/emails?unread=true', {
-          headers: { Authorization: `Bearer ${session.access_token}` },
+          headers: { Authorization: `Bearer ${accessToken}` },
         })
         const data = await res.json()
         if (data.success) setUnreadCount(data.data.length)
@@ -120,16 +119,15 @@ export default function Sidebar() {
     fetchUnread()
     const interval = setInterval(fetchUnread, 60000)
     return () => clearInterval(interval)
-  }, [])
+  }, [accessToken])
 
   // Notifications
   useEffect(() => {
+    if (!accessToken) return
     const fetchNotifs = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) return
         const res = await fetch('/api/notifications?unread=true', {
-          headers: { Authorization: `Bearer ${session.access_token}` },
+          headers: { Authorization: `Bearer ${accessToken}` },
         })
         const data = await res.json()
         if (data.success) { setNotifList(data.data); setNotifCount(data.data.length) }
@@ -138,7 +136,7 @@ export default function Sidebar() {
     fetchNotifs()
     const iv = setInterval(fetchNotifs, 30000)
     return () => clearInterval(iv)
-  }, [])
+  }, [accessToken])
 
   // Fermer panel notifications si clic extérieur
   useEffect(() => {

@@ -1,17 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-client'
 import { Button, Field, useToast, Spinner } from '@/components/ui'
-
-const getToken = async () => {
-  const { data: { session } } = await supabase.auth.getSession()
-  return session?.access_token ?? ''
-}
-const authFetch = async (url: string, options: RequestInit = {}) => {
-  const token = await getToken()
-  return fetch(url, { ...options, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(options.headers ?? {}) } })
-}
 
 const THEMES = [
   { id: 'dark',    label: 'Sombre',    vars: { '--bg-primary': '#0f1117', '--bg-secondary': '#1a1d27', '--bg-card': '#1e2130', '--bg-hover': '#252839', '--text-primary': '#f1f3f9', '--text-secondary': '#8b92a5', '--text-muted': '#4a5168' } },

@@ -3,18 +3,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { authFetch, getAccessToken } from '@/lib/auth-client'
+import { useAuth } from '@/components/AuthProvider'
 import { Email } from '@/types/database'
 import { Spinner } from '@/components/ui'
-
-const getToken = async () => {
-  const { data: { session } } = await supabase.auth.getSession()
-  return session?.access_token ?? ''
-}
-
-const authFetch = async (url: string, options: RequestInit = {}) => {
-  const token = await getToken()
-  return fetch(url, { ...options, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(options.headers ?? {}) } })
-}
 
 // ── Récupérer la signature depuis localStorage ─────────────────
 const getSignatureData = (): { text: string; html: string } => {
@@ -53,6 +45,7 @@ const inputStyle: React.CSSProperties = {
 
 export default function MailPage() {
   const router = useRouter()
+  const { session } = useAuth()
   const [emails, setEmails] = useState<Email[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -118,7 +111,6 @@ export default function MailPage() {
   // Realtime Supabase
   useEffect(() => {
     const setupRealtime = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
       const channel = supabase.channel('emails-realtime')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'emails', filter: `user_id=eq.${session.user.id}` }, (payload) => {
@@ -133,7 +125,7 @@ export default function MailPage() {
     }
     const cleanup = setupRealtime()
     return () => { cleanup.then(fn => fn?.()) }
-  }, [])
+  }, [session])
 
   const handleSync = async () => {
     setSyncing(true)
@@ -203,7 +195,8 @@ export default function MailPage() {
       formData.append('signature', signatureHtml)
       attachments.forEach(f => formData.append('attachments', f))
 
-      const token = await getToken()
+      const token = await getAccessToken()
+      if (!token) return
       const res = await fetch('/api/mail/send', {
         method: 'POST',
         headers: {

@@ -4,7 +4,8 @@ export const dynamic = 'force-dynamic'
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { getAccessToken } from '@/lib/auth-client'
+import { useAuth } from '@/components/AuthProvider'
 import { Spinner } from '@/components/ui'
 
 const ADMIN_EMAIL = 'contact@nikodex.fr'
@@ -23,6 +24,7 @@ function timeSince(dateStr: string | null) {
 
 export default function AdminPage() {
   const router = useRouter()
+  const { session, ready } = useAuth()
   const [authorized, setAuthorized] = useState<boolean | null>(null)
   const [stats, setStats] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -31,8 +33,8 @@ export default function AdminPage() {
   const [alertsMsg, setAlertsMsg] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!ready) return
     const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
       if (session.user.email !== ADMIN_EMAIL) {
         setAuthorized(false)
@@ -41,7 +43,8 @@ export default function AdminPage() {
       }
       setAuthorized(true)
 
-      const token = session.access_token
+      const token = await getAccessToken()
+      if (!token) return
       const res = await fetch('/api/admin/stats', { headers: { Authorization: `Bearer ${token}` } })
       const data = await res.json()
       if (data.success) {
@@ -52,17 +55,17 @@ export default function AdminPage() {
       setLoading(false)
     }
     init()
-  }, [router])
+  }, [router, ready, session])
 
   const handleCheckAlerts = async () => {
     setCheckingAlerts(true)
     setAlertsMsg(null)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
+      const token = await getAccessToken()
+      if (!token) return
       const res = await fetch('/api/alerts/check', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers: { Authorization: `Bearer ${token}` },
       })
       const data = await res.json()
       if (data.success) {

@@ -6,38 +6,33 @@ import { useRouter } from 'next/navigation'
 import { useTenders } from '@/hooks'
 import { KpiCard, TenderStatusBadge, Badge, Spinner, useToast } from '@/components/ui'
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-client'
+import { useAuth } from '@/components/AuthProvider'
 import { Email } from '@/types/database'
-
-const getToken = async () => {
-  const { data: { session } } = await supabase.auth.getSession()
-  return session?.access_token ?? ''
-}
 
 export default function DashboardPage() {
   const router = useRouter()
+  const { ready, accessToken } = useAuth()
   const { tenders, loading } = useTenders()
   const { show, ToastComponent } = useToast()
   const [emails, setEmails] = useState<Email[]>([])
   const [creatingAo, setCreatingAo] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!ready || !accessToken) return
     const load = async () => {
-      const token = await getToken()
-      const res = await fetch('/api/mail/emails?ao=true', { headers: { 'Authorization': `Bearer ${token}` } })
+      const res = await authFetch('/api/mail/emails?ao=true')
       const data = await res.json()
       if (data.success) setEmails(data.data.filter((e: Email) => !e.tender_id))
     }
     load()
-  }, [])
+  }, [ready, accessToken])
 
   const handleCreateAo = async (email: Email) => {
     setCreatingAo(email.id)
     try {
-      const token = await getToken()
-      const res = await fetch(`/api/mail/emails/${email.id}/ao`, {
+      const res = await authFetch(`/api/mail/emails/${email.id}/ao`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({}),
       })
       const data = await res.json()
