@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { authFetch } from '@/lib/auth-client'
 import { useRefreshOnFocus } from '@/hooks'
@@ -41,6 +41,10 @@ export default function TenderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const { show, ToastComponent } = useToast()
+  const showRef = useRef(show)
+  const routerRef = useRef(router)
+  showRef.current = show
+  routerRef.current = router
   const [tender, setTender] = useState<any>(null)
   const [suppliers, setSuppliers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -85,11 +89,14 @@ export default function TenderDetailPage() {
           priorite: data.data.priorite ?? 'normale',
           status: data.data.status ?? 'nouveau',
         })
-      } else if (!silent) { show(`Erreur : ${data.error}`); router.push('/tenders') }
+      } else if (!silent) {
+        showRef.current(`Erreur : ${data.error}`)
+        routerRef.current.push('/tenders')
+      }
     } catch {}
     if (silent) setRefreshing(false)
     else setLoading(false)
-  }, [id, router, show])
+  }, [id])
 
   const refreshTender = useCallback(() => loadTender(true), [loadTender])
 
@@ -99,8 +106,13 @@ export default function TenderDetailPage() {
     if (data.success) setSuppliers(data.data)
   }, [])
 
-  useEffect(() => { loadTender(false); loadAllSuppliers() }, [loadTender, loadAllSuppliers])
-  useRefreshOnFocus(refreshTender)
+  useEffect(() => {
+    setTender(null)
+    setLoading(true)
+    loadTender(false)
+    loadAllSuppliers()
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useRefreshOnFocus(refreshTender, !!tender)
 
   const handleQuickStatus = async (status: string) => {
     if (!tender || tender.status === status) return
@@ -204,7 +216,7 @@ export default function TenderDetailPage() {
     else show(`Erreur : ${data.error}`)
   }
 
-  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><Spinner size={28} /></div>
+  if (loading && !tender) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><Spinner size={28} /></div>
   if (!tender) return null
 
   const card: React.CSSProperties = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '20px 22px', marginBottom: 16 }

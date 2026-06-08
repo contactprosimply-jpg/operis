@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, ReactNode } from 'react'
+import { useState, useEffect, useCallback, ReactNode } from 'react'
 import { TenderStatus, ConsultationStatus } from '@/types/database'
 
 // ── BADGE ────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ export function Toast({ message, onDone }: { message: string; onDone: () => void
 
 export function useToast() {
   const [message, setMessage] = useState<string | null>(null)
-  const show = (msg: string) => setMessage(msg)
+  const show = useCallback((msg: string) => setMessage(msg), [])
   const ToastComponent = message ? <Toast message={message} onDone={() => setMessage(null)} /> : null
   return { show, ToastComponent }
 }

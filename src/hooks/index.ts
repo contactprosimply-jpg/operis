@@ -3,7 +3,7 @@
 // Hooks React pour fetcher les données depuis l'API
 // ============================================================
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { tendersApi, suppliersApi, mailApi } from '@/lib/api'
 import {
@@ -18,14 +18,16 @@ import {
 
 // ── Rafraîchir quand l'onglet redevient visible ───────────────
 export function useRefreshOnFocus(refetch: (silent?: boolean) => void, enabled = true) {
+  const refetchRef = useRef(refetch)
+  refetchRef.current = refetch
   useEffect(() => {
     if (!enabled) return
     const onVisible = () => {
-      if (document.visibilityState === 'visible') refetch(true)
+      if (document.visibilityState === 'visible') refetchRef.current(true)
     }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [refetch, enabled])
+  }, [enabled])
 }
 
 // ── Hook : liste des AO ──────────────────────────────────────
