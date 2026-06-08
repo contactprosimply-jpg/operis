@@ -3,27 +3,27 @@
 @tailwind utilities;
 
 :root {
-  --bg-primary: #0a0f1e;
-  --bg-secondary: #111827;
-  --bg-card: #1a2236;
-  --bg-hover: #1e2a40;
+  --bg-primary: #0c0e14;
+  --bg-secondary: #13161f;
+  --bg-card: #1a1e28;
+  --bg-hover: #222733;
   --accent: #3b7ef6;
-  --accent-soft: rgba(59,126,246,0.12);
+  --accent-soft: rgba(59,126,246,0.1);
   --accent-2: #6366f1;
   --success: #10b981;
   --success-soft: rgba(16,185,129,0.12);
   --warn: #f59e0b;
   --danger: #ef4444;
   --danger-soft: rgba(239,68,68,0.12);
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #475569;
-  --border: rgba(148,163,184,0.08);
-  --border-hi: rgba(148,163,184,0.15);
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --border: rgba(255,255,255,0.06);
+  --border-hi: rgba(255,255,255,0.11);
   --gradient-1: linear-gradient(135deg, #3b7ef6 0%, #6366f1 100%);
   --gradient-2: linear-gradient(135deg, #10b981 0%, #3b7ef6 100%);
-  --shadow-card: 0 4px 24px rgba(0,0,0,0.3);
-  --shadow-hover: 0 8px 32px rgba(59,126,246,0.15);
+  --shadow-card: 0 2px 12px rgba(0,0,0,0.35);
+  --shadow-hover: 0 4px 20px rgba(0,0,0,0.45);
 }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }

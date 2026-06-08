@@ -79,8 +79,8 @@ ${signature}`
       html: finalHtml,
     })
 
-    // Logger l'envoi
-    await db.from('email_logs').insert({
+    // Logger l'envoi (ne pas bloquer si le log echoue)
+    const { error: logError } = await db.from('email_logs').insert({
       type: 'consultation',
       to_address: to,
       subject,
@@ -88,7 +88,8 @@ ${signature}`
       sent_at: new Date().toISOString(),
       success: true,
       error_message: null,
-    }).catch(() => {}) // Ne pas bloquer si le log Ã©choue
+    })
+    if (logError) console.error('[Mail] Log envoi:', logError.message)
 
     return Response.json({ success: true, data: { sent: true } })
   } catch (e: any) {

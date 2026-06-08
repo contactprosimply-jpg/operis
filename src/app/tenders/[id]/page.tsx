@@ -179,11 +179,8 @@ export default function TenderDetailPage() {
   const availableSuppliers = suppliers.filter(s => !alreadyAdded.has(s.id))
 
   const prioriteOpt = PRIORITE_OPTIONS.find(p => p.value === tender.priorite)
-  const headerGradient = tender.priorite === 'urgente'
-    ? 'linear-gradient(135deg, rgba(239,68,68,0.2) 0%, rgba(245,158,11,0.08) 100%)'
-    : tender.priorite === 'haute'
-    ? 'linear-gradient(135deg, rgba(245,158,11,0.18) 0%, rgba(59,126,246,0.08) 100%)'
-    : 'var(--gradient-1)'
+  const headerBorder = tender.priorite === 'urgente' ? '#ef4444'
+    : tender.priorite === 'haute' ? '#f59e0b' : 'var(--border-hi)'
 
   const sortedQuotes = [...quotes].sort((a: any, b: any) => (parseFloat(a.price_ht) || 0) - (parseFloat(b.price_ht) || 0))
   const bestQuoteId = sortedQuotes[0]?.id
@@ -195,8 +192,9 @@ export default function TenderDetailPage() {
       {/* Header */}
       <Card hover={false} style={{
         padding: '22px 26px', marginBottom: 24,
-        background: `linear-gradient(135deg, rgba(26,34,54,0.95) 0%, rgba(10,15,30,0.9) 100%), ${headerGradient}`,
-        border: '1px solid var(--border-hi)',
+        background: 'var(--bg-card)',
+        border: `1px solid ${headerBorder}`,
+        borderLeft: `4px solid ${headerBorder}`,
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
           <div style={{ flex: 1 }}>

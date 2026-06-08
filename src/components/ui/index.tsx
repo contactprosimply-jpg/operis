@@ -80,7 +80,7 @@ export function Card({ children, style = {}, hover = true }: { children: ReactNo
       onMouseLeave={() => hover && setHov(false)}
       style={{
         background: 'var(--bg-card)',
-        border: `1px solid ${hov ? 'rgba(59,126,246,0.25)' : 'var(--border)'}`,
+        border: `1px solid ${hov ? 'var(--border-hi)' : 'var(--border)'}`,
         borderRadius: 12,
         boxShadow: hov ? 'var(--shadow-hover)' : 'var(--shadow-card)',
         transition: 'all 0.2s ease',
@@ -90,8 +90,8 @@ export function Card({ children, style = {}, hover = true }: { children: ReactNo
       }}
     >
       <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, height: 2,
-        background: 'var(--gradient-1)', opacity: hov ? 1 : 0.4,
+        position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+        background: 'var(--border-hi)', opacity: hov ? 1 : 0.5,
         transition: 'opacity 0.2s',
       }} />
       {children}
@@ -209,34 +209,29 @@ export function Field({ label, value, onChange, placeholder, type = 'text' }: {
       <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>
         {label}
       </div>
-      <div style={{
-        borderRadius: 8, padding: focused ? 1 : 0,
-        background: focused ? 'var(--gradient-1)' : 'transparent',
-        transition: 'padding 0.15s',
-      }}>
-        <input
-          type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-          style={{
-            width: '100%', background: 'var(--bg-secondary)',
-            border: focused ? 'none' : '1px solid var(--border-hi)',
-            borderRadius: focused ? 7 : 8,
-            padding: '9px 13px', fontSize: 13, color: 'var(--text-primary)',
-            fontFamily: 'DM Sans, system-ui, sans-serif', outline: 'none',
-            display: 'block',
-          }}
-        />
-      </div>
+      <input
+        type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+        style={{
+          width: '100%', background: 'var(--bg-secondary)',
+          border: `1px solid ${focused ? 'var(--accent)' : 'var(--border-hi)'}`,
+          borderRadius: 8,
+          padding: '9px 13px', fontSize: 13, color: 'var(--text-primary)',
+          fontFamily: 'DM Sans, system-ui, sans-serif', outline: 'none',
+          display: 'block', transition: 'border-color 0.15s',
+          boxShadow: focused ? '0 0 0 3px var(--accent-soft)' : 'none',
+        }}
+      />
     </div>
   )
 }
 
 // ── KPI CARD ─────────────────────────────────────────────────
-const kpiGradients: Record<string, string> = {
-  blue: 'linear-gradient(135deg, rgba(59,126,246,0.18) 0%, rgba(99,102,241,0.08) 100%)',
-  green: 'linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(59,126,246,0.06) 100%)',
-  amber: 'linear-gradient(135deg, rgba(245,158,11,0.18) 0%, rgba(239,68,68,0.06) 100%)',
-  purple: 'linear-gradient(135deg, rgba(99,102,241,0.18) 0%, rgba(59,126,246,0.08) 100%)',
+const kpiAccent: Record<string, string> = {
+  blue: '#3b7ef6',
+  green: '#10b981',
+  amber: '#f59e0b',
+  purple: '#8b5cf6',
 }
 
 export function KpiCard({ label, value, delta, deltaVariant = 'success', icon, color = 'blue', delay = 0 }: {
@@ -247,8 +242,9 @@ export function KpiCard({ label, value, delta, deltaVariant = 'success', icon, c
   const deltaColor = { success: '#34d399', warn: '#fbbf24', danger: '#f87171' }
   return (
     <div className="animate-fade" style={{
-      background: kpiGradients[color] ?? kpiGradients.blue,
+      background: 'var(--bg-card)',
       border: '1px solid var(--border)',
+      borderLeft: `3px solid ${kpiAccent[color] ?? kpiAccent.blue}`,
       borderRadius: 12, padding: '18px 20px',
       boxShadow: 'var(--shadow-card)',
       animationDelay: `${delay}ms`,
@@ -256,13 +252,13 @@ export function KpiCard({ label, value, delta, deltaVariant = 'success', icon, c
       position: 'relative', overflow: 'hidden',
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>{label}</div>
+        <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', fontWeight: 500 }}>{label}</div>
         {icon && (
           <div style={{
             width: 36, height: 36, borderRadius: 10,
-            background: 'rgba(255,255,255,0.06)',
+            background: 'var(--bg-hover)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--accent)',
+            color: kpiAccent[color] ?? kpiAccent.blue,
           }}>{icon}</div>
         )}
       </div>

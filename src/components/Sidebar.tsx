@@ -278,16 +278,15 @@ export default function Sidebar() {
 
       {/* DESKTOP */}
       <nav className="desktop-sidebar" style={{
-        width: 60, background: 'linear-gradient(180deg, #111827 0%, #0a0f1e 100%)',
+        width: 60, background: 'var(--bg-secondary)',
         borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column',
         alignItems: 'center', padding: '16px 0', flexShrink: 0, gap: 4, position: 'relative',
       }}>
         <div style={{
-          width: 38, height: 38, background: 'var(--gradient-1)', borderRadius: 11,
+          width: 38, height: 38, background: 'var(--accent)', borderRadius: 11,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 12, fontWeight: 700, color: 'white', fontFamily: 'DM Mono, monospace',
           marginBottom: 16, flexShrink: 0,
-          boxShadow: '0 4px 16px rgba(59,126,246,0.4)',
         }}>OP</div>
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, width: '100%', alignItems: 'center' }}>
@@ -299,12 +298,12 @@ export default function Sidebar() {
                 <Link href={item.href} style={{
                   width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   borderRadius: 11, textDecoration: 'none',
-                  color: active ? '#fff' : 'var(--text-muted)',
-                  background: active ? 'var(--gradient-1)' : 'transparent',
-                  boxShadow: active ? '0 4px 14px rgba(59,126,246,0.35)' : 'none',
+                  color: active ? 'var(--accent)' : 'var(--text-muted)',
+                  background: active ? 'var(--accent-soft)' : 'transparent',
+                  border: active ? '1px solid rgba(59,126,246,0.2)' : '1px solid transparent',
                   transition: 'all 0.15s ease', position: 'relative',
                 }}
-                  onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(148,163,184,0.08)' }}
+                  onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
                   onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
                   {item.icon(active)}
                   {isMail && unreadCount > 0 && (
