@@ -1,119 +1,123 @@
-import { createAdminClient } from '@/lib/supabase'
+// ============================================================
+// OPERIS — lib/alerts.ts
+// Vérification des alertes et création des notifications
+// ============================================================
 
-export type NotifType =
-  | 'deadline_urgent'
-  | 'deadline_warning'
-  | 'missing_quote'
-  | 'no_response'
+import { createAdminClient } from '@/lib/supabase'
+import { sendHtmlEmail } from '@/lib/mailer'
+
+const ADMIN_EMAIL = 'contact@nikodex.fr'
 
 export async function checkAlertsForUser(userId: string): Promise<number> {
   const db = createAdminClient()
   let created = 0
 
-  // Fetch existing recent notifications in one query to avoid duplicates
-  const cutoff20h = new Date(Date.now() - 20 * 3600 * 1000).toISOString()
-  const { data: recentNotifs } = await db
-    .from('notifications')
-    .select('type, tender_id')
-    .eq('user_id', userId)
-    .gte('created_at', cutoff20h)
+  try {
+    // Récupérer les AO actifs de l'utilisateur
+    const { data: tenders } = await db
+      .from('tenders')
+      .select('*, consultation_suppliers(id, status, supplier_id)')
+      .eq('user_id', userId)
+      .in('status', ['nouveau', 'en_cours', 'urgence'])
 
-  const notified = new Set<string>(
-    (recentNotifs ?? []).map((n: any) => `${n.type}:${n.tender_id}`)
-  )
+    if (!tenders?.length) return 0
 
-  const notify = async (
-    type: NotifType,
-    title: string,
-    message: string,
-    tenderId: string
-  ) => {
-    if (notified.has(`${type}:${tenderId}`)) return
-    const { error } = await db.from('notifications').insert({
-      user_id: userId,
-      type,
-      title,
-      message,
-      tender_id: tenderId,
-      is_read: false,
-    })
-    if (!error) {
-      notified.add(`${type}:${tenderId}`)
-      created++
-    }
-  }
+    const now = new Date()
 
-  // ── 1. Active tenders ───────────────────────────────────────
-  const { data: tenders } = await db
-    .from('tenders')
-    .select('id, title, client, deadline, status, created_at')
-    .eq('user_id', userId)
-    .in('status', ['nouveau', 'en_cours', 'urgence'])
+    for (const tender of tenders) {
+      // 1. Alerte deadline dans 7 jours
+      if (tender.deadline) {
+        const deadline = new Date(tender.deadline)
+        const daysLeft = Math.ceil((deadline.getTime() - now.getTime()) / 86400000)
 
-  if (!tenders?.length) return 0
+        if (daysLeft <= 7 && daysLeft >= 0) {
+          // Vérifier si la notif existe déjà aujourd'hui
+          const today = now.toISOString().split('T')[0]
+          const { data: existing } = await db
+            .from('notifications')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('tender_id', tender.id)
+            .eq('type', daysLeft <= 2 ? 'deadline_urgent' : 'deadline_warning')
+            .gte('created_at', `${today}T00:00:00`)
+            .single()
 
-  const now = Date.now()
-  const tenderIds: string[] = tenders.map((t: any) => t.id)
+          if (!existing) {
+            const isUrgent = daysLeft <= 2
+            await db.from('notifications').insert({
+              user_id: userId,
+              type: isUrgent ? 'deadline_urgent' : 'deadline_warning',
+              title: isUrgent
+                ? `⚡ URGENT — Deadline dans ${daysLeft}j`
+                : `⚠️ Deadline dans ${daysLeft} jours`,
+              message: `AO "${tender.title}" — échéance le ${new Date(tender.deadline).toLocaleDateString('fr-FR')}`,
+              tender_id: tender.id,
+              is_read: false,
+            })
+            created++
 
-  for (const t of tenders as any[]) {
-    // Deadline warnings
-    if (t.deadline) {
-      const days = Math.ceil((new Date(t.deadline).getTime() - now) / 86400000)
-      if (days >= 0 && days <= 2) {
-        await notify(
-          'deadline_urgent',
-          `⚡ Deadline dans ${days}j — ${t.title}`,
-          `L'AO "${t.title}" (${t.client}) expire dans ${days} jour(s). Action requise.`,
-          t.id
-        )
-      } else if (days > 2 && days <= 7) {
-        await notify(
-          'deadline_warning',
-          `⏰ Deadline dans ${days}j — ${t.title}`,
-          `L'AO "${t.title}" (${t.client}) expire dans ${days} jours.`,
-          t.id
-        )
+            // Envoyer email si urgent
+            if (isUrgent) {
+              try {
+                const { data: { user } } = await db.auth.admin.getUserById(userId)
+                if (user?.email) {
+                  await sendHtmlEmail({
+                    to: user.email,
+                    subject: `[URGENT] Operis — AO "${tender.title}" deadline dans ${daysLeft}j`,
+                    html: `
+                      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <div style="background: #ef4444; color: white; padding: 16px 24px; border-radius: 8px 8px 0 0;">
+                          <h2 style="margin: 0; font-size: 18px;">⚡ DEADLINE URGENTE</h2>
+                        </div>
+                        <div style="background: #1e2130; color: #f1f3f9; padding: 24px; border-radius: 0 0 8px 8px;">
+                          <p style="margin: 0 0 16px; font-size: 16px; font-weight: 600;">${tender.title}</p>
+                          <p style="margin: 0 0 8px; color: #8b92a5;">Client : ${tender.client}</p>
+                          <p style="margin: 0 0 16px; color: #f87171; font-weight: 600;">Deadline : ${new Date(tender.deadline).toLocaleDateString('fr-FR')} (dans ${daysLeft} jour${daysLeft > 1 ? 's' : ''})</p>
+                          <a href="https://operis-f26g78.vercel.app/tenders/${tender.id}" style="display: inline-block; background: #3b7ef6; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600;">Voir l'AO →</a>
+                        </div>
+                      </div>
+                    `,
+                  })
+                }
+              } catch (e) {
+                console.error('[Alerts] Erreur envoi email urgent:', e)
+              }
+            }
+          }
+        }
       }
-    }
 
-    // AO actif > 30 jours sans devis reçu
-    const ageDays = Math.floor((now - new Date(t.created_at).getTime()) / 86400000)
-    if (ageDays > 30) {
-      const { count } = await db
-        .from('quotes')
-        .select('*', { count: 'exact', head: true })
-        .eq('tender_id', t.id)
-      if ((count ?? 0) === 0) {
-        await notify(
-          'missing_quote',
-          `📋 Aucun devis — ${t.title}`,
-          `L'AO "${t.title}" est actif depuis ${ageDays} jours sans aucun devis reçu.`,
-          t.id
-        )
-      }
-    }
-  }
-
-  // ── 2. Fournisseurs sans réponse > 7 jours ──────────────────
-  if (tenderIds.length > 0) {
-    const cutoff7d = new Date(Date.now() - 7 * 86400000).toISOString()
-    const { data: stale } = await db
-      .from('consultation_suppliers')
-      .select('tender_id, last_sent_at, supplier:suppliers(name)')
-      .in('tender_id', tenderIds)
-      .in('status', ['envoye', 'relance'])
-      .lt('last_sent_at', cutoff7d)
-
-    for (const cs of (stale ?? []) as any[]) {
-      const name = cs.supplier?.name ?? 'Fournisseur'
-      const tender = (tenders as any[]).find(t => t.id === cs.tender_id)
-      await notify(
-        'no_response',
-        `🔔 Sans réponse — ${name}`,
-        `${name} n'a pas répondu à "${tender?.title ?? 'AO'}" depuis plus de 7 jours.`,
-        cs.tender_id
+      // 2. Alerte fournisseurs sans réponse depuis 7 jours
+      const consultations = tender.consultation_suppliers ?? []
+      const nonResponders = consultations.filter((c: any) =>
+        ['envoye', 'relance'].includes(c.status)
       )
+
+      if (nonResponders.length > 0) {
+        const { data: existing } = await db
+          .from('notifications')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('tender_id', tender.id)
+          .eq('type', 'missing_quote')
+          .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
+          .single()
+
+        if (!existing) {
+          await db.from('notifications').insert({
+            user_id: userId,
+            type: 'missing_quote',
+            title: `📭 ${nonResponders.length} devis en attente`,
+            message: `AO "${tender.title}" — ${nonResponders.length} fournisseur(s) n'ont pas encore répondu`,
+            tender_id: tender.id,
+            is_read: false,
+          })
+          created++
+        }
+      }
     }
+  } catch (e: any) {
+    console.error('[checkAlertsForUser]', e?.message)
   }
 
   return created
