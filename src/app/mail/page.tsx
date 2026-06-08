@@ -14,6 +14,51 @@ const inputStyle: React.CSSProperties = {
   fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
 }
 
+function SignaturePreview({ html }: { html: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  useEffect(() => {
+    const iframe = iframeRef.current
+    if (!iframe) return
+    const doc = iframe.contentDocument
+    if (!doc) return
+    doc.open()
+    doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+      body { margin: 0; padding: 16px 20px; background: #fff; }
+      img { max-width: 100%; height: auto; }
+      table { max-width: 100%; }
+    </style></head><body>${html}</body></html>`)
+    doc.close()
+    const resize = () => {
+      const h = doc.documentElement.scrollHeight || doc.body.scrollHeight
+      iframe.style.height = `${Math.max(100, h + 8)}px`
+    }
+    resize()
+    const t = setTimeout(resize, 150)
+    return () => clearTimeout(t)
+  }, [html])
+
+  return (
+    <div style={{ flexShrink: 0 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+        fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase',
+        letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace',
+      }}>
+        <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+        <span>Signature</span>
+        <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+      </div>
+      <div style={{
+        background: '#fff', borderRadius: 10, border: '1px solid var(--border-hi)',
+        overflow: 'hidden', boxShadow: 'var(--shadow-sm)',
+      }}>
+        <iframe ref={iframeRef} title="Aperçu signature" style={{ width: '100%', border: 'none', display: 'block', minHeight: 100 }} />
+      </div>
+    </div>
+  )
+}
+
 export default function MailPage() {
   const router = useRouter()
   const { session } = useAuth()
@@ -113,28 +158,25 @@ export default function MailPage() {
     setSyncing(false)
   }
 
-  const openCompose = (prefill: any = {}) => {
-    const sig = getSignatureData()
-    setCompose({ to: '', cc: '', subject: '', body: sig.text, ...prefill })
+  const openCompose = (prefill: Partial<typeof compose> = {}) => {
+    setCompose({ to: '', cc: '', subject: '', body: '', ...prefill })
     setAttachments([])
     setComposing(true); setSendError(null)
   }
 
   const openReply = (email: Email) => {
-    const sig = getSignatureData()
-    const originalLines = (email.body_text ?? '').split('\n').slice(0, 5).map(l => `> ${l}`).join('\n')
+    const originalLines = (email.body_text ?? '').split('\n').slice(0, 8).map(l => `> ${l}`).join('\n')
     openCompose({
       to: email.from_address ?? '',
       subject: email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`,
-      body: `${sig.text}\n\n--- Message original ---\n${originalLines}`,
+      body: originalLines ? `\n\n--- Message original ---\n${originalLines}` : '',
     })
   }
 
   const openForward = (email: Email) => {
-    const sig = getSignatureData()
     openCompose({
       subject: `Fwd: ${email.subject}`,
-      body: `${sig.text}\n\n--- Message transféré ---\nDe : ${email.from_address}\nObjet : ${email.subject}\n\n${email.body_text ?? ''}`,
+      body: `\n\n--- Message transféré ---\nDe : ${email.from_address}\nObjet : ${email.subject}\n\n${email.body_text ?? ''}`,
     })
   }
 
@@ -284,27 +326,31 @@ export default function MailPage() {
               <span style={{ fontSize: 13, fontWeight: 600 }}>Nouveau message</span>
               <button onClick={() => setComposing(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 20 }}>×</button>
             </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '16px 20px', gap: 8 }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '16px 20px', gap: 8, overflowY: 'auto' }}>
               {[{ label: 'À', key: 'to', type: 'email' }, { label: 'Cc', key: 'cc', type: 'text' }, { label: 'Objet', key: 'subject', type: 'text' }].map(field => (
-                <div key={field.key} style={{ display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+                <div key={field.key} style={{ display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 8, flexShrink: 0 }}>
                   <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', width: 32, textTransform: 'uppercase' }}>{field.label}</span>
                   <input type={field.type} value={(compose as any)[field.key]} onChange={e => setCompose(c => ({ ...c, [field.key]: e.target.value }))} style={inputStyle} />
                 </div>
               ))}
-              <textarea ref={bodyRef} value={compose.body} onChange={e => setCompose(c => ({ ...c, body: e.target.value }))}
-                placeholder="Écris ton message ici..."
-                style={{ flex: 1, minHeight: 120, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui', resize: 'none', paddingTop: 8 }} />
-
-              {signaturePreview.html && (
-                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, flexShrink: 0 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 8 }}>
-                    Signature (ajoutée à l&apos;envoi)
+              <div style={{
+                flex: 1, minHeight: 140, display: 'flex', flexDirection: 'column',
+                background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10,
+                overflow: 'hidden',
+              }}>
+                <textarea ref={bodyRef} value={compose.body} onChange={e => setCompose(c => ({ ...c, body: e.target.value }))}
+                  placeholder="Écris ton message ici..."
+                  style={{
+                    flex: 1, minHeight: 100, background: 'transparent', border: 'none', outline: 'none',
+                    fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
+                    resize: 'none', padding: '14px 16px',
+                  }} />
+                {signaturePreview.html && (
+                  <div style={{ padding: '0 12px 12px', flexShrink: 0 }}>
+                    <SignaturePreview html={signaturePreview.html} />
                   </div>
-                  <div style={{ background: '#fff', borderRadius: 8, padding: 12, maxHeight: 140, overflow: 'auto' }}>
-                    <div dangerouslySetInnerHTML={{ __html: signaturePreview.html }} />
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
 
               {attachments.length > 0 && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
