@@ -127,6 +127,7 @@ export const tenderService = {
       body?: string
       subject?: string
       signature?: string
+      cc?: string
       document_ids?: string[]
       attachment_files?: Array<{ filename: string; contentType?: string; data: string }>
     }
@@ -183,6 +184,7 @@ export const tenderService = {
 
       const subject = options?.subject?.trim() || `Consultation — ${tender.title}`
       const signature = options?.signature?.trim() ?? ''
+      const cc = options?.cc?.trim() || undefined
       let sent = 0
       let errors = 0
 
@@ -200,6 +202,7 @@ export const tenderService = {
             subject,
             body: bodyPlain,
             signature,
+            cc,
             attachments: mailAttachments.length > 0 ? mailAttachments : undefined,
           })
 

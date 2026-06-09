@@ -723,10 +723,20 @@ export default function MailPage() {
                 <button onClick={() => { setComposing(false); if (isMobile) setMobileShowDetail(false) }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 20 }}>×</button>
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: isMobile ? '12px 14px' : '16px 20px', gap: 8, overflowY: 'auto' }}>
-                {[{ label: 'À', key: 'to', type: 'email' }, { label: 'Cc', key: 'cc', type: 'text' }, { label: 'Objet', key: 'subject', type: 'text' }].map(field => (
+                {[
+                  { label: 'À', key: 'to', type: 'email', placeholder: 'email@exemple.com' },
+                  { label: 'Cc', key: 'cc', type: 'text', placeholder: 'copie à (virgules pour plusieurs)' },
+                  { label: 'Objet', key: 'subject', type: 'text', placeholder: '' },
+                ].map(field => (
                   <div key={field.key} style={{ display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 8, flexShrink: 0 }}>
                     <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', width: 32, textTransform: 'uppercase' }}>{field.label}</span>
-                    <input type={field.type} value={(compose as Record<string, string>)[field.key]} onChange={e => setCompose(c => ({ ...c, [field.key]: e.target.value }))} style={inputStyle} />
+                    <input
+                      type={field.type}
+                      value={(compose as Record<string, string>)[field.key]}
+                      onChange={e => setCompose(c => ({ ...c, [field.key]: e.target.value }))}
+                      placeholder={field.placeholder}
+                      style={inputStyle}
+                    />
                   </div>
                 ))}
                 <div style={{

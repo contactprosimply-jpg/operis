@@ -59,6 +59,7 @@ export interface ConsultationComposePayload {
   subject: string
   body: string
   signature: string
+  cc?: string
   files: File[]
 }
 
@@ -82,6 +83,7 @@ export default function ConsultationComposeModal({
   onSend,
 }: Props) {
   const [subject, setSubject] = useState('')
+  const [cc, setCc] = useState('')
   const [body, setBody] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const [files, setFiles] = useState<File[]>([])
@@ -93,6 +95,7 @@ export default function ConsultationComposeModal({
     if (!open) return
     const previewName = recipients[0]?.name
     setSubject(`Consultation — ${tender.title}`)
+    setCc('')
     setBody(buildConsultationDefaultBody(tender, previewName))
     if (preselectIds?.length) {
       setSelected(preselectIds.filter(id => recipients.some(r => r.supplier_id === id)))
@@ -123,6 +126,7 @@ export default function ConsultationComposeModal({
       subject: subject.trim(),
       body: bodyWithoutSig,
       signature: signature.html,
+      cc: cc.trim() || undefined,
       files,
     })
   }
@@ -210,6 +214,16 @@ export default function ConsultationComposeModal({
               <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {toPreview || 'Sélectionnez des fournisseurs'}
               </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', width: 36 }}>Cc</span>
+              <input
+                type="email"
+                value={cc}
+                onChange={e => setCc(e.target.value)}
+                placeholder="copie à (optionnel, plusieurs emails séparés par des virgules)"
+                style={inputStyle}
+              />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
               <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', width: 36 }}>Objet</span>

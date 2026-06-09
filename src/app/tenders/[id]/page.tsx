@@ -223,6 +223,7 @@ export default function TenderDetailPage() {
           subject: payload.subject,
           body: payload.body,
           signature: payload.signature,
+          cc: payload.cc,
           attachments,
         }),
       })
