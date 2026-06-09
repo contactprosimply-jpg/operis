@@ -109,6 +109,8 @@ export default function MailPage() {
   const emailCountRef = useRef(0)
   const selectedIdRef = useRef<string | null>(null)
   const syncInProgressRef = useRef(false)
+  const syncAbortRef = useRef<AbortController | null>(null)
+  const initialSyncDoneRef = useRef(false)
   const emailsRef = useRef<Email[]>([])
   selectedIdRef.current = selected?.id ?? null
   emailsRef.current = emails
@@ -177,14 +179,22 @@ export default function MailPage() {
     }
   }, [])
 
-  const runSync = useCallback(async (silent = true) => {
-    if (syncInProgressRef.current) return
+  const runSync = useCallback(async (silent = true, force = false) => {
+    if (syncInProgressRef.current && !force) return
+    if (force && syncAbortRef.current) {
+      syncAbortRef.current.abort()
+      syncInProgressRef.current = false
+    }
     syncInProgressRef.current = true
+    const abortController = new AbortController()
+    syncAbortRef.current = abortController
+    const syncTimeout = setTimeout(() => abortController.abort(), 55000)
     try {
-      if (!silent) setSyncing(true)
+      setSyncing(true)
       const res = await authFetch('/api/mail/sync', {
         method: 'POST',
-        body: JSON.stringify({ backfill: !silent }),
+        body: JSON.stringify({ backfill: !silent || force }),
+        signal: abortController.signal,
       })
       const data = await res.json()
       if (data.success) {
@@ -200,12 +210,28 @@ export default function MailPage() {
           const sid = selectedIdRef.current
           if (sid && updated > 0) await loadEmailDetail(sid, true)
         }
-      } else if (!silent) showToast(`Erreur : ${data.error}`)
-    } catch (e: any) {
-      if (!silent) showToast(`Erreur : ${e.message}`)
+      } else {
+        const err = data.error ?? 'Synchronisation impossible'
+        if (!silent) {
+          if (err.includes('compte mail')) {
+            showToast('Configurez votre messagerie dans Paramètres')
+          } else {
+            showToast(`Erreur : ${err}`)
+          }
+        }
+      }
+    } catch (e: unknown) {
+      const err = e as { name?: string; message?: string }
+      if (err.name === 'AbortError') {
+        if (!silent) showToast('Sync trop longue — réessayez')
+      } else if (!silent) {
+        showToast(`Erreur : ${err.message ?? 'réseau'}`)
+      }
     } finally {
+      clearTimeout(syncTimeout)
       syncInProgressRef.current = false
-      if (!silent) setSyncing(false)
+      if (syncAbortRef.current === abortController) syncAbortRef.current = null
+      setSyncing(false)
     }
   }, [loadEmails, loadEmailDetail])
 
@@ -216,8 +242,13 @@ export default function MailPage() {
       return
     }
     void loadEmails(false)
+  }, [filter, ready, userId, loadEmails])
+
+  useEffect(() => {
+    if (!ready || !userId || initialSyncDoneRef.current) return
+    initialSyncDoneRef.current = true
     void runSync(true)
-  }, [filter, ready, userId, loadEmails, runSync])
+  }, [ready, userId, runSync])
 
   // Sync en arrière-plan toutes les 60s si visible
   useEffect(() => {
@@ -275,7 +306,7 @@ export default function MailPage() {
     return () => { supabase.removeChannel(channel) }
   }, [userId, loadEmailDetail])
 
-  const handleSync = () => runSync(false)
+  const handleSync = () => void runSync(false, true)
 
   const selectEmail = (email: Email) => {
     setSelected(email)
@@ -469,13 +500,32 @@ export default function MailPage() {
                 {autoSyncStatus && !isMobile && (
                   <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>{autoSyncStatus}</span>
                 )}
-                <button onClick={handleSync} disabled={syncing} title="Synchroniser" style={{
-                  background: 'transparent', border: '1px solid var(--border-hi)',
-                  color: syncing ? 'var(--text-muted)' : 'var(--text-secondary)',
-                  borderRadius: 7, padding: '5px 8px', fontSize: 11, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'DM Sans, system-ui',
-                }}>
-                  {syncing ? <Spinner size={11} /> : '↻'}
+                <button
+                  type="button"
+                  onClick={handleSync}
+                  disabled={syncing}
+                  title="Synchroniser la boîte mail"
+                  style={{
+                    background: syncing ? 'var(--bg-hover)' : 'transparent',
+                    border: '1px solid var(--border-hi)',
+                    color: syncing ? 'var(--text-muted)' : 'var(--text-secondary)',
+                    borderRadius: 8,
+                    padding: isMobile ? '8px 12px' : '6px 10px',
+                    minHeight: 36,
+                    minWidth: isMobile ? 44 : undefined,
+                    fontSize: 11,
+                    cursor: syncing ? 'wait' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    fontFamily: 'DM Sans, system-ui',
+                    fontWeight: 600,
+                    flexShrink: 0,
+                    WebkitTapHighlightColor: 'transparent',
+                  }}
+                >
+                  {syncing ? <Spinner size={12} /> : <span style={{ fontSize: 13, lineHeight: 1 }}>↻</span>}
+                  <span>Sync</span>
                 </button>
                 <button onClick={() => openCompose()} style={{
                   background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
@@ -505,8 +555,33 @@ export default function MailPage() {
             {!ready || (loading && emails.length === 0) ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}><Spinner /></div>
             ) : emails.length === 0 ? (
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 32 }}>
-                Aucun email — synchronisation automatique en cours
+              <div style={{ textAlign: 'center', padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  {syncing ? 'Synchronisation en cours…' : 'Aucun email pour ce filtre'}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSync}
+                  disabled={syncing}
+                  style={{
+                    background: 'var(--accent)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '10px 18px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: syncing ? 'wait' : 'pointer',
+                    fontFamily: 'DM Sans, system-ui',
+                    minHeight: 44,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  {syncing ? <Spinner size={14} /> : '↻'}
+                  Synchroniser maintenant
+                </button>
               </div>
             ) : grouped.map(group => (
               <div key={group.label}>
@@ -709,8 +784,8 @@ export default function MailPage() {
               {selected.has_attachments && !(selected.attachments?.length) && !loadingDetail && (
                 <div style={{ marginBottom: 20, padding: '12px 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)' }}>
                   {selected.attachments_pending ? 'Pièces jointes en attente — ' : 'Pièces jointes détectées — '}
-                  <button type="button" onClick={() => handleSync()} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontFamily: 'DM Sans, system-ui' }}>
-                    appuyer sur ↻ Sync
+                  <button type="button" onClick={handleSync} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontFamily: 'DM Sans, system-ui', padding: 4, minHeight: 32 }}>
+                    synchroniser maintenant
                   </button>
                 </div>
               )}
