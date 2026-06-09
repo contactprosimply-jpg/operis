@@ -189,24 +189,30 @@ export default function MailPage() {
     syncInProgressRef.current = true
     const abortController = new AbortController()
     syncAbortRef.current = abortController
-    const syncTimeout = setTimeout(() => abortController.abort(), 55000)
+    const syncTimeout = setTimeout(() => abortController.abort(), force ? 55000 : 35000)
     try {
       setSyncing(true)
       const res = await authFetch('/api/mail/sync', {
         method: 'POST',
-        body: JSON.stringify({ backfill: !silent || force }),
+        body: JSON.stringify({
+          backfill: force && !silent,
+          quick: silent && !force,
+        }),
         signal: abortController.signal,
       })
       const data = await res.json()
       if (data.success) {
-        const { stored = 0, updated = 0 } = data.data ?? {}
-        if (!silent && stored + updated === 0) {
+        const { stored = 0, updated = 0, quickStored = 0 } = data.data ?? {}
+        const total = stored + updated
+        if (!silent && total === 0) {
           showToast('Boîte à jour')
-        } else if (stored > 0 || updated > 0) {
-          showToast(`${stored + updated} email(s) synchronisé(s)`)
+        } else if (total > 0) {
+          showToast(`${total} email(s) synchronisé(s)`)
+        } else if (!silent && quickStored > 0) {
+          showToast(`${quickStored} nouveau(x) email(s)`)
         }
         setAutoSyncStatus(`Sync ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
-        if (stored > 0 || updated > 0) {
+        if (stored > 0 || updated > 0 || quickStored > 0) {
           await loadEmails(true)
           const sid = selectedIdRef.current
           if (sid && updated > 0) await loadEmailDetail(sid, true)

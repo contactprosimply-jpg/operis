@@ -1,6 +1,12 @@
 import { simpleParser } from 'mailparser'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { fetchRecentMessages, formatImapError, type MailAccountConfig } from '@/lib/imap-client'
+import {
+  fetchRecentEnvelopes,
+  fetchMessageSources,
+  formatImapError,
+  type MailAccountConfig,
+  type ImapEnvelopeMeta,
+} from '@/lib/imap-client'
 import { parseMailAttachments, extractEmailAddress, type StoredEmailAttachment } from '@/lib/mail-attachments'
 import { tryCreateQuoteFromInboundEmail } from '@/lib/mail-quote-extract'
 import { attachmentMetaOnly, persistAttachmentsToStorage } from '@/lib/mail-storage'
@@ -15,6 +21,7 @@ export interface MailSyncResult {
   duplicates: number
   errors: number
   maxUid: number
+  quickStored?: number
 }
 
 export type MailAccountWithId = MailAccountConfig & {
@@ -59,12 +66,12 @@ export async function resolveMailAccount(userId: string): Promise<MailAccountWit
   return null
 }
 
-async function fetchMessagesWithFallback(
+async function fetchEnvelopesWithFallback(
   account: MailAccountWithId,
-  opts: { sinceDays: number; limit: number; minUid?: number },
+  opts: { sinceDays: number; limit: number; minUid?: number; fullScan?: boolean },
 ) {
   try {
-    return await fetchRecentMessages(account, opts)
+    return await fetchRecentEnvelopes(account, opts)
   } catch (primaryError) {
     const envAccount = getEnvMailAccount()
     if (!envAccount) throw primaryError
@@ -74,7 +81,7 @@ async function fetchMessagesWithFallback(
       envAccount.imap_user === account.imap_user &&
       envAccount.imap_pass === account.imap_pass
     if (sameConfig) throw primaryError
-    return fetchRecentMessages(envAccount, opts)
+    return fetchRecentEnvelopes(envAccount, opts)
   }
 }
 
@@ -100,20 +107,127 @@ function isOwnOutbound(fromAddress: string, accountEmail: string): boolean {
   return !!from && from === own
 }
 
+async function loadExistingMessageIds(
+  db: SupabaseClient,
+  userId: string,
+  messageIds: string[],
+): Promise<Set<string>> {
+  const found = new Set<string>()
+  if (!messageIds.length) return found
+  for (let i = 0; i < messageIds.length; i += 150) {
+    const chunk = messageIds.slice(i, i + 150)
+    const { data } = await db
+      .from('emails')
+      .select('message_id')
+      .eq('user_id', userId)
+      .in('message_id', chunk)
+    for (const row of data ?? []) found.add(row.message_id)
+  }
+  return found
+}
+
+async function quickInsertFromEnvelope(
+  db: SupabaseClient,
+  userId: string,
+  envelope: ImapEnvelopeMeta,
+): Promise<string | null> {
+  const detection = detectAo(envelope.subject, '')
+  const insertPayload: Record<string, unknown> = {
+    user_id: userId,
+    message_id: envelope.messageId,
+    subject: envelope.subject,
+    from_address: envelope.from,
+    to_address: envelope.to,
+    body_text: '',
+    body_html: '',
+    received_at: envelope.date.toISOString(),
+    is_read: envelope.isRead,
+    is_ao: detection.isAo,
+    ao_score: detection.score,
+    tender_id: null,
+    attachments: [],
+    has_attachments: false,
+  }
+
+  let { data: inserted, error } = await db.from('emails').insert(insertPayload).select('id').single()
+
+  if (error && (error.message.includes('attachments') || error.message.includes('has_attachments'))) {
+    delete insertPayload.attachments
+    delete insertPayload.has_attachments
+    const retry = await db.from('emails').insert(insertPayload).select('id').single()
+    inserted = retry.data
+    error = retry.error
+  }
+
+  if (error) {
+    console.error('[Mail sync] quick insert:', error.message, envelope.subject)
+    return null
+  }
+  return inserted?.id ?? null
+}
+
+async function enrichEmailFromSource(
+  db: SupabaseClient,
+  userId: string,
+  emailId: string,
+  source: Buffer,
+  envelope: ImapEnvelopeMeta,
+  account: MailAccountWithId,
+  result: MailSyncResult,
+) {
+  const parsed = await simpleParser(source)
+  const detection = detectAo(parsed.subject ?? envelope.subject, parsed.text ?? '')
+  const { attachments, hasAttachments } = parseMailAttachments(parsed.attachments)
+
+  const updates: Record<string, unknown> = {
+    subject: parsed.subject ?? envelope.subject,
+    from_address: parsed.from?.text ?? envelope.from,
+    to_address: parsed.to?.text ?? envelope.to,
+    body_text: parsed.text ?? '',
+    body_html: parsed.html || '',
+    received_at: (parsed.date ?? envelope.date).toISOString(),
+    is_ao: detection.isAo,
+    ao_score: detection.score,
+    is_read: envelope.isRead,
+  }
+
+  await db.from('emails').update(updates).eq('id', emailId)
+
+  if (detection.isAo) result.aoDetected++
+
+  let savedAttachments = attachments
+  if (hasAttachments) {
+    savedAttachments = await saveEmailAttachments(db, userId, emailId, attachments)
+  }
+
+  try {
+    await tryCreateQuoteFromInboundEmail(
+      db,
+      userId,
+      emailId,
+      parsed.from?.text ?? envelope.from,
+      parsed.text ?? '',
+      savedAttachments,
+      null,
+    )
+  } catch (quoteErr) {
+    console.error('[Mail sync] quote extract:', quoteErr)
+  }
+}
+
 export async function syncMailAccount(
   userId: string,
   account: MailAccountWithId,
-  options: { backfill?: boolean } = {},
+  options: { backfill?: boolean; quick?: boolean } = {},
 ): Promise<MailSyncResult> {
   const backfill = options.backfill === true
-  const fetchOpts = backfill
-    ? { sinceDays: 365, limit: 200, minUid: 0, fullScan: true }
-    : {
-        sinceDays: 120,
-        limit: 150,
-        minUid: account.last_sync_uid ?? 0,
-        fullScan: false,
-      }
+  const quick = options.quick === true || !backfill
+
+  const fetchOpts = quick && !backfill
+    ? { sinceDays: 90, limit: 60, minUid: account.last_sync_uid ?? 0, fullScan: false }
+    : backfill
+      ? { sinceDays: 180, limit: 120, minUid: 0, fullScan: true }
+      : { sinceDays: 90, limit: 80, minUid: account.last_sync_uid ?? 0, fullScan: false }
 
   const db = createAdminClient()
   const result: MailSyncResult = {
@@ -124,127 +238,96 @@ export async function syncMailAccount(
     duplicates: 0,
     errors: 0,
     maxUid: account.last_sync_uid ?? 0,
+    quickStored: 0,
   }
 
-  const messages = await fetchMessagesWithFallback(account, fetchOpts)
-  result.fetched = messages.length
-  if (messages.length) {
-    result.maxUid = Math.max(result.maxUid, ...messages.map(m => m.uid))
+  const envelopes = await fetchEnvelopesWithFallback(account, fetchOpts)
+  result.fetched = envelopes.length
+  if (envelopes.length) {
+    result.maxUid = Math.max(result.maxUid, ...envelopes.map(m => m.uid))
   }
 
-  for (const message of messages) {
-    try {
-      const parsed = await simpleParser(message.source)
-      const messageId = parsed.messageId ?? `uid-${account.imap_user}-${message.uid}`
+  const inbound = envelopes.filter(e => !isOwnOutbound(e.from, account.imap_user))
+  const existingIds = await loadExistingMessageIds(db, userId, inbound.map(e => e.messageId))
 
-      if (isOwnOutbound(parsed.from?.text ?? '', account.imap_user)) {
-        result.duplicates++
-        continue
-      }
+  const newEnvelopes: ImapEnvelopeMeta[] = []
+  const existingEnvelopes: ImapEnvelopeMeta[] = []
 
-      const { attachments, hasAttachments } = parseMailAttachments(parsed.attachments)
-
-      const { data: existing } = await db
-        .from('emails')
-        .select('id, has_attachments, user_id')
-        .eq('message_id', messageId)
-        .maybeSingle()
-
-      const detection = detectAo(parsed.subject ?? '', parsed.text ?? '')
-      const { isAo, score } = detection
-
-      if (existing) {
-        if (existing.user_id !== userId) {
-          result.errors++
-          console.error('[Mail sync] message_id conflict:', messageId)
-          continue
-        }
-        const updates: Record<string, unknown> = {}
-        if (hasAttachments) {
-          await saveEmailAttachments(db, userId, existing.id, attachments)
-          updates.has_attachments = true
-        }
-        if (isAo || score > 0) {
-          updates.is_ao = isAo
-          updates.ao_score = score
-        }
-        if (Object.keys(updates).length) {
-          await db.from('emails').update(updates).eq('id', existing.id)
-          result.updated++
-        } else {
-          result.duplicates++
-        }
-        continue
-      }
-
-      const insertPayload: Record<string, unknown> = {
-        user_id: userId,
-        message_id: messageId,
-        subject: parsed.subject ?? '(sans objet)',
-        from_address: parsed.from?.text ?? '',
-        to_address: parsed.to?.text ?? '',
-        body_text: parsed.text ?? '',
-        body_html: parsed.html || '',
-        received_at: (parsed.date ?? new Date()).toISOString(),
-        is_read: false,
-        is_ao: isAo,
-        ao_score: score,
-        tender_id: null,
-        attachments: [],
-        has_attachments: hasAttachments,
-      }
-
-      let { data: inserted, error } = await db.from('emails').insert(insertPayload).select('id').single()
-
-      if (error && (error.message.includes('attachments') || error.message.includes('has_attachments'))) {
-        delete insertPayload.attachments
-        delete insertPayload.has_attachments
-        const retry = await db.from('emails').insert(insertPayload).select('id').single()
-        inserted = retry.data
-        error = retry.error
-      }
-
-      if (error) {
-        result.errors++
-        console.error('[Mail sync] insert error:', error.message, parsed.subject)
-        continue
-      }
-
-      if (inserted?.id) {
-        let savedAttachments = attachments
-        if (hasAttachments) {
-          savedAttachments = await saveEmailAttachments(db, userId, inserted.id, attachments)
-        }
-        try {
-          await tryCreateQuoteFromInboundEmail(
-            db,
-            userId,
-            inserted.id,
-            parsed.from?.text ?? '',
-            parsed.text ?? '',
-            savedAttachments,
-            null,
-          )
-        } catch (quoteErr) {
-          console.error('[Mail sync] quote extract:', quoteErr)
-        }
-      }
-
-      result.stored++
-      if (isAo) result.aoDetected++
-    } catch (err) {
-      result.errors++
-      console.error('[Mail sync] message error:', err)
+  for (const envelope of inbound) {
+    if (existingIds.has(envelope.messageId)) {
+      existingEnvelopes.push(envelope)
+    } else {
+      newEnvelopes.push(envelope)
     }
   }
 
-  if (backfill) {
+  result.duplicates = inbound.length - newEnvelopes.length
+
+  // Phase 1 — insertion rapide (visible immédiatement dans Operis)
+  const newEmailMap = new Map<number, string>()
+  for (const envelope of newEnvelopes) {
+    try {
+      const emailId = await quickInsertFromEnvelope(db, userId, envelope)
+      if (emailId) {
+        newEmailMap.set(envelope.uid, emailId)
+        result.stored++
+        result.quickStored++
+        if (detectAo(envelope.subject, '').isAo) result.aoDetected++
+      } else {
+        result.errors++
+      }
+    } catch (err) {
+      result.errors++
+      console.error('[Mail sync] quick insert error:', err)
+    }
+  }
+
+  // Mise à jour AO sur emails existants (sujet seul — rapide)
+  for (const envelope of existingEnvelopes) {
+    const d = detectAo(envelope.subject, '')
+    if (d.isAo || d.score > 0) {
+      await db.from('emails')
+        .update({ is_ao: d.isAo, ao_score: d.score, is_read: envelope.isRead })
+        .eq('user_id', userId)
+        .eq('message_id', envelope.messageId)
+      result.updated++
+      if (d.isAo) result.aoDetected++
+    }
+  }
+
+  // Phase 2 — corps + PJ uniquement pour les nouveaux (limité pour rester < 60s)
+  const uidsToEnrich = newEnvelopes.map(e => e.uid)
+  const enrichLimit = quick ? 15 : 40
+  const enrichUids = uidsToEnrich.slice(-enrichLimit)
+
+  if (enrichUids.length) {
+    try {
+      const sources = await fetchMessageSources(account, enrichUids)
+      const envelopeByUid = new Map(newEnvelopes.map(e => [e.uid, e]))
+
+      for (const { uid, source } of sources) {
+        const envelope = envelopeByUid.get(uid)
+        const emailId = newEmailMap.get(uid)
+        if (!envelope || !emailId) continue
+        try {
+          await enrichEmailFromSource(db, userId, emailId, source, envelope, account, result)
+        } catch (err) {
+          result.errors++
+          console.error('[Mail sync] enrich error:', err)
+        }
+      }
+    } catch (err) {
+      console.error('[Mail sync] source fetch error:', err)
+    }
+  }
+
+  if (backfill && !quick) {
     const { data: recentEmails } = await db
       .from('emails')
       .select('id, subject, body_text, is_ao, ao_score')
       .eq('user_id', userId)
       .order('received_at', { ascending: false })
-      .limit(250)
+      .limit(150)
 
     for (const em of recentEmails ?? []) {
       const d = detectAo(em.subject ?? '', em.body_text ?? '')

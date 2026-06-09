@@ -7,6 +7,21 @@ export interface MailAccountConfig {
   imap_pass: string
 }
 
+export interface ImapEnvelopeMeta {
+  uid: number
+  messageId: string
+  subject: string
+  from: string
+  to: string
+  date: Date
+  isRead: boolean
+}
+
+export interface ImapMessageSource {
+  uid: number
+  source: Buffer
+}
+
 export function formatImapError(e: unknown): string {
   const err = e as {
     message?: string
@@ -36,9 +51,9 @@ export function createImapClient(config: MailAccountConfig): ImapFlow {
       pass: config.imap_pass,
     },
     logger: false,
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 25000,
+    connectionTimeout: 12000,
+    greetingTimeout: 12000,
+    socketTimeout: 45000,
     tls: { minVersion: 'TLSv1.2' },
   })
 }
@@ -50,129 +65,219 @@ function sinceDate(sinceDays: number): Date {
   return since
 }
 
-async function fetchByUidRange(
-  client: ImapFlow,
-  uids: number[],
-  limit: number,
-): Promise<Array<{ uid: number; source: Buffer }>> {
-  if (!uids.length) return []
-  const recentUids = uids.slice(-limit)
-  const messages: Array<{ uid: number; source: Buffer }> = []
-  for await (const message of client.fetch(recentUids, { uid: true, source: true }, { uid: true })) {
-    if (message.source) {
-      messages.push({ uid: message.uid, source: message.source })
-    }
-  }
-  return messages
+function formatAddressList(list?: { address?: string; name?: string }[] | null): string {
+  if (!list?.length) return ''
+  return list
+    .map(a => {
+      if (a.name && a.address) return `${a.name} <${a.address}>`
+      return a.address ?? a.name ?? ''
+    })
+    .join(', ')
 }
 
-function mergeByUid(
-  arrays: Array<Array<{ uid: number; source: Buffer }>>,
-): Array<{ uid: number; source: Buffer }> {
-  const map = new Map<number, { uid: number; source: Buffer }>()
+function envelopeToMeta(
+  uid: number,
+  envelope: {
+    messageId?: string
+    subject?: string
+    from?: { address?: string; name?: string }[]
+    to?: { address?: string; name?: string }[]
+    date?: Date
+  } | undefined,
+  internalDate?: Date,
+  flags?: Set<string>,
+  accountUser?: string,
+): ImapEnvelopeMeta {
+  const messageId = envelope?.messageId?.trim() || `uid-${accountUser ?? 'user'}-${uid}`
+  return {
+    uid,
+    messageId,
+    subject: envelope?.subject?.trim() || '(sans objet)',
+    from: formatAddressList(envelope?.from),
+    to: formatAddressList(envelope?.to),
+    date: envelope?.date ?? internalDate ?? new Date(),
+    isRead: flags?.has('\\Seen') ?? false,
+  }
+}
+
+function mergeEnvelopesByUid(arrays: ImapEnvelopeMeta[][]): ImapEnvelopeMeta[] {
+  const map = new Map<number, ImapEnvelopeMeta>()
   for (const arr of arrays) {
     for (const m of arr) map.set(m.uid, m)
   }
   return Array.from(map.values()).sort((a, b) => a.uid - b.uid)
 }
 
-async function fetchBySequence(
+async function fetchEnvelopeByUidRange(
+  client: ImapFlow,
+  uids: number[],
+  limit: number,
+  accountUser: string,
+): Promise<ImapEnvelopeMeta[]> {
+  if (!uids.length) return []
+  const recentUids = uids.slice(-limit)
+  const messages: ImapEnvelopeMeta[] = []
+  for await (const message of client.fetch(recentUids, {
+    uid: true,
+    envelope: true,
+    internalDate: true,
+    flags: true,
+  }, { uid: true })) {
+    messages.push(envelopeToMeta(
+      message.uid,
+      message.envelope,
+      message.internalDate,
+      message.flags,
+      accountUser,
+    ))
+  }
+  return messages
+}
+
+async function fetchEnvelopeBySequence(
   client: ImapFlow,
   limit: number,
   since?: Date,
-): Promise<Array<{ uid: number; source: Buffer }>> {
+  accountUser: string,
+): Promise<ImapEnvelopeMeta[]> {
   const exists = client.mailbox?.exists ?? 0
   if (exists === 0) return []
 
-  const window = Math.max(limit, 80)
+  const window = Math.max(limit, 60)
   const startSeq = Math.max(1, exists - window + 1)
-  const messages: Array<{ uid: number; source: Buffer; internalDate?: Date }> = []
+  const messages: ImapEnvelopeMeta[] = []
 
   for await (const message of client.fetch(`${startSeq}:*`, {
     uid: true,
-    source: true,
+    envelope: true,
     internalDate: true,
+    flags: true,
   })) {
-    if (!message.source) continue
     if (since && message.internalDate && message.internalDate < since) continue
-    messages.push({
-      uid: message.uid,
-      source: message.source,
-      internalDate: message.internalDate,
-    })
+    messages.push(envelopeToMeta(
+      message.uid,
+      message.envelope,
+      message.internalDate,
+      message.flags,
+      accountUser,
+    ))
   }
 
   return messages
     .sort((a, b) => a.uid - b.uid)
     .slice(-limit)
-    .map(({ uid, source }) => ({ uid, source }))
 }
 
-async function fetchBySinceStream(
+async function fetchEnvelopeBySinceStream(
   client: ImapFlow,
   since: Date,
   limit: number,
-): Promise<Array<{ uid: number; source: Buffer }>> {
-  const messages: Array<{ uid: number; source: Buffer }> = []
-  for await (const message of client.fetch({ since }, { uid: true, source: true })) {
-    if (message.source) {
-      messages.push({ uid: message.uid, source: message.source })
-    }
-    if (messages.length >= limit * 3) break
+  accountUser: string,
+): Promise<ImapEnvelopeMeta[]> {
+  const messages: ImapEnvelopeMeta[] = []
+  for await (const message of client.fetch({ since }, {
+    uid: true,
+    envelope: true,
+    internalDate: true,
+    flags: true,
+  })) {
+    messages.push(envelopeToMeta(
+      message.uid,
+      message.envelope,
+      message.internalDate,
+      message.flags,
+      accountUser,
+    ))
+    if (messages.length >= limit * 2) break
   }
   return messages.sort((a, b) => a.uid - b.uid).slice(-limit)
 }
 
-export async function fetchRecentMessages(
+/** Liste rapide des enveloppes (sans télécharger le corps — ~10x plus rapide). */
+export async function fetchRecentEnvelopes(
   config: MailAccountConfig,
   options: { sinceDays?: number; limit?: number; minUid?: number; fullScan?: boolean } = {},
-): Promise<Array<{ uid: number; source: Buffer }>> {
+): Promise<ImapEnvelopeMeta[]> {
   const sinceDays = options.sinceDays ?? 30
   const limit = options.limit ?? 40
   const minUid = options.minUid ?? 0
   const fullScan = options.fullScan === true
   const since = sinceDate(sinceDays)
+  const accountUser = config.imap_user.trim()
   const client = createImapClient(config)
 
   await client.connect()
   const lock = await client.getMailboxLock('INBOX')
 
   try {
-    const batches: Array<Array<{ uid: number; source: Buffer }>> = []
+    const batches: ImapEnvelopeMeta[][] = []
 
-    // 1. Nouveaux UIDs depuis la dernière sync
     if (minUid > 0) {
       const newUids = await client.search({ uid: `${minUid + 1}:*` }, { uid: true })
       if (Array.isArray(newUids) && newUids.length) {
-        batches.push(await fetchByUidRange(client, newUids, limit))
+        batches.push(await fetchEnvelopeByUidRange(client, newUids, limit, accountUser))
       }
     }
 
-    // 2. Derniers messages par séquence (fiable Gandi — rattrape les mails manqués)
-    batches.push(await fetchBySequence(client, limit, since))
+    batches.push(await fetchEnvelopeBySequence(client, limit, since, accountUser))
 
     if (!fullScan && batches.some(b => b.length > 0)) {
-      const merged = mergeByUid(batches)
+      const merged = mergeEnvelopesByUid(batches)
       if (merged.length) return merged.slice(-limit)
     }
 
-    // 3. SEARCH SINCE + UID fetch
     const uids = await client.search({ since }, { uid: true })
     if (Array.isArray(uids) && uids.length) {
-      batches.push(await fetchByUidRange(client, uids, fullScan ? limit : Math.min(uids.length, limit * 2)))
+      batches.push(await fetchEnvelopeByUidRange(client, uids, limit, accountUser))
     }
 
-    // 4. Stream fetch par date
-    batches.push(await fetchBySinceStream(client, since, fullScan ? limit : limit))
+    batches.push(await fetchEnvelopeBySinceStream(client, since, limit, accountUser))
 
-    const merged = mergeByUid(batches)
-    return merged.slice(-limit)
+    return mergeEnvelopesByUid(batches).slice(-limit)
   } finally {
     lock.release()
     try {
       await client.logout()
     } catch {}
   }
+}
+
+/** Télécharge le corps complet uniquement pour les UIDs demandés. */
+export async function fetchMessageSources(
+  config: MailAccountConfig,
+  uids: number[],
+): Promise<ImapMessageSource[]> {
+  if (!uids.length) return []
+
+  const client = createImapClient(config)
+  await client.connect()
+  const lock = await client.getMailboxLock('INBOX')
+
+  try {
+    const messages: ImapMessageSource[] = []
+    for await (const message of client.fetch(uids, { uid: true, source: true }, { uid: true })) {
+      if (message.source) {
+        messages.push({ uid: message.uid, source: message.source })
+      }
+    }
+    return messages
+  } finally {
+    lock.release()
+    try {
+      await client.logout()
+    } catch {}
+  }
+}
+
+/** Legacy — télécharge tout le source (lent). */
+export async function fetchRecentMessages(
+  config: MailAccountConfig,
+  options: { sinceDays?: number; limit?: number; minUid?: number; fullScan?: boolean } = {},
+): Promise<Array<{ uid: number; source: Buffer }>> {
+  const envelopes = await fetchRecentEnvelopes(config, options)
+  if (!envelopes.length) return []
+  const sources = await fetchMessageSources(config, envelopes.map(e => e.uid))
+  return sources
 }
 
 export async function testImapConnection(config: MailAccountConfig): Promise<{ exists: number }> {

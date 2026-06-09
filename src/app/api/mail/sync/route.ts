@@ -20,9 +20,10 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}))
   const backfill = body?.backfill === true
+  const quick = body?.quick === true
 
   try {
-    const result = await syncMailAccount(userId, account, { backfill })
+    const result = await syncMailAccount(userId, account, { backfill, quick })
     return Response.json({ success: true, data: result })
   } catch (e) {
     return Response.json({
