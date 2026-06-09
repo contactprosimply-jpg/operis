@@ -66,6 +66,16 @@ async function fetchByUidRange(
   return messages
 }
 
+function mergeByUid(
+  arrays: Array<Array<{ uid: number; source: Buffer }>>,
+): Array<{ uid: number; source: Buffer }> {
+  const map = new Map<number, { uid: number; source: Buffer }>()
+  for (const arr of arrays) {
+    for (const m of arr) map.set(m.uid, m)
+  }
+  return Array.from(map.values()).sort((a, b) => a.uid - b.uid)
+}
+
 async function fetchBySequence(
   client: ImapFlow,
   limit: number,
@@ -74,7 +84,7 @@ async function fetchBySequence(
   const exists = client.mailbox?.exists ?? 0
   if (exists === 0) return []
 
-  const window = Math.max(limit, 50)
+  const window = Math.max(limit, 80)
   const startSeq = Math.max(1, exists - window + 1)
   const messages: Array<{ uid: number; source: Buffer; internalDate?: Date }> = []
 
@@ -115,11 +125,12 @@ async function fetchBySinceStream(
 
 export async function fetchRecentMessages(
   config: MailAccountConfig,
-  options: { sinceDays?: number; limit?: number; minUid?: number } = {},
+  options: { sinceDays?: number; limit?: number; minUid?: number; fullScan?: boolean } = {},
 ): Promise<Array<{ uid: number; source: Buffer }>> {
   const sinceDays = options.sinceDays ?? 30
   const limit = options.limit ?? 40
   const minUid = options.minUid ?? 0
+  const fullScan = options.fullScan === true
   const since = sinceDate(sinceDays)
   const client = createImapClient(config)
 
@@ -127,28 +138,35 @@ export async function fetchRecentMessages(
   const lock = await client.getMailboxLock('INBOX')
 
   try {
-    // 1. Incremental UID sync (fast path for recurring sync)
+    const batches: Array<Array<{ uid: number; source: Buffer }>> = []
+
+    // 1. Nouveaux UIDs depuis la dernière sync
     if (minUid > 0) {
       const newUids = await client.search({ uid: `${minUid + 1}:*` }, { uid: true })
       if (Array.isArray(newUids) && newUids.length) {
-        const byUid = await fetchByUidRange(client, newUids, limit)
-        if (byUid.length) return byUid
+        batches.push(await fetchByUidRange(client, newUids, limit))
       }
     }
 
-    // 2. Recent messages by sequence (reliable on Gandi and most servers)
-    const bySeq = await fetchBySequence(client, limit, since)
-    if (bySeq.length) return bySeq
+    // 2. Derniers messages par séquence (fiable Gandi — rattrape les mails manqués)
+    batches.push(await fetchBySequence(client, limit, since))
+
+    if (!fullScan && batches.some(b => b.length > 0)) {
+      const merged = mergeByUid(batches)
+      if (merged.length) return merged.slice(-limit)
+    }
 
     // 3. SEARCH SINCE + UID fetch
     const uids = await client.search({ since }, { uid: true })
     if (Array.isArray(uids) && uids.length) {
-      const bySearch = await fetchByUidRange(client, uids, limit)
-      if (bySearch.length) return bySearch
+      batches.push(await fetchByUidRange(client, uids, fullScan ? limit : Math.min(uids.length, limit * 2)))
     }
 
-    // 4. Stream fetch by date (sync.mjs strategy)
-    return fetchBySinceStream(client, since, limit)
+    // 4. Stream fetch par date
+    batches.push(await fetchBySinceStream(client, since, fullScan ? limit : limit))
+
+    const merged = mergeByUid(batches)
+    return merged.slice(-limit)
   } finally {
     lock.release()
     try {

@@ -100,6 +100,7 @@ export default function MailPage() {
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [creatingAoId, setCreatingAoId] = useState<string | null>(null)
   const [filter, setFilter] = useState<MailFilter>('all')
   const [toast, setToast] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(false)
@@ -130,7 +131,7 @@ export default function MailPage() {
     if (!silent) setLoading(true)
     const safetyTimer = setTimeout(() => { if (!silent) setLoading(false) }, 12000)
     try {
-      const params = new URLSearchParams()
+      const params = new URLSearchParams({ limit: '250' })
       if (filter === 'ao') params.set('ao', 'true')
       if (filter === 'unread') params.set('unread', 'true')
       if (filter === 'attachments') params.set('attachments', 'true')
@@ -437,16 +438,49 @@ export default function MailPage() {
     } catch { showToast('Erreur téléchargement') }
   }
 
-  const handleCreateAo = async () => {
-    if (!selected) return
-    setCreating(true)
+  const handleCreateAo = async (email?: Email) => {
+    const target = email ?? selected
+    if (!target) return
+    if (target.tender_id) {
+      router.push(`/tenders/${target.tender_id}`)
+      return
+    }
+    setCreatingAoId(target.id)
+    if (!email) setCreating(true)
     try {
-      const res = await authFetch(`/api/mail/emails/${selected.id}/ao`, { method: 'POST', body: JSON.stringify({}) })
+      const res = await authFetch(`/api/mail/emails/${target.id}/ao`, { method: 'POST', body: JSON.stringify({}) })
       const data = await res.json()
-      if (data.success) { showToast('AO créé !'); router.push(`/tenders/${data.data.tender_id}`) }
-      else showToast(`Erreur : ${data.error}`)
-    } catch (e: any) { showToast(`Erreur : ${e.message}`) }
+      if (data.success) {
+        const tenderId = data.data.tender_id
+        setEmails(prev => prev.map(e => e.id === target.id ? { ...e, tender_id: tenderId, is_ao: true, ao_score: Math.max(e.ao_score ?? 0, 80) } : e))
+        if (selected?.id === target.id) {
+          setSelected(prev => prev ? { ...prev, tender_id: tenderId, is_ao: true, ao_score: Math.max(prev.ao_score ?? 0, 80) } : prev)
+        }
+        showToast('AO créé !')
+        router.push(`/tenders/${tenderId}`)
+      } else showToast(`Erreur : ${data.error}`)
+    } catch (e: unknown) {
+      const err = e as { message?: string }
+      showToast(`Erreur : ${err.message ?? 'réseau'}`)
+    }
+    setCreatingAoId(null)
     setCreating(false)
+  }
+
+  const handleMarkAsAo = async (email: Email) => {
+    try {
+      await authFetch('/api/mail/emails', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: email.id, is_ao: true, ao_score: Math.max(email.ao_score ?? 0, 50) }),
+      })
+      setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_ao: true, ao_score: Math.max(e.ao_score ?? 0, 50) } : e))
+      if (selected?.id === email.id) {
+        setSelected(prev => prev ? { ...prev, is_ao: true, ao_score: Math.max(prev.ao_score ?? 0, 50) } : prev)
+      }
+      showToast('Marqué comme AO')
+    } catch {
+      showToast('Erreur marquage AO')
+    }
   }
 
   const unreadTotal = emails.filter(e => !e.is_read).length
@@ -622,14 +656,45 @@ export default function MailPage() {
                           {email.is_ao && (
                             <span style={{ fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 5px', borderRadius: 4, background: 'rgba(245,158,11,0.1)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.2)' }}>AO</span>
                           )}
+                          {email.tender_id && (
+                            <span style={{ fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 5px', borderRadius: 4, background: 'rgba(34,197,94,0.1)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)' }}>Lié</span>
+                          )}
                           {email.has_attachments && (
                             <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>📎</span>
                           )}
                         </div>
                       </div>
-                      <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', flexShrink: 0 }}>
-                        {formatMailTime(email.received_at)}
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+                        <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+                          {formatMailTime(email.received_at)}
+                        </span>
+                        <button
+                          type="button"
+                          title={email.tender_id ? 'Voir l\'AO' : 'Créer un appel d\'offres'}
+                          disabled={creatingAoId === email.id}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (email.tender_id) router.push(`/tenders/${email.tender_id}`)
+                            else handleCreateAo(email)
+                          }}
+                          style={{
+                            background: email.tender_id ? 'rgba(34,197,94,0.12)' : email.is_ao ? 'rgba(245,158,11,0.15)' : 'var(--bg-hover)',
+                            color: email.tender_id ? '#4ade80' : email.is_ao ? '#fbbf24' : 'var(--text-secondary)',
+                            border: `1px solid ${email.tender_id ? 'rgba(34,197,94,0.25)' : email.is_ao ? 'rgba(245,158,11,0.25)' : 'var(--border-hi)'}`,
+                            borderRadius: 6,
+                            padding: '3px 8px',
+                            fontSize: 10,
+                            fontWeight: 700,
+                            cursor: creatingAoId === email.id ? 'wait' : 'pointer',
+                            fontFamily: 'DM Mono, monospace',
+                            minHeight: 28,
+                            minWidth: 36,
+                            opacity: creatingAoId === email.id ? 0.6 : 1,
+                          }}
+                        >
+                          {creatingAoId === email.id ? '…' : 'AO'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -717,10 +782,27 @@ export default function MailPage() {
                 }}>← Retour</button>
               )}
 
-              {selected.is_ao && !selected.tender_id && (
-                <div style={{ background: 'rgba(59,126,246,0.08)', border: '1px solid rgba(59,126,246,0.2)', borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 12, color: '#93c5fd', flex: 1 }}>AO détecté — Score {selected.ao_score}/100</span>
-                  <button onClick={handleCreateAo} disabled={creating} style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: creating ? 0.5 : 1, fontFamily: 'DM Sans, system-ui' }}>
+              {!selected.tender_id && (
+                <div style={{
+                  background: selected.is_ao ? 'rgba(59,126,246,0.08)' : 'var(--bg-card)',
+                  border: selected.is_ao ? '1px solid rgba(59,126,246,0.2)' : '1px solid var(--border)',
+                  borderRadius: 10, padding: '12px 16px', marginBottom: 16,
+                  display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                }}>
+                  <span style={{ fontSize: 12, color: selected.is_ao ? '#93c5fd' : 'var(--text-muted)', flex: 1 }}>
+                    {selected.is_ao ? `AO détecté — Score ${selected.ao_score}/100` : 'Pas détecté comme AO'}
+                  </span>
+                  {!selected.is_ao && (
+                    <button type="button" onClick={() => handleMarkAsAo(selected)} style={{
+                      background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-hi)',
+                      borderRadius: 7, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
+                    }}>Marquer AO</button>
+                  )}
+                  <button type="button" onClick={() => handleCreateAo()} disabled={creating} style={{
+                    background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
+                    padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    opacity: creating ? 0.5 : 1, fontFamily: 'DM Sans, system-ui',
+                  }}>
                     {creating ? '...' : 'Créer AO'}
                   </button>
                 </div>

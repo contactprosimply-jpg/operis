@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     .select(EMAIL_LIST_FIELDS)
     .eq('user_id', userId)
     .order('received_at', { ascending: false })
-    .limit(80)
+    .limit(Math.min(Number(searchParams.get('limit') || 250), 500))
 
   if (isAo !== undefined) query = query.eq('is_ao', isAo)
   if (isRead !== undefined) query = query.eq('is_read', isRead)
@@ -41,14 +41,20 @@ export async function PATCH(req: NextRequest) {
   if (!userId) return unauthorized()
 
   const body = await req.json()
-  const { id, is_read, ids } = body
+  const { id, is_read, is_ao, ao_score, ids } = body
 
   const db = createAdminClient()
 
   if (ids && Array.isArray(ids)) {
+    const patch: Record<string, unknown> = {}
+    if (is_read !== undefined) patch.is_read = is_read
+    if (is_ao !== undefined) patch.is_ao = is_ao
+    if (ao_score !== undefined) patch.ao_score = ao_score
+    if (!Object.keys(patch).length) patch.is_read = true
+
     const { error } = await db
       .from('emails')
-      .update({ is_read: is_read ?? true })
+      .update(patch)
       .eq('user_id', userId)
       .in('id', ids)
     if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
@@ -59,9 +65,15 @@ export async function PATCH(req: NextRequest) {
     return Response.json({ success: false, error: 'id requis' }, { status: 400 })
   }
 
+  const patch: Record<string, unknown> = {}
+  if (is_read !== undefined) patch.is_read = is_read
+  if (is_ao !== undefined) patch.is_ao = is_ao
+  if (ao_score !== undefined) patch.ao_score = ao_score
+  if (!Object.keys(patch).length) patch.is_read = true
+
   const { data, error } = await db
     .from('emails')
-    .update({ is_read: is_read ?? true })
+    .update(patch)
     .eq('id', id)
     .eq('user_id', userId)
     .select()

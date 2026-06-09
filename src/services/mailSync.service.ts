@@ -134,6 +134,8 @@ export async function createTenderFromEmail(
 
   if (error || !email) return null
 
+  if (email.tender_id) return { tender_id: email.tender_id }
+
   // Créer l'AO avec les infos extraites de l'email
   const title = extractTenderTitle(email.subject ?? '')
   const client = extractClientFromEmail(email.from_address ?? '')
@@ -156,7 +158,7 @@ export async function createTenderFromEmail(
   // Lier l'email à l'AO créé
   await db
     .from('emails')
-    .update({ tender_id: tender.id, is_read: true })
+    .update({ tender_id: tender.id, is_read: true, is_ao: true, ao_score: Math.max(email.ao_score ?? 0, 80) })
     .eq('id', emailId)
 
   return { tender_id: tender.id }

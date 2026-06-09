@@ -11,6 +11,15 @@ export interface DetectionResult {
 }
 
 // ── Mots clés par catégorie avec leur poids ──────────────────
+const SUBJECT_AO_PATTERNS = [
+  /\bappel d['']offres?\b/i,
+  /\b(ao|dce|rfp)\b/i,
+  /\bdossier de consultation\b/i,
+  /\bconsultation entreprises\b/i,
+  /\bmarch[eé] public\b/i,
+  /\binvitation [àa] (soumissionner|consulter|proposer)\b/i,
+]
+
 const KEYWORDS: { terms: string[]; weight: number }[] = [
   // Très fort (40 pts chacun)
   {
@@ -20,8 +29,11 @@ const KEYWORDS: { terms: string[]; weight: number }[] = [
       'appel d\'offre',
       'dce',
       'dossier de consultation',
+      'dossier de consultation des entreprises',
       'rfp',
       'request for proposal',
+      'marché public',
+      'consultation entreprises',
     ],
   },
   // Fort (25 pts chacun)
@@ -33,9 +45,20 @@ const KEYWORDS: { terms: string[]; weight: number }[] = [
       'marché',
       'ao ',
       ' ao,',
+      ' ao-',
       'tender',
       'bid',
       'soumission',
+      'offre ferme',
+      'remise des offres',
+      'date limite de réponse',
+      'date limite de reponse',
+      'candidature',
+      'invitation à soumissionner',
+      'invitation a soumissionner',
+      'acte d\'engagement',
+      'mémoire technique',
+      'memoire technique',
     ],
   },
   // Moyen (15 pts chacun)
@@ -77,14 +100,39 @@ const NEGATIVE_KEYWORDS = [
   'promotion',
   'soldes',
   'offre spéciale',
-  'facture',
-  'règlement',
   'relance de paiement',
+  'reset your password',
+  'supabase auth',
+  'vercel',
+]
+
+const OWN_OUTBOUND_PREFIXES = [
+  'consultation —',
+  'consultation -',
+  'relance —',
+  'relance -',
+  'relance 2 —',
+  'relance 2 -',
 ]
 
 // ── Fonction principale de détection ─────────────────────────
 export function detectAo(subject: string, body: string): DetectionResult {
-  const text = `${subject} ${body}`.toLowerCase()
+  const cleanSubject = subject.replace(/^(re:|fwd:|tr:|fw:)\s*/gi, '').trim()
+  const subjectLower = cleanSubject.toLowerCase()
+
+  for (const prefix of OWN_OUTBOUND_PREFIXES) {
+    if (subjectLower.startsWith(prefix)) {
+      return { isAo: false, score: 0, matchedKeywords: [] }
+    }
+  }
+
+  for (const pattern of SUBJECT_AO_PATTERNS) {
+    if (pattern.test(cleanSubject)) {
+      return { isAo: true, score: 85, matchedKeywords: ['sujet AO'] }
+    }
+  }
+
+  const text = `${cleanSubject} ${body}`.toLowerCase()
   const matchedKeywords: string[] = []
   let score = 0
 
@@ -106,7 +154,6 @@ export function detectAo(subject: string, body: string): DetectionResult {
   }
 
   // Bonus si mots clés forts dans le sujet (sujet = plus important)
-  const subjectLower = subject.toLowerCase()
   for (const category of KEYWORDS.slice(0, 2)) {
     for (const term of category.terms) {
       if (subjectLower.includes(term.toLowerCase())) {
@@ -118,8 +165,11 @@ export function detectAo(subject: string, body: string): DetectionResult {
   // Plafonner entre 0 et 100
   score = Math.max(0, Math.min(100, score))
 
+  // Pièces jointes typiques AO dans le corps
+  if (/\b(dce|cctp|dpgf|bpu|dqe)\b/i.test(text)) score += 10
+
   return {
-    isAo: score >= 30,
+    isAo: score >= 25,
     score,
     matchedKeywords: [...new Set(matchedKeywords)], // dédupliquer
   }

@@ -5,33 +5,7 @@ import { parseMailAttachments, extractEmailAddress, type StoredEmailAttachment }
 import { tryCreateQuoteFromInboundEmail } from '@/lib/mail-quote-extract'
 import { attachmentMetaOnly, persistAttachmentsToStorage } from '@/lib/mail-storage'
 import { createAdminClient } from '@/lib/supabase'
-
-const AO_KEYWORDS = [
-  { term: "appel d'offres", weight: 40 },
-  { term: "appel d'offre", weight: 40 },
-  { term: 'dce', weight: 40 },
-  { term: 'dossier de consultation', weight: 40 },
-  { term: 'rfp', weight: 35 },
-  { term: 'request for proposal', weight: 35 },
-  { term: 'consultation', weight: 25 },
-  { term: 'mise en concurrence', weight: 25 },
-  { term: 'marche', weight: 25 },
-  { term: 'tender', weight: 25 },
-  { term: 'bid', weight: 20 },
-  { term: 'devis', weight: 15 },
-  { term: 'cahier des charges', weight: 15 },
-  { term: 'cctp', weight: 15 },
-  { term: 'dpgf', weight: 15 },
-  { term: 'date limite de reponse', weight: 15 },
-  { term: 'remise des offres', weight: 15 },
-]
-
-const NEGATIVE_KEYWORDS = [
-  'reset your password', 'supabase auth', 'vercel', 'newsletter',
-  'unsubscribe', 'desabonner', 'relance de paiement', 'offre speciale',
-]
-
-const OWN_SUBJECTS = ['consultation —', 'relance —', 'relance 2 —']
+import { detectAo } from '@/services/aoDetector.service'
 
 export interface MailSyncResult {
   fetched: number
@@ -46,28 +20,6 @@ export interface MailSyncResult {
 export type MailAccountWithId = MailAccountConfig & {
   id?: string
   last_sync_uid?: number | null
-}
-
-function detectAo(subject: string, bodyText: string) {
-  const subjectLower = (subject ?? '').toLowerCase()
-  const textLower = `${subject ?? ''} ${bodyText ?? ''}`.toLowerCase()
-
-  for (const s of OWN_SUBJECTS) {
-    if (subjectLower.startsWith(s)) return { isAo: false, score: 0 }
-  }
-  for (const neg of NEGATIVE_KEYWORDS) {
-    if (textLower.includes(neg)) return { isAo: false, score: 0 }
-  }
-
-  let score = 0
-  for (const { term, weight } of AO_KEYWORDS) {
-    if (textLower.includes(term)) {
-      score += weight
-      if (subjectLower.includes(term)) score += 10
-    }
-  }
-  score = Math.min(100, score)
-  return { isAo: score >= 30, score }
 }
 
 function getEnvMailAccount(): MailAccountConfig | null {
@@ -155,11 +107,12 @@ export async function syncMailAccount(
 ): Promise<MailSyncResult> {
   const backfill = options.backfill === true
   const fetchOpts = backfill
-    ? { sinceDays: 120, limit: 150, minUid: 0 }
+    ? { sinceDays: 365, limit: 200, minUid: 0, fullScan: true }
     : {
-        sinceDays: 60,
-        limit: 80,
-        minUid: backfill ? 0 : (account.last_sync_uid ?? 0),
+        sinceDays: 120,
+        limit: 150,
+        minUid: account.last_sync_uid ?? 0,
+        fullScan: false,
       }
 
   const db = createAdminClient()
@@ -197,22 +150,32 @@ export async function syncMailAccount(
         .eq('message_id', messageId)
         .maybeSingle()
 
+      const detection = detectAo(parsed.subject ?? '', parsed.text ?? '')
+      const { isAo, score } = detection
+
       if (existing) {
         if (existing.user_id !== userId) {
           result.errors++
           console.error('[Mail sync] message_id conflict:', messageId)
           continue
         }
+        const updates: Record<string, unknown> = {}
         if (hasAttachments) {
           await saveEmailAttachments(db, userId, existing.id, attachments)
+          updates.has_attachments = true
+        }
+        if (isAo || score > 0) {
+          updates.is_ao = isAo
+          updates.ao_score = score
+        }
+        if (Object.keys(updates).length) {
+          await db.from('emails').update(updates).eq('id', existing.id)
           result.updated++
         } else {
           result.duplicates++
         }
         continue
       }
-
-      const { isAo, score } = detectAo(parsed.subject ?? '', parsed.text ?? '')
 
       const insertPayload: Record<string, unknown> = {
         user_id: userId,
@@ -272,6 +235,24 @@ export async function syncMailAccount(
     } catch (err) {
       result.errors++
       console.error('[Mail sync] message error:', err)
+    }
+  }
+
+  if (backfill) {
+    const { data: recentEmails } = await db
+      .from('emails')
+      .select('id, subject, body_text, is_ao, ao_score')
+      .eq('user_id', userId)
+      .order('received_at', { ascending: false })
+      .limit(250)
+
+    for (const em of recentEmails ?? []) {
+      const d = detectAo(em.subject ?? '', em.body_text ?? '')
+      if (d.isAo !== em.is_ao || d.score !== em.ao_score) {
+        await db.from('emails').update({ is_ao: d.isAo, ao_score: d.score }).eq('id', em.id)
+        if (d.isAo && !em.is_ao) result.aoDetected++
+        result.updated++
+      }
     }
   }
 
