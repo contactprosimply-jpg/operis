@@ -464,6 +464,7 @@ export default function TenderDetailPage() {
             Aucun fournisseur — <button onClick={() => setShowAddSupplierModal(true)} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>en ajouter un</button>
           </div>
         ) : (
+          <>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {consultations.map((c: any, i: number) => {
               const quote = quoteBySupplier.get(c.supplier_id)
@@ -563,6 +564,7 @@ export default function TenderDetailPage() {
               <Button variant="success" onClick={() => setShowValidateModal(true)}>✓ Valider le devis sélectionné</Button>
             </div>
           )}
+          </>
         )}
       </div>
 
