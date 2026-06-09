@@ -1,6 +1,8 @@
 {
   "name": "operis",
   "version": "0.1.0",
+  "description": "Operis — Gestion des appels d'offres BTP",
+  "author": "Nikodex",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
@@ -8,16 +10,55 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "desktop:icon": "node scripts/generate-icon.mjs",
     "desktop": "electron .",
-    "desktop:build": "electron-builder --win portable"
+    "desktop:build": "npm run desktop:icon && electron-builder --win --x64"
   },
   "build": {
     "appId": "fr.nikodex.operis",
     "productName": "Operis",
-    "directories": { "output": "dist-desktop" },
-    "files": ["electron/**/*"],
+    "copyright": "Nikodex",
+    "directories": {
+      "output": "dist-desktop",
+      "buildResources": "electron"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "asar": true,
     "win": {
-      "target": ["portable"]
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "electron/icon.ico",
+      "uninstallerIcon": "electron/icon.ico",
+      "installerLanguages": [
+        "fr_FR"
+      ],
+      "language": "1036",
+      "shortcutName": "Operis",
+      "artifactName": "Operis-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Operis-Portable-${version}.${ext}"
     }
   },
   "dependencies": {
@@ -35,15 +76,17 @@
     "tailwindcss": "^3.4.19"
   },
   "devDependencies": {
-    "electron": "^35.0.0",
-    "electron-builder": "^25.1.8",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^20",
     "@types/nodemailer": "^8.0.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "sharp": "^0.33.5",
+    "to-ico": "^1.1.5",
     "typescript": "^5"
   }
 }
