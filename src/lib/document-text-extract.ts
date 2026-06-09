@@ -15,9 +15,10 @@ export function isQuoteDocument(filename: string, contentType?: string): boolean
 }
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
-  const pdfParse = (await import('pdf-parse')).default as (buf: Buffer) => Promise<{ text?: string }>
-  const data = await pdfParse(buffer)
-  return data.text ?? ''
+  const { PDFParse } = await import('pdf-parse')
+  const parser = new PDFParse({ data: new Uint8Array(buffer) })
+  const result = await parser.getText()
+  return result.text ?? ''
 }
 
 async function extractDocxText(buffer: Buffer): Promise<string> {

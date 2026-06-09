@@ -233,7 +233,7 @@ export async function backfillQuotesForTender(
       ]
       let attachments = (email.attachments as StoredEmailAttachment[]) ?? []
 
-      const enriched = await reEnrichEmailIfNeeded(db, userId, email.id)
+      let enriched = await reEnrichEmailIfNeeded(db, userId, email.id)
       if (enriched) {
         textParts = [email.subject ?? '', enriched.bodyText]
         attachments = enriched.attachments
@@ -241,7 +241,7 @@ export async function backfillQuotesForTender(
 
       const fullText = textParts.filter(Boolean).join('\n')
 
-      const quote = await upsertQuoteFromEmail(
+      let quote = await upsertQuoteFromEmail(
         db,
         tenderId,
         supplier.id,
@@ -250,6 +250,21 @@ export async function backfillQuotesForTender(
         attachments,
         email.has_attachments,
       )
+
+      if (quote && quote.price_ht == null && (email.has_attachments || attachments.length > 0)) {
+        enriched = await reEnrichEmailIfNeeded(db, userId, email.id, { force: true })
+        if (enriched) {
+          quote = await upsertQuoteFromEmail(
+            db,
+            tenderId,
+            supplier.id,
+            email.id,
+            [email.subject ?? '', enriched.bodyText].filter(Boolean).join('\n'),
+            enriched.attachments,
+            true,
+          )
+        }
+      }
 
       if (quote) {
         await db

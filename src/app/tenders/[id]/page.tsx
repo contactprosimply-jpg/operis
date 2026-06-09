@@ -61,6 +61,7 @@ export default function TenderDetailPage() {
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null)
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false)
   const [uploadingDoc, setUploadingDoc] = useState(false)
+  const [analyzingQuotes, setAnalyzingQuotes] = useState(false)
 
   // Form édition AO
   const [editForm, setEditForm] = useState({
@@ -99,6 +100,24 @@ export default function TenderDetailPage() {
   }, [id])
 
   const refreshTender = useCallback(() => loadTender(true), [loadTender])
+
+  const handleAnalyzeQuotes = async () => {
+    setAnalyzingQuotes(true)
+    try {
+      const res = await authFetch(`/api/tenders/${id}`)
+      const data = await res.json()
+      if (data.success) {
+        setTender(data.data)
+        const withPrice = (data.data.quotes ?? []).filter((q: any) => q.price_ht).length
+        show(withPrice ? `${withPrice} prix détecté(s) depuis les emails/PDF` : 'Analyse terminée — aucun prix trouvé dans les PJ')
+      } else {
+        show(`Erreur : ${data.error}`)
+      }
+    } catch {
+      show('Erreur lors de l\'analyse des devis')
+    }
+    setAnalyzingQuotes(false)
+  }
 
   const loadAllSuppliers = useCallback(async () => {
     const res = await authFetch('/api/suppliers')
@@ -452,6 +471,9 @@ export default function TenderDetailPage() {
             <Button variant="ghost" onClick={() => setShowAddSupplierModal(true)}>+ Ajouter</Button>
             {consultations.length > 0 && (
               <>
+                <Button variant="ghost" onClick={handleAnalyzeQuotes} disabled={analyzingQuotes}>
+                  {analyzingQuotes ? 'Analyse…' : 'Analyser les devis PDF'}
+                </Button>
                 <Button variant="ghost" onClick={() => openConsultModal()}>Envoyer consultation</Button>
                 <Button variant="ghost" onClick={handleRelaunchAll}>Relancer tous</Button>
               </>

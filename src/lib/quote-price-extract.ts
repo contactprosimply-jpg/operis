@@ -18,7 +18,8 @@ export function extractPriceFromText(text: string, preferMax = false): number | 
   const normalized = text.replace(/\u00a0/g, ' ')
 
   const totalLabelPatterns = [
-    /(?:total\s*(?:g[eé]n[eé]ral|ht|ttc)?|montant\s*total|net\s*[àa]\s*payer|total\s*devis|total\s*offre)[^\d]{0,25}(\d[\d\s.,]*)/gi,
+    /(?:total\s*(?:g[eé]n[eé]ral|ht|ttc|h\.?\s*t\.?)?|montant\s*(?:total|ht|h\.?\s*t\.?)?|net\s*[àa]\s*payer|total\s*devis|total\s*offre|prix\s*total)[^\d]{0,40}(\d[\d\s.,]*)/gi,
+    /(?:total|montant)\s*h\.?\s*t\.?\s*[:\s]+(\d[\d\s.,]*)/gi,
   ]
   for (const pattern of totalLabelPatterns) {
     let match: RegExpExecArray | null
