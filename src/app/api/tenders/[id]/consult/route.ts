@@ -8,10 +8,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
   const { id } = await params
-  const { supplier_ids, message, document_ids } = await req.json()
+  const { supplier_ids, message, document_ids, subject, body, signature, attachments } = await req.json()
   if (!supplier_ids?.length) {
     return Response.json({ success: false, error: 'supplier_ids requis' }, { status: 400 })
   }
-  const result = await tenderService.sendConsultation(id, userId, supplier_ids, { message, document_ids })
+  const result = await tenderService.sendConsultation(id, userId, supplier_ids, {
+    message,
+    document_ids,
+    subject,
+    body,
+    signature,
+    attachment_files: attachments,
+  })
   return Response.json(result, { status: result.success ? 200 : 400 })
 }

@@ -7,6 +7,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { useRefreshOnFocus } from '@/hooks'
 import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast, Card } from '@/components/ui'
+import ConsultationComposeModal, { type ConsultationComposePayload } from '@/components/ConsultationComposeModal'
 
 const STATUS_OPTIONS = [
   { value: 'nouveau', label: 'Nouveau', color: '#60a5fa' },
@@ -51,17 +52,14 @@ export default function TenderDetailPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
   const [showEdit, setShowEdit] = useState(false)
-  const [showConsult, setShowConsult] = useState(false)
   const [showConsultModal, setShowConsultModal] = useState(false)
+  const [consultPreselect, setConsultPreselect] = useState<string[]>([])
   const [showValidateModal, setShowValidateModal] = useState(false)
-  const [consultMsg, setConsultMsg] = useState('')
-  const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([])
   const [savingEdit, setSavingEdit] = useState(false)
   const [sendingConsult, setSendingConsult] = useState(false)
   const [validatingQuote, setValidatingQuote] = useState(false)
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null)
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false)
-  const [consultFiles, setConsultFiles] = useState<File[]>([])
   const [uploadingDoc, setUploadingDoc] = useState(false)
 
   // Form édition AO
@@ -202,32 +200,45 @@ export default function TenderDetailPage() {
     setUploadingDoc(false)
   }
 
-  const handleSendConsult = async () => {
-    if (selectedSuppliers.length === 0) return
+  const openConsultModal = (preselect?: string[]) => {
+    setConsultPreselect(preselect ?? [])
+    setShowConsultModal(true)
+  }
+
+  const handleSendConsult = async (payload: ConsultationComposePayload) => {
+    if (payload.supplier_ids.length === 0) return
     setSendingConsult(true)
     try {
-      const documentIds: string[] = []
-      for (const f of consultFiles) {
-        const data = await fileToBase64(f)
-        const up = await authFetch(`/api/tenders/${id}/documents`, {
-          method: 'POST',
-          body: JSON.stringify({ filename: f.name, contentType: f.type, data, source: 'consultation' }),
-        })
-        const upJson = await up.json()
-        if (upJson.success) documentIds.push(upJson.data.id)
-      }
+      const attachments = await Promise.all(
+        payload.files.map(async f => ({
+          filename: f.name,
+          contentType: f.type || 'application/octet-stream',
+          data: await fileToBase64(f),
+        })),
+      )
       const res = await authFetch(`/api/tenders/${id}/consult`, {
         method: 'POST',
-        body: JSON.stringify({ supplier_ids: selectedSuppliers, message: consultMsg, document_ids: documentIds }),
+        body: JSON.stringify({
+          supplier_ids: payload.supplier_ids,
+          subject: payload.subject,
+          body: payload.body,
+          signature: payload.signature,
+          attachments,
+        }),
       })
       const data = await res.json()
       if (data.success) {
-        show(`${data.data.sent} consultation(s) envoyée(s)`)
+        const errCount = data.data.errors ?? 0
+        show(errCount > 0
+          ? `${data.data.sent} envoyée(s), ${errCount} erreur(s)`
+          : `${data.data.sent} consultation(s) envoyée(s)`)
         setShowConsultModal(false)
-        setConsultFiles([])
         await refreshTender()
       } else show(`Erreur : ${data.error}`)
-    } catch (e: any) { show(`Erreur : ${e.message}`) }
+    } catch (e: unknown) {
+      const err = e as { message?: string }
+      show(`Erreur : ${err.message ?? 'réseau'}`)
+    }
     setSendingConsult(false)
   }
 
@@ -439,7 +450,7 @@ export default function TenderDetailPage() {
             <Button variant="ghost" onClick={() => setShowAddSupplierModal(true)}>+ Ajouter</Button>
             {consultations.length > 0 && (
               <>
-                <Button variant="ghost" onClick={() => setShowConsultModal(true)}>Envoyer consultation</Button>
+                <Button variant="ghost" onClick={() => openConsultModal()}>Envoyer consultation</Button>
                 <Button variant="ghost" onClick={handleRelaunchAll}>Relancer tous</Button>
               </>
             )}
@@ -477,9 +488,16 @@ export default function TenderDetailPage() {
                     <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                       {c.last_sent_at ? `Derniere action : ${new Date(c.last_sent_at).toLocaleDateString('fr-FR')}` : 'Pas encore contacte'}
                     </span>
-                    {['envoye', 'relance', 'relance_2'].includes(c.status) && (
-                      <Button variant="ghost" onClick={() => handleRelaunch(c.supplier_id)} style={{ fontSize: 11, padding: '4px 10px' }}>Relancer</Button>
-                    )}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {c.status === 'en_attente' && (
+                        <Button variant="ghost" onClick={() => openConsultModal([c.supplier_id])} style={{ fontSize: 11, padding: '4px 10px' }}>
+                          Envoyer
+                        </Button>
+                      )}
+                      {['envoye', 'relance', 'relance_2'].includes(c.status) && (
+                        <Button variant="ghost" onClick={() => handleRelaunch(c.supplier_id)} style={{ fontSize: 11, padding: '4px 10px' }}>Relancer</Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -763,47 +781,20 @@ export default function TenderDetailPage() {
         </div>
       </Modal>
 
-      {/* === MODAL CONSULTATION === */}
-      <Modal open={showConsultModal} onClose={() => setShowConsultModal(false)} title="Envoyer la consultation">
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Sélectionner les fournisseurs</div>
-          {consultations.filter((c: any) => c.status === 'en_attente').map((c: any) => (
-            <div key={c.id} onClick={() => setSelectedSuppliers(prev => prev.includes(c.supplier_id) ? prev.filter(id => id !== c.supplier_id) : [...prev, c.supplier_id])}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', cursor: 'pointer' }}>
-              <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${selectedSuppliers.includes(c.supplier_id) ? 'var(--accent)' : 'var(--border-hi)'}`, background: selectedSuppliers.includes(c.supplier_id) ? 'var(--accent)' : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {selectedSuppliers.includes(c.supplier_id) && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
-              </div>
-              <div>
-                <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>{c.supplier?.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>{c.supplier?.email}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Message personnalisé (optionnel)</div>
-          <textarea value={consultMsg} onChange={e => setConsultMsg(e.target.value)} rows={4} placeholder="Message additionnel..."
-            style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-hi)', borderRadius: 8, padding: '9px 13px', fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
-        </div>
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Pièces jointes (DCE, plans…)</div>
-          <input type="file" multiple onChange={e => { if (e.target.files) setConsultFiles(Array.from(e.target.files)) }}
-            style={{ fontSize: 12, color: 'var(--text-secondary)' }} />
-          {consultFiles.length > 0 && (
-            <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {consultFiles.map((f, i) => (
-                <span key={i} style={{ fontSize: 11, padding: '3px 8px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 5 }}>📎 {f.name}</span>
-              ))}
-            </div>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <Button variant="ghost" onClick={() => setShowConsultModal(false)}>Annuler</Button>
-          <Button variant="primary" loading={sendingConsult} onClick={handleSendConsult} disabled={selectedSuppliers.length === 0}>
-            Envoyer ({selectedSuppliers.length})
-          </Button>
-        </div>
-      </Modal>
+      <ConsultationComposeModal
+        open={showConsultModal}
+        onClose={() => setShowConsultModal(false)}
+        tender={tender}
+        recipients={consultations.map((c: any) => ({
+          supplier_id: c.supplier_id,
+          name: c.supplier?.name ?? '—',
+          email: c.supplier?.email ?? '',
+          status: c.status,
+        }))}
+        preselectIds={consultPreselect}
+        sending={sendingConsult}
+        onSend={handleSendConsult}
+      />
 
       {/* === MODAL VALIDER DEVIS === */}
       <Modal open={showValidateModal} onClose={() => setShowValidateModal(false)} title="Valider un devis">

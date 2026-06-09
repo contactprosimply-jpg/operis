@@ -11,6 +11,8 @@ import { sendEmail } from '@/lib/mailer'
 import { createAdminClient } from '@/lib/supabase'
 import { downloadDevisFile } from '@/lib/devis-storage'
 import { attachmentMetaOnly } from '@/lib/mail-storage'
+import { personalizeConsultationBody, buildConsultationDefaultBodyWithExtra } from '@/lib/email-compose'
+import { sendUserEmail } from '@/lib/user-mailer'
 import {
   CreateTenderPayload,
   UpdateTenderPayload,
@@ -120,7 +122,14 @@ export const tenderService = {
     tenderId: string,
     userId: string,
     supplierIds: string[],
-    options?: { message?: string; document_ids?: string[] }
+    options?: {
+      message?: string
+      body?: string
+      subject?: string
+      signature?: string
+      document_ids?: string[]
+      attachment_files?: Array<{ filename: string; contentType?: string; data: string }>
+    }
   ): Promise<ApiResponse<{ sent: number; errors: number }>> {
     try {
       const tender = await tenderRepository.findById(tenderId, userId)
@@ -129,6 +138,23 @@ export const tenderService = {
       const db = createAdminClient()
       let mailAttachments: Array<{ filename: string; content: Buffer; contentType: string }> = []
       const attachmentMeta: Array<ReturnType<typeof attachmentMetaOnly>> = []
+
+      if (options?.attachment_files?.length) {
+        for (const f of options.attachment_files) {
+          if (!f.data || !f.filename) continue
+          const buf = Buffer.from(f.data, 'base64')
+          mailAttachments.push({
+            filename: f.filename,
+            content: buf,
+            contentType: f.contentType || 'application/octet-stream',
+          })
+          attachmentMeta.push(attachmentMetaOnly({
+            filename: f.filename,
+            contentType: f.contentType || 'application/octet-stream',
+            size: buf.length,
+          }))
+        }
+      }
 
       if (options?.document_ids?.length) {
         const { data: docs } = await db
@@ -155,6 +181,8 @@ export const tenderService = {
         }
       }
 
+      const subject = options?.subject?.trim() || `Consultation — ${tender.title}`
+      const signature = options?.signature?.trim() ?? ''
       let sent = 0
       let errors = 0
 
@@ -162,13 +190,16 @@ export const tenderService = {
         const supplier = await supplierRepository.findById(supplierId, userId)
         if (!supplier) continue
 
-        const body = buildConsultationEmail(tender, supplier.name, options?.message)
+        const bodyPlain = options?.body
+          ? personalizeConsultationBody(options.body, supplier.name)
+          : buildConsultationDefaultBodyWithExtra(tender, supplier.name, options?.message)
 
         try {
-          await sendEmail({
+          const { text: sentText } = await sendUserEmail(db, userId, {
             to: supplier.email,
-            subject: `Consultation — ${tender.title}`,
-            body,
+            subject,
+            body: bodyPlain,
+            signature,
             attachments: mailAttachments.length > 0 ? mailAttachments : undefined,
           })
 
@@ -181,8 +212,8 @@ export const tenderService = {
             supplier_id: supplierId,
             type: 'consultation',
             to_address: supplier.email,
-            subject: `Consultation — ${tender.title}`,
-            body,
+            subject,
+            body: sentText,
             sent_at: new Date().toISOString(),
             success: true,
             error_message: null,
@@ -190,17 +221,18 @@ export const tenderService = {
           })
 
           sent++
-        } catch (emailError: any) {
+        } catch (emailError: unknown) {
+          const msg = emailError instanceof Error ? emailError.message : 'Erreur envoi'
           await emailLogRepository.create({
             tender_id: tenderId,
             supplier_id: supplierId,
             type: 'consultation',
             to_address: supplier.email,
-            subject: `Consultation — ${tender.title}`,
+            subject,
             body: null,
             sent_at: new Date().toISOString(),
             success: false,
-            error_message: emailError.message,
+            error_message: msg,
             attachments: [],
           })
           errors++
@@ -301,21 +333,6 @@ export const tenderService = {
 // ============================================================
 // Templates emails
 // ============================================================
-
-function buildConsultationEmail(tender: any, supplierName: string, customMessage?: string): string {
-  const extra = customMessage?.trim() ? `\n\n${customMessage.trim()}\n` : '\n'
-  return `Bonjour ${supplierName},
-
-Nous vous contactons dans le cadre d'un appel d'offres et souhaiterions recueillir votre devis pour le projet suivant :
-
-Projet : ${tender.title}
-Client : ${tender.client}
-${tender.description ? `Description : ${tender.description}\n` : ''}${tender.deadline ? `Date limite de réponse : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}\n` : ''}${extra}
-Merci de nous faire parvenir votre offre dans les meilleurs délais.
-
-Cordialement,
-L'équipe Operis`
-}
 
 function buildRelaunchEmail(tender: any, supplierName: string, relaunchCount: number): string {
   return `Bonjour ${supplierName},
