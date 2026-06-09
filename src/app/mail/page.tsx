@@ -177,15 +177,6 @@ export default function MailPage() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!ready) return
-    if (!userId) {
-      setLoading(false)
-      return
-    }
-    loadEmails(false)
-  }, [filter, ready, userId, loadEmails])
-
   const runSync = useCallback(async (silent = true) => {
     if (syncInProgressRef.current) return
     syncInProgressRef.current = true
@@ -198,13 +189,17 @@ export default function MailPage() {
       const data = await res.json()
       if (data.success) {
         const { stored = 0, updated = 0 } = data.data ?? {}
-        if (stored > 0 || updated > 0) {
+        if (!silent && stored + updated === 0) {
+          showToast('Boîte à jour')
+        } else if (stored > 0 || updated > 0) {
           showToast(`${stored + updated} email(s) synchronisé(s)`)
         }
         setAutoSyncStatus(`Sync ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
-        await loadEmails(true)
-        const sid = selectedIdRef.current
-        if (sid && updated > 0) await loadEmailDetail(sid, true)
+        if (stored > 0 || updated > 0) {
+          await loadEmails(true)
+          const sid = selectedIdRef.current
+          if (sid && updated > 0) await loadEmailDetail(sid, true)
+        }
       } else if (!silent) showToast(`Erreur : ${data.error}`)
     } catch (e: any) {
       if (!silent) showToast(`Erreur : ${e.message}`)
@@ -214,15 +209,24 @@ export default function MailPage() {
     }
   }, [loadEmails, loadEmailDetail])
 
-  // Sync en arrière-plan (après chargement liste, toutes les 60s si visible)
+  useEffect(() => {
+    if (!ready) return
+    if (!userId) {
+      setLoading(false)
+      return
+    }
+    void loadEmails(false)
+    void runSync(true)
+  }, [filter, ready, userId, loadEmails, runSync])
+
+  // Sync en arrière-plan toutes les 60s si visible
   useEffect(() => {
     if (!ready || !userId) return
-    const startDelay = setTimeout(() => runSync(true), 5000)
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') runSync(true)
-    }, 90 * 1000)
-    return () => { clearTimeout(startDelay); clearInterval(interval) }
-  }, [ready, userId]) // eslint-disable-line react-hooks/exhaustive-deps
+    }, 60 * 1000)
+    return () => clearInterval(interval)
+  }, [ready, userId, runSync])
 
   // Realtime Supabase INSERT + UPDATE
   useEffect(() => {
@@ -358,14 +362,17 @@ export default function MailPage() {
 
   const handleMarkRead = async (email: Email) => {
     if (email.is_read) return
+    setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: true } : e))
+    setSelected(prev => prev?.id === email.id ? { ...prev, is_read: true } : prev)
     try {
       await authFetch('/api/mail/emails', {
         method: 'PATCH',
         body: JSON.stringify({ id: email.id, is_read: true }),
       })
-      setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: true } : e))
-      setSelected(prev => prev?.id === email.id ? { ...prev, is_read: true } : prev)
-    } catch {}
+    } catch {
+      setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: false } : e))
+      setSelected(prev => prev?.id === email.id ? { ...prev, is_read: false } : prev)
+    }
   }
 
   const handleMarkUnread = async (email: Email) => {

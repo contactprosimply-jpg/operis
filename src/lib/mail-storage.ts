@@ -14,7 +14,7 @@ export function attachmentMetaOnly(att: StoredEmailAttachment) {
     size: att.size,
     path: att.path,
     hasData: !!(att.path || att.data),
-  }
+  } as StoredEmailAttachment & { hasData: boolean }
 }
 
 export async function persistAttachmentsToStorage(
