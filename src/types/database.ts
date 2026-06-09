@@ -62,6 +62,7 @@ export interface EmailAttachment {
   contentType: string
   size: number
   data?: string
+  hasData?: boolean
 }
 
 export interface Quote {

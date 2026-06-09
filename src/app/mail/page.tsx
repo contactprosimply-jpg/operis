@@ -87,9 +87,10 @@ function SignaturePreview({ html }: { html: string }) {
 
 export default function MailPage() {
   const router = useRouter()
-  const { session } = useAuth()
+  const { session, ready } = useAuth()
   const [emails, setEmails] = useState<Email[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingDetail, setLoadingDetail] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [autoSyncStatus, setAutoSyncStatus] = useState<string | null>(null)
   const [selected, setSelected] = useState<Email | null>(null)
@@ -107,6 +108,7 @@ export default function MailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const emailCountRef = useRef(0)
   const selectedIdRef = useRef<string | null>(null)
+  const syncInProgressRef = useRef(false)
   selectedIdRef.current = selected?.id ?? null
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
@@ -131,44 +133,70 @@ export default function MailPage() {
         const newEmails = data.data as Email[]
         if (silent && newEmails.length > emailCountRef.current) {
           const diff = newEmails.length - emailCountRef.current
-          showToast(`${diff} nouveau(x) email(s)`)
+          if (diff > 0) showToast(`${diff} nouveau(x) email(s)`)
         }
         emailCountRef.current = newEmails.length
         setEmails(newEmails)
         const sid = selectedIdRef.current
         if (sid) {
           const updated = newEmails.find(e => e.id === sid)
-          if (updated) setSelected(updated)
+          if (updated) setSelected(prev => prev ? { ...prev, ...updated } : updated)
         }
       }
     } catch (e) { console.error(e) }
-    if (!silent) setLoading(false)
+    finally { if (!silent) setLoading(false) }
   }, [filter])
 
-  useEffect(() => { loadEmails() }, [filter]) // eslint-disable-line react-hooks/exhaustive-deps
+  const loadEmailDetail = useCallback(async (emailId: string) => {
+    setLoadingDetail(true)
+    try {
+      const res = await authFetch(`/api/mail/emails/${emailId}`)
+      const data = await res.json()
+      if (data.success) {
+        const full = data.data as Email
+        setSelected(full)
+        setEmails(prev => prev.map(e => e.id === full.id ? { ...e, ...full, body_text: undefined, body_html: undefined, attachments: undefined } : e))
+      }
+    } catch (e) { console.error(e) }
+    finally { setLoadingDetail(false) }
+  }, [])
+
+  useEffect(() => {
+    if (!ready || !session) return
+    loadEmails()
+  }, [filter, ready, session, loadEmails])
 
   const runSync = useCallback(async (silent = true) => {
+    if (syncInProgressRef.current) return
+    syncInProgressRef.current = true
     try {
       if (!silent) setSyncing(true)
       const res = await authFetch('/api/mail/sync', { method: 'POST', body: JSON.stringify({}) })
       const data = await res.json()
       if (data.success) {
-        if (data.data.stored > 0) showToast(`${data.data.stored} nouveau(x) email(s)`)
+        if (data.data.stored > 0) showToast(`${data.data.stored} email(s) mis à jour`)
         setAutoSyncStatus(`Sync ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
         await loadEmails(true)
+        const sid = selectedIdRef.current
+        if (sid) await loadEmailDetail(sid)
       } else if (!silent) showToast(`Erreur : ${data.error}`)
     } catch (e: any) {
       if (!silent) showToast(`Erreur : ${e.message}`)
+    } finally {
+      syncInProgressRef.current = false
+      if (!silent) setSyncing(false)
     }
-    if (!silent) setSyncing(false)
-  }, [loadEmails])
+  }, [loadEmails, loadEmailDetail])
 
-  // Sync automatique toutes les 30 secondes
+  // Sync en arrière-plan (après chargement liste, toutes les 60s si visible)
   useEffect(() => {
-    runSync(true)
-    const interval = setInterval(() => runSync(true), 30 * 1000)
-    return () => clearInterval(interval)
-  }, [runSync])
+    if (!ready || !session) return
+    const startDelay = setTimeout(() => runSync(true), 3000)
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') runSync(true)
+    }, 60 * 1000)
+    return () => { clearTimeout(startDelay); clearInterval(interval) }
+  }, [ready, session]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Realtime Supabase INSERT + UPDATE
   useEffect(() => {
@@ -178,21 +206,33 @@ export default function MailPage() {
         event: 'INSERT', schema: 'public', table: 'emails',
         filter: `user_id=eq.${session.user.id}`,
       }, (payload) => {
-        const newEmail = payload.new as Email
+        const raw = payload.new as Email
+        const lite: Email = {
+          id: raw.id, user_id: raw.user_id, message_id: raw.message_id,
+          subject: raw.subject, from_address: raw.from_address, to_address: raw.to_address,
+          received_at: raw.received_at, is_read: raw.is_read, is_ao: raw.is_ao,
+          ao_score: raw.ao_score, tender_id: raw.tender_id, has_attachments: raw.has_attachments,
+          created_at: raw.created_at,
+        }
         setEmails(prev => {
-          if (prev.some(e => e.id === newEmail.id)) return prev
-          return [newEmail, ...prev]
+          if (prev.some(e => e.id === lite.id)) return prev
+          return [lite, ...prev]
         })
         emailCountRef.current += 1
-        showToast(`Nouvel email : ${newEmail.subject?.slice(0, 40)}`)
+        showToast(`Nouvel email : ${lite.subject?.slice(0, 40)}`)
       })
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'emails',
         filter: `user_id=eq.${session.user.id}`,
       }, (payload) => {
-        const updated = payload.new as Email
-        setEmails(prev => prev.map(e => e.id === updated.id ? { ...e, ...updated } : e))
-        setSelected(prev => prev?.id === updated.id ? { ...prev, ...updated } : prev)
+        const raw = payload.new as Email
+        const lite: Partial<Email> = {
+          subject: raw.subject, from_address: raw.from_address, received_at: raw.received_at,
+          is_read: raw.is_read, is_ao: raw.is_ao, ao_score: raw.ao_score,
+          tender_id: raw.tender_id, has_attachments: raw.has_attachments,
+        }
+        setEmails(prev => prev.map(e => e.id === raw.id ? { ...e, ...lite } : e))
+        if (selectedIdRef.current === raw.id) loadEmailDetail(raw.id)
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
@@ -204,6 +244,7 @@ export default function MailPage() {
     setSelected(email)
     setComposing(false)
     if (isMobile) setMobileShowDetail(true)
+    loadEmailDetail(email.id)
     if (!email.is_read) handleMarkRead(email)
   }
 
@@ -421,7 +462,7 @@ export default function MailPage() {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-            {loading ? (
+            {!ready || loading ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}><Spinner /></div>
             ) : emails.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 32 }}>
@@ -549,6 +590,11 @@ export default function MailPage() {
             </div>
           ) : selected ? (
             <div style={{ padding: isMobile ? '12px 14px' : '20px 24px' }}>
+              {loadingDetail && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 11, color: 'var(--text-muted)' }}>
+                  <Spinner size={12} /> Chargement du message…
+                </div>
+              )}
               {isMobile && (
                 <button onClick={() => { setMobileShowDetail(false); setSelected(null) }} style={{
                   background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
@@ -603,10 +649,10 @@ export default function MailPage() {
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📎 {att.filename}</div>
                           <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
-                            {formatFileSize(att.size)}{att.data ? '' : ' · trop volumineux pour aperçu'}
+                            {formatFileSize(att.size)}{att.hasData || att.data ? '' : ' · fichier volumineux'}
                           </div>
                         </div>
-                        {att.data && (
+                        {(att.hasData || att.data) && (
                           <button onClick={() => downloadAttachment(selected.id, i, att.filename)} style={{
                             background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid rgba(59,126,246,0.2)',
                             borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
@@ -616,6 +662,14 @@ export default function MailPage() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+              {selected.has_attachments && !(selected.attachments?.length) && !loadingDetail && (
+                <div style={{ marginBottom: 20, padding: '12px 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                  Pièces jointes détectées —{' '}
+                  <button type="button" onClick={() => handleSync()} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontFamily: 'DM Sans, system-ui' }}>
+                    synchroniser pour les récupérer
+                  </button>
                 </div>
               )}
 

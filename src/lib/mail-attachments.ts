@@ -1,6 +1,6 @@
 import type { Attachment } from 'mailparser'
 
-export const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024
+export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 
 export interface StoredEmailAttachment {
   filename: string
@@ -16,17 +16,21 @@ export function parseMailAttachments(parsedAttachments: Attachment[] | undefined
   const attachments: StoredEmailAttachment[] = []
 
   for (const att of parsedAttachments ?? []) {
-    if (att.type === 'attachment' || att.content) {
-      const filename = att.filename || att.contentId || 'fichier'
-      const contentType = att.contentType || 'application/octet-stream'
-      const buf = att.content
-      const size = buf?.length ?? 0
-      const entry: StoredEmailAttachment = { filename, contentType, size }
-      if (buf && size > 0 && size <= MAX_ATTACHMENT_BYTES) {
-        entry.data = Buffer.from(buf).toString('base64')
-      }
-      attachments.push(entry)
+    const buf = att.content
+    if (!buf?.length) continue
+
+    const filename = att.filename || att.contentId || 'fichier'
+    const contentType = att.contentType || 'application/octet-stream'
+    const size = buf.length
+
+    // Ignore tiny inline tracking images
+    if (!att.filename && att.related && contentType.startsWith('image/') && size < 8000) continue
+
+    const entry: StoredEmailAttachment = { filename, contentType, size }
+    if (size <= MAX_ATTACHMENT_BYTES) {
+      entry.data = Buffer.from(buf).toString('base64')
     }
+    attachments.push(entry)
   }
 
   return { attachments, hasAttachments: attachments.length > 0 }

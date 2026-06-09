@@ -3,6 +3,7 @@
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
+import { EMAIL_LIST_FIELDS, toListEmail } from '@/lib/mail-api'
 
 export async function GET(req: NextRequest) {
   const userId = await getUserFromRequest(req)
@@ -20,10 +21,10 @@ export async function GET(req: NextRequest) {
 
   let query = db
     .from('emails')
-    .select('*')
+    .select(EMAIL_LIST_FIELDS)
     .eq('user_id', userId)
     .order('received_at', { ascending: false })
-    .limit(150)
+    .limit(80)
 
   if (isAo !== undefined) query = query.eq('is_ao', isAo)
   if (isRead !== undefined) query = query.eq('is_read', isRead)
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await query
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
-  return Response.json({ success: true, data: data ?? [] })
+  return Response.json({ success: true, data: (data ?? []).map(toListEmail) })
 }
 
 export async function PATCH(req: NextRequest) {

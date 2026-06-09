@@ -64,11 +64,22 @@ async function syncAccount(userId: string, account: any) {
         const fromEmail = parsed.from?.value?.[0]?.address ?? ''
         if (fromEmail === account.imap_user) continue
 
-        const { data: existing } = await db.from('emails').select('id').eq('message_id', messageId).single()
-        if (existing) continue
+        const { attachments, hasAttachments } = parseMailAttachments(parsed.attachments)
+
+        const { data: existing } = await db
+          .from('emails')
+          .select('id, has_attachments')
+          .eq('message_id', messageId)
+          .maybeSingle()
+
+        if (existing) {
+          if (hasAttachments) {
+            await db.from('emails').update({ attachments, has_attachments: true }).eq('id', existing.id)
+          }
+          continue
+        }
 
         const { isAo, score } = detectAo(parsed.subject ?? '', parsed.text ?? '')
-        const { attachments, hasAttachments } = parseMailAttachments(parsed.attachments)
 
         const insertPayload: Record<string, unknown> = {
           user_id: userId,

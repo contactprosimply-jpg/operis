@@ -147,19 +147,32 @@ export async function POST(req: NextRequest) {
           continue
         }
 
+        const { attachments, hasAttachments } = parseMailAttachments(parsed.attachments)
+
         const { data: existing } = await db
           .from('emails')
-          .select('id')
+          .select('id, has_attachments')
           .eq('message_id', messageId)
           .maybeSingle()
 
         if (existing) {
+          if (hasAttachments && !existing.has_attachments) {
+            await db.from('emails').update({
+              attachments,
+              has_attachments: true,
+            }).eq('id', existing.id)
+            result.stored++
+          } else if (hasAttachments) {
+            await db.from('emails').update({
+              attachments,
+              has_attachments: true,
+            }).eq('id', existing.id)
+          }
           result.duplicates++
           continue
         }
 
         const { isAo, score } = detectAo(parsed.subject ?? '', parsed.text ?? '')
-        const { attachments, hasAttachments } = parseMailAttachments(parsed.attachments)
 
         const insertPayload: Record<string, unknown> = {
           user_id: userId,
