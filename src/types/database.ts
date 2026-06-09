@@ -94,6 +94,7 @@ export interface Email {
   tender_id: string | null
   attachments?: EmailAttachment[]
   has_attachments?: boolean
+  attachments_pending?: boolean
   created_at: string
 }
 

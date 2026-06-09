@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
-import type { EmailAttachment } from '@/types/database'
+import { normalizeAttachments } from '@/lib/mail-attachments'
 
 export async function GET(
   req: NextRequest,
@@ -30,7 +30,7 @@ export async function GET(
     return Response.json({ success: false, error: 'Email introuvable' }, { status: 404 })
   }
 
-  const attachments = (email.attachments as EmailAttachment[]) ?? []
+  const attachments = normalizeAttachments(email.attachments)
   const att = attachments[idx]
   if (!att?.data) {
     return Response.json({ success: false, error: 'Pièce jointe introuvable ou trop volumineuse' }, { status: 404 })

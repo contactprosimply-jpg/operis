@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
   }
 
   const db = createAdminClient()
-  const result = { fetched: 0, stored: 0, aoDetected: 0, duplicates: 0, errors: 0 }
+  const result = { fetched: 0, stored: 0, updated: 0, aoDetected: 0, duplicates: 0, errors: 0 }
 
   try {
     const messages = await fetchMessagesWithFallback(account)
@@ -156,17 +156,12 @@ export async function POST(req: NextRequest) {
           .maybeSingle()
 
         if (existing) {
-          if (hasAttachments && !existing.has_attachments) {
-            await db.from('emails').update({
+          if (hasAttachments) {
+            const { error: upErr } = await db.from('emails').update({
               attachments,
               has_attachments: true,
             }).eq('id', existing.id)
-            result.stored++
-          } else if (hasAttachments) {
-            await db.from('emails').update({
-              attachments,
-              has_attachments: true,
-            }).eq('id', existing.id)
+            if (!upErr) result.updated++
           }
           result.duplicates++
           continue

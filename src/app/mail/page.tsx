@@ -109,7 +109,11 @@ export default function MailPage() {
   const emailCountRef = useRef(0)
   const selectedIdRef = useRef<string | null>(null)
   const syncInProgressRef = useRef(false)
+  const emailsRef = useRef<Email[]>([])
   selectedIdRef.current = selected?.id ?? null
+  emailsRef.current = emails
+
+  const userId = session?.user?.id
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
@@ -122,6 +126,7 @@ export default function MailPage() {
 
   const loadEmails = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
+    const safetyTimer = setTimeout(() => { if (!silent) setLoading(false) }, 12000)
     try {
       const params = new URLSearchParams()
       if (filter === 'ao') params.set('ao', 'true')
@@ -144,27 +149,42 @@ export default function MailPage() {
         }
       }
     } catch (e) { console.error(e) }
-    finally { if (!silent) setLoading(false) }
+    finally {
+      clearTimeout(safetyTimer)
+      if (!silent) setLoading(false)
+    }
   }, [filter])
 
-  const loadEmailDetail = useCallback(async (emailId: string) => {
-    setLoadingDetail(true)
+  const loadEmailDetail = useCallback(async (emailId: string, silent = false) => {
+    if (!silent) setLoadingDetail(true)
+    const safetyTimer = setTimeout(() => { if (!silent) setLoadingDetail(false) }, 12000)
     try {
       const res = await authFetch(`/api/mail/emails/${emailId}`)
       const data = await res.json()
       if (data.success) {
         const full = data.data as Email
         setSelected(full)
-        setEmails(prev => prev.map(e => e.id === full.id ? { ...e, ...full, body_text: undefined, body_html: undefined, attachments: undefined } : e))
+        setEmails(prev => prev.map(e => e.id === full.id ? {
+          ...e,
+          has_attachments: full.has_attachments,
+          attachments: full.attachments,
+        } : e))
       }
     } catch (e) { console.error(e) }
-    finally { setLoadingDetail(false) }
+    finally {
+      clearTimeout(safetyTimer)
+      if (!silent) setLoadingDetail(false)
+    }
   }, [])
 
   useEffect(() => {
-    if (!ready || !session) return
-    loadEmails()
-  }, [filter, ready, session, loadEmails])
+    if (!ready) return
+    if (!userId) {
+      setLoading(false)
+      return
+    }
+    loadEmails(false)
+  }, [filter, ready, userId, loadEmails])
 
   const runSync = useCallback(async (silent = true) => {
     if (syncInProgressRef.current) return
@@ -174,11 +194,14 @@ export default function MailPage() {
       const res = await authFetch('/api/mail/sync', { method: 'POST', body: JSON.stringify({}) })
       const data = await res.json()
       if (data.success) {
-        if (data.data.stored > 0) showToast(`${data.data.stored} email(s) mis à jour`)
+        const { stored = 0, updated = 0 } = data.data ?? {}
+        if (stored > 0 || updated > 0) {
+          showToast(`${stored + updated} email(s) synchronisé(s)`)
+        }
         setAutoSyncStatus(`Sync ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
         await loadEmails(true)
         const sid = selectedIdRef.current
-        if (sid) await loadEmailDetail(sid)
+        if (sid && updated > 0) await loadEmailDetail(sid, true)
       } else if (!silent) showToast(`Erreur : ${data.error}`)
     } catch (e: any) {
       if (!silent) showToast(`Erreur : ${e.message}`)
@@ -190,21 +213,21 @@ export default function MailPage() {
 
   // Sync en arrière-plan (après chargement liste, toutes les 60s si visible)
   useEffect(() => {
-    if (!ready || !session) return
-    const startDelay = setTimeout(() => runSync(true), 3000)
+    if (!ready || !userId) return
+    const startDelay = setTimeout(() => runSync(true), 5000)
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') runSync(true)
-    }, 60 * 1000)
+    }, 90 * 1000)
     return () => { clearTimeout(startDelay); clearInterval(interval) }
-  }, [ready, session]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ready, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Realtime Supabase INSERT + UPDATE
   useEffect(() => {
-    if (!session) return
-    const channel = supabase.channel('emails-realtime')
+    if (!userId) return
+    const channel = supabase.channel(`emails-realtime-${userId}`)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'emails',
-        filter: `user_id=eq.${session.user.id}`,
+        filter: `user_id=eq.${userId}`,
       }, (payload) => {
         const raw = payload.new as Email
         const lite: Email = {
@@ -223,20 +246,27 @@ export default function MailPage() {
       })
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'emails',
-        filter: `user_id=eq.${session.user.id}`,
+        filter: `user_id=eq.${userId}`,
       }, (payload) => {
         const raw = payload.new as Email
+        const prev = emailsRef.current.find(e => e.id === raw.id)
         const lite: Partial<Email> = {
           subject: raw.subject, from_address: raw.from_address, received_at: raw.received_at,
           is_read: raw.is_read, is_ao: raw.is_ao, ao_score: raw.ao_score,
           tender_id: raw.tender_id, has_attachments: raw.has_attachments,
         }
-        setEmails(prev => prev.map(e => e.id === raw.id ? { ...e, ...lite } : e))
-        if (selectedIdRef.current === raw.id) loadEmailDetail(raw.id)
+        setEmails(prevList => prevList.map(e => e.id === raw.id ? { ...e, ...lite } : e))
+        if (selectedIdRef.current === raw.id) {
+          setSelected(prev => prev ? { ...prev, ...lite } : prev)
+          // Recharger le détail seulement si les PJ viennent d'apparaître
+          if (raw.has_attachments && !prev?.has_attachments) {
+            loadEmailDetail(raw.id, true)
+          }
+        }
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [session])
+  }, [userId, loadEmailDetail])
 
   const handleSync = () => runSync(false)
 
@@ -462,7 +492,7 @@ export default function MailPage() {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-            {!ready || loading ? (
+            {!ready || (loading && emails.length === 0) ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}><Spinner /></div>
             ) : emails.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 32 }}>
@@ -652,12 +682,14 @@ export default function MailPage() {
                             {formatFileSize(att.size)}{att.hasData || att.data ? '' : ' · fichier volumineux'}
                           </div>
                         </div>
-                        {(att.hasData || att.data) && (
+                        {(att.hasData || att.data) ? (
                           <button onClick={() => downloadAttachment(selected.id, i, att.filename)} style={{
                             background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid rgba(59,126,246,0.2)',
                             borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
                             fontFamily: 'DM Sans, system-ui',
                           }}>Télécharger</button>
+                        ) : (
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>Sync requis</span>
                         )}
                       </div>
                     ))}
@@ -666,9 +698,9 @@ export default function MailPage() {
               )}
               {selected.has_attachments && !(selected.attachments?.length) && !loadingDetail && (
                 <div style={{ marginBottom: 20, padding: '12px 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)' }}>
-                  Pièces jointes détectées —{' '}
+                  {selected.attachments_pending ? 'Pièces jointes en attente — ' : 'Pièces jointes détectées — '}
                   <button type="button" onClick={() => handleSync()} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontFamily: 'DM Sans, system-ui' }}>
-                    synchroniser pour les récupérer
+                    appuyer sur ↻ Sync
                   </button>
                 </div>
               )}
