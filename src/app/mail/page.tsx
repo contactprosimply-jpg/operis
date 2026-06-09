@@ -191,7 +191,10 @@ export default function MailPage() {
     syncInProgressRef.current = true
     try {
       if (!silent) setSyncing(true)
-      const res = await authFetch('/api/mail/sync', { method: 'POST', body: JSON.stringify({}) })
+      const res = await authFetch('/api/mail/sync', {
+        method: 'POST',
+        body: JSON.stringify({ backfill: !silent }),
+      })
       const data = await res.json()
       if (data.success) {
         const { stored = 0, updated = 0 } = data.data ?? {}

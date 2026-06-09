@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { normalizeAttachments } from '@/lib/mail-attachments'
+import { downloadAttachmentBuffer } from '@/lib/mail-storage'
 
 export async function GET(
   req: NextRequest,
@@ -32,12 +33,16 @@ export async function GET(
 
   const attachments = normalizeAttachments(email.attachments)
   const att = attachments[idx]
-  if (!att?.data) {
+  if (!att) {
+    return Response.json({ success: false, error: 'Pièce jointe introuvable' }, { status: 404 })
+  }
+
+  const buffer = await downloadAttachmentBuffer(db, att)
+  if (!buffer?.length) {
     return Response.json({ success: false, error: 'Pièce jointe introuvable ou trop volumineuse' }, { status: 404 })
   }
 
-  const buffer = Buffer.from(att.data, 'base64')
-  return new Response(buffer, {
+  return new Response(new Uint8Array(buffer), {
     headers: {
       'Content-Type': att.contentType || 'application/octet-stream',
       'Content-Disposition': `attachment; filename="${encodeURIComponent(att.filename)}"`,

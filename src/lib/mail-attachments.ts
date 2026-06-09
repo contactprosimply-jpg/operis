@@ -1,13 +1,14 @@
 import type { Attachment } from 'mailparser'
 import type { EmailAttachment } from '@/types/database'
 
-export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 
 export interface StoredEmailAttachment {
   filename: string
   contentType: string
   size: number
   data?: string
+  path?: string
 }
 
 const FILE_EXT = /\.(pdf|docx?|xlsx?|xls|csv|zip|rar|7z|pptx?|txt|png|jpe?g|gif|webp|xml|dwg|dxf)$/i
@@ -74,17 +75,19 @@ export function normalizeAttachments(raw: unknown): EmailAttachment[] {
     filename: att.filename || 'fichier',
     contentType: att.contentType || 'application/octet-stream',
     size: att.size ?? 0,
+    path: att.path,
     data: att.data,
-    hasData: !!(att.data || att.hasData),
+    hasData: !!(att.path || att.data || att.hasData),
   }))
 }
 
 export function toAttachmentMeta(raw: unknown): EmailAttachment[] {
-  return normalizeAttachments(raw).map(({ filename, contentType, size, data, hasData }) => ({
+  return normalizeAttachments(raw).map(({ filename, contentType, size, path, data, hasData }) => ({
     filename,
     contentType,
     size,
-    hasData: hasData ?? !!data,
+    path,
+    hasData: hasData ?? !!(path || data),
   }))
 }
 

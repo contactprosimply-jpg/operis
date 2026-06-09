@@ -61,6 +61,7 @@ export interface EmailAttachment {
   filename: string
   contentType: string
   size: number
+  path?: string
   data?: string
   hasData?: boolean
 }

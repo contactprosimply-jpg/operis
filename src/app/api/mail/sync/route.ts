@@ -5,8 +5,10 @@ import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import { fetchRecentMessages, formatImapError, type MailAccountConfig } from '@/lib/imap-client'
 import { simpleParser } from 'mailparser'
-import { parseMailAttachments } from '@/lib/mail-attachments'
+import { parseMailAttachments, type StoredEmailAttachment } from '@/lib/mail-attachments'
 import { tryCreateQuoteFromInboundEmail } from '@/lib/mail-quote-extract'
+import { attachmentMetaOnly, persistAttachmentsToStorage } from '@/lib/mail-storage'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export const maxDuration = 60
 
@@ -101,9 +103,12 @@ function getEnvMailAccount(): MailAccountConfig | null {
   }
 }
 
-async function fetchMessagesWithFallback(account: MailAccountConfig & { id?: string }) {
+async function fetchMessagesWithFallback(
+  account: MailAccountConfig & { id?: string },
+  opts: { sinceDays: number; limit: number },
+) {
   try {
-    return await fetchRecentMessages(account, { sinceDays: 30, limit: 40 })
+    return await fetchRecentMessages(account, opts)
   } catch (primaryError) {
     const envAccount = getEnvMailAccount()
     if (!envAccount) throw primaryError
@@ -113,8 +118,24 @@ async function fetchMessagesWithFallback(account: MailAccountConfig & { id?: str
       envAccount.imap_user === account.imap_user &&
       envAccount.imap_pass === account.imap_pass
     if (sameConfig) throw primaryError
-    return fetchRecentMessages(envAccount, { sinceDays: 30, limit: 40 })
+    return fetchRecentMessages(envAccount, opts)
   }
+}
+
+async function saveEmailAttachments(
+  db: SupabaseClient,
+  userId: string,
+  emailId: string,
+  rawAttachments: StoredEmailAttachment[],
+) {
+  if (!rawAttachments.length) return []
+  const stored = await persistAttachmentsToStorage(db, userId, emailId, rawAttachments)
+  const meta = stored.map(attachmentMetaOnly)
+  await db.from('emails').update({
+    attachments: meta,
+    has_attachments: meta.length > 0,
+  }).eq('id', emailId)
+  return meta
 }
 
 export async function POST(req: NextRequest) {
@@ -129,11 +150,17 @@ export async function POST(req: NextRequest) {
     }, { status: 400 })
   }
 
+  const body = await req.json().catch(() => ({}))
+  const backfill = body?.backfill === true
+  const fetchOpts = backfill
+    ? { sinceDays: 120, limit: 150 }
+    : { sinceDays: 60, limit: 80 }
+
   const db = createAdminClient()
   const result = { fetched: 0, stored: 0, updated: 0, aoDetected: 0, duplicates: 0, errors: 0 }
 
   try {
-    const messages = await fetchMessagesWithFallback(account)
+    const messages = await fetchMessagesWithFallback(account, fetchOpts)
     result.fetched = messages.length
 
     for (const message of messages) {
@@ -157,11 +184,8 @@ export async function POST(req: NextRequest) {
 
         if (existing) {
           if (hasAttachments) {
-            const { error: upErr } = await db.from('emails').update({
-              attachments,
-              has_attachments: true,
-            }).eq('id', existing.id)
-            if (!upErr) result.updated++
+            await saveEmailAttachments(db, userId, existing.id, attachments)
+            result.updated++
           }
           result.duplicates++
           continue
@@ -182,19 +206,11 @@ export async function POST(req: NextRequest) {
           is_ao: isAo,
           ao_score: score,
           tender_id: null,
-          attachments,
+          attachments: [],
           has_attachments: hasAttachments,
         }
 
-        let { data: inserted, error } = await db.from('emails').insert(insertPayload).select('id').single()
-
-        if (error && (error.message.includes('attachments') || error.message.includes('has_attachments'))) {
-          delete insertPayload.attachments
-          delete insertPayload.has_attachments
-          const retry = await db.from('emails').insert(insertPayload).select('id').single()
-          inserted = retry.data
-          error = retry.error
-        }
+        const { data: inserted, error } = await db.from('emails').insert(insertPayload).select('id').single()
 
         if (error) {
           result.errors++
@@ -202,13 +218,17 @@ export async function POST(req: NextRequest) {
         }
 
         if (inserted?.id) {
+          let savedAttachments = attachments
+          if (hasAttachments) {
+            savedAttachments = await saveEmailAttachments(db, userId, inserted.id, attachments)
+          }
           await tryCreateQuoteFromInboundEmail(
             db,
             userId,
             inserted.id,
             parsed.from?.text ?? '',
             parsed.text ?? '',
-            attachments,
+            savedAttachments,
             null
           )
         }
