@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { StoredEmailAttachment } from '@/lib/mail-attachments'
 import { downloadAttachmentBuffer } from '@/lib/mail-storage'
-import { extractFinalPriceFromText } from '@/lib/quote-price-extract'
+import { extractFinalPriceFromText, extractPriceFromTableRows } from '@/lib/quote-price-extract'
 
 const MAX_PARSE_BYTES = 15 * 1024 * 1024
 
@@ -22,6 +22,7 @@ export function isQuoteDocument(filename: string, contentType?: string): boolean
 interface DocumentTextResult {
   fullText: string
   endSection: string
+  tableRows: string[][]
 }
 
 async function extractPdfContent(buffer: Buffer): Promise<DocumentTextResult> {
@@ -45,11 +46,13 @@ async function extractPdfContent(buffer: Buffer): Promise<DocumentTextResult> {
     console.error('[PDF] getText failed:', err)
   }
 
+  const tableRows: string[][] = []
   try {
     const tables = await parser.getTable()
     let tableTail = ''
     for (const table of tables.mergedTables ?? []) {
       for (const row of table) {
+        tableRows.push(row)
         const line = row.join(' ')
         fullText += '\n' + line
         tableTail += '\n' + line
@@ -70,7 +73,7 @@ async function extractPdfContent(buffer: Buffer): Promise<DocumentTextResult> {
       ? pageTexts[0]
       : fullText.slice(Math.floor(fullText.length * 0.55))
 
-  return { fullText, endSection: lastPages }
+  return { fullText, endSection: lastPages, tableRows }
 }
 
 async function extractDocxContent(buffer: Buffer): Promise<DocumentTextResult> {
@@ -80,6 +83,7 @@ async function extractDocxContent(buffer: Buffer): Promise<DocumentTextResult> {
   return {
     fullText,
     endSection: fullText.slice(Math.floor(fullText.length * 0.55)),
+    tableRows: [],
   }
 }
 
@@ -103,6 +107,7 @@ function extractXlsxContent(buffer: Buffer): DocumentTextResult {
   return {
     fullText: parts.join('\n'),
     endSection: tailParts.join('\n'),
+    tableRows: [],
   }
 }
 
@@ -153,7 +158,7 @@ export async function extractDocumentContent(
   contentType: string,
   buffer: Buffer,
 ): Promise<DocumentTextResult> {
-  if (buffer.length > MAX_PARSE_BYTES) return { fullText: '', endSection: '' }
+  if (buffer.length > MAX_PARSE_BYTES) return { fullText: '', endSection: '', tableRows: [] }
 
   const lower = filename.toLowerCase()
   try {
@@ -168,16 +173,16 @@ export async function extractDocumentContent(
     }
     if (lower.endsWith('.txt') || contentType.includes('plain')) {
       const fullText = buffer.toString('utf8')
-      return { fullText, endSection: fullText.slice(Math.floor(fullText.length * 0.55)) }
+      return { fullText, endSection: fullText.slice(Math.floor(fullText.length * 0.55)), tableRows: [] }
     }
     if (lower.endsWith('.doc')) {
       const fullText = buffer.toString('latin1').replace(/[^\x20-\x7E\u00A0-\u024F\n\r\t€;,.\-+]/g, ' ')
-      return { fullText, endSection: fullText.slice(Math.floor(fullText.length * 0.55)) }
+      return { fullText, endSection: fullText.slice(Math.floor(fullText.length * 0.55)), tableRows: [] }
     }
   } catch (err) {
     console.error('[Doc extract]', filename, err)
   }
-  return { fullText: '', endSection: '' }
+  return { fullText: '', endSection: '', tableRows: [] }
 }
 
 /** @deprecated utilise extractDocumentContent */
@@ -226,8 +231,16 @@ export async function extractPriceFromAttachments(
       if (filePrice != null) fileNote = 'Prix final (fin du tableau Excel)'
     }
 
-    const { fullText, endSection } = await extractDocumentContent(att.filename, att.contentType, buffer)
+    const { fullText, endSection, tableRows } = await extractDocumentContent(att.filename, att.contentType, buffer)
     if (fullText) combinedText += `\n--- ${att.filename} ---\n${fullText}`
+
+    if (filePrice == null && tableRows.length) {
+      const fromTable = extractPriceFromTableRows(tableRows)
+      if (fromTable.price != null) {
+        filePrice = fromTable.price
+        fileNote = fromTable.note
+      }
+    }
 
     if (filePrice == null && (fullText || endSection)) {
       const extracted = extractFinalPriceFromText(fullText, endSection)

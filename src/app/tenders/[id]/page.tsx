@@ -62,6 +62,9 @@ export default function TenderDetailPage() {
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false)
   const [uploadingDoc, setUploadingDoc] = useState(false)
   const [analyzingQuotes, setAnalyzingQuotes] = useState(false)
+  const [editingPriceSupplierId, setEditingPriceSupplierId] = useState<string | null>(null)
+  const [priceInput, setPriceInput] = useState('')
+  const [savingPrice, setSavingPrice] = useState(false)
 
   // Form édition AO
   const [editForm, setEditForm] = useState({
@@ -104,12 +107,16 @@ export default function TenderDetailPage() {
   const handleAnalyzeQuotes = async () => {
     setAnalyzingQuotes(true)
     try {
-      const res = await authFetch(`/api/tenders/${id}`)
+      const res = await authFetch(`/api/tenders/${id}/analyze-quotes`, { method: 'POST' })
       const data = await res.json()
       if (data.success) {
-        setTender(data.data)
-        const withPrice = (data.data.quotes ?? []).filter((q: any) => q.price_ht).length
-        show(withPrice ? `${withPrice} prix détecté(s) depuis les emails/PDF` : 'Analyse terminée — aucun prix trouvé dans les PJ')
+        await refreshTender()
+        const { withPrice = 0, analyzed = 0 } = data.data ?? {}
+        show(withPrice > 0
+          ? `${withPrice} prix détecté(s) sur ${analyzed} email(s) analysé(s)`
+          : analyzed > 0
+            ? 'Devis analysés — prix non détecté, saisissez le montant manuellement'
+            : 'Aucun email de réponse trouvé pour les fournisseurs consultés')
       } else {
         show(`Erreur : ${data.error}`)
       }
@@ -117,6 +124,44 @@ export default function TenderDetailPage() {
       show('Erreur lors de l\'analyse des devis')
     }
     setAnalyzingQuotes(false)
+  }
+
+  const startEditPrice = (supplierId: string, currentPrice: number | null) => {
+    setEditingPriceSupplierId(supplierId)
+    setPriceInput(currentPrice != null ? String(currentPrice) : '')
+  }
+
+  const saveManualPrice = async (supplierId: string, quoteId?: string) => {
+    const normalized = priceInput.replace(/\s/g, '').replace(',', '.')
+    const price = parseFloat(normalized)
+    if (!price || price <= 0) {
+      show('Montant invalide')
+      return
+    }
+    setSavingPrice(true)
+    try {
+      if (quoteId) {
+        const res = await authFetch(`/api/quotes/${quoteId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ price_ht: price }),
+        })
+        const data = await res.json()
+        if (!data.success) { show(`Erreur : ${data.error}`); return }
+      } else {
+        const res = await authFetch('/api/quotes', {
+          method: 'POST',
+          body: JSON.stringify({ tender_id: id, supplier_id: supplierId, price_ht: price }),
+        })
+        const data = await res.json()
+        if (!data.success) { show(`Erreur : ${data.error}`); return }
+      }
+      setEditingPriceSupplierId(null)
+      show('Prix enregistré')
+      await refreshTender()
+    } catch {
+      show('Erreur lors de la sauvegarde')
+    }
+    setSavingPrice(false)
   }
 
   const loadAllSuppliers = useCallback(async () => {
@@ -560,22 +605,66 @@ export default function TenderDetailPage() {
                   </div>
 
                   <div style={{
-                    minWidth: 110, flexShrink: 0, alignSelf: 'center',
-                    padding: '10px 14px', borderRadius: 8, textAlign: 'center',
+                    minWidth: 120, flexShrink: 0, alignSelf: 'center',
+                    padding: '8px 10px', borderRadius: 8, textAlign: 'center',
                     background: price ? (isBest ? 'rgba(16,185,129,0.15)' : 'var(--bg-card)') : 'transparent',
                     border: price ? `1px solid ${isBest ? 'rgba(16,185,129,0.35)' : 'var(--border)'}` : '1px dashed var(--border)',
                   }}>
                     <div style={{ fontSize: 9, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 4 }}>
                       Devis HT
                     </div>
-                    <div style={{
-                      fontSize: price ? 16 : 12,
-                      fontWeight: 700,
-                      fontFamily: 'DM Mono, monospace',
-                      color: price ? (isBest ? '#34d399' : 'var(--text-primary)') : 'var(--text-muted)',
-                    }}>
-                      {price ? `${price.toLocaleString('fr-FR')} €` : hasResponse ? 'À analyser' : '—'}
-                    </div>
+                    {editingPriceSupplierId === c.supplier_id ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <input
+                          type="text"
+                          value={priceInput}
+                          onChange={e => setPriceInput(e.target.value)}
+                          placeholder="12 500"
+                          style={{
+                            width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 6,
+                            border: '1px solid var(--border-hi)', background: 'var(--bg-primary)',
+                            color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace',
+                          }}
+                        />
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button
+                            type="button"
+                            disabled={savingPrice}
+                            onClick={() => saveManualPrice(c.supplier_id, quote?.id)}
+                            style={{ flex: 1, fontSize: 10, padding: '5px', borderRadius: 5, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer' }}
+                          >
+                            {savingPrice ? '…' : 'OK'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingPriceSupplierId(null)}
+                            style={{ fontSize: 10, padding: '5px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => startEditPrice(c.supplier_id, price)}
+                        title="Cliquer pour corriger le prix"
+                        style={{
+                          background: 'none', border: 'none', cursor: 'pointer', padding: 0, width: '100%',
+                          fontSize: price ? 16 : 12,
+                          fontWeight: 700,
+                          fontFamily: 'DM Mono, monospace',
+                          color: price ? (isBest ? '#34d399' : 'var(--text-primary)') : 'var(--text-muted)',
+                        }}
+                      >
+                        {price ? `${price.toLocaleString('fr-FR')} €` : hasResponse ? 'Saisir prix' : '—'}
+                      </button>
+                    )}
+                    {quote?.notes && price && (
+                      <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.3 }}>
+                        {quote.notes.length > 40 ? quote.notes.slice(0, 40) + '…' : quote.notes}
+                      </div>
+                    )}
                   </div>
                 </div>
               )

@@ -267,19 +267,30 @@ export async function backfillQuotesForTender(
     const supplier = c.supplier as { id: string; email: string; name: string } | null
     if (!supplier?.email) continue
     const supplierEmail = extractEmailAddress(supplier.email) ?? supplier.email.toLowerCase()
+    const domain = emailDomain(supplier.email)
+    const orFilter = [
+      `tender_id.eq.${tenderId}`,
+      `from_address.ilike.%${supplierEmail}%`,
+      domain ? `from_address.ilike.%@${domain}%` : '',
+    ].filter(Boolean).join(',')
 
     const { data: emails } = await db
       .from('emails')
       .select('id, from_address, subject, body_text, body_html, has_attachments, attachments, received_at')
       .eq('user_id', userId)
-      .or(`tender_id.eq.${tenderId},from_address.ilike.%${supplierEmail}%`)
+      .or(orFilter)
       .order('received_at', { ascending: false })
       .limit(15)
 
     for (const email of emails ?? []) {
       const from = extractEmailAddress(email.from_address ?? '')
       const fromRaw = (email.from_address ?? '').toLowerCase()
-      if (from && from !== supplierEmail && !fromRaw.includes(supplierEmail)) continue
+      const fromDom = from ? emailDomain(from) : null
+      const matches =
+        (from && from === supplierEmail) ||
+        fromRaw.includes(supplierEmail) ||
+        (domain && fromDom === domain)
+      if (!matches) continue
 
       let textParts = [
         email.subject ?? '',
@@ -336,6 +347,97 @@ export async function backfillQuotesForTender(
   }
 
   return { updated }
+}
+
+/** Analyse complète forcée — re-télécharge PJ et recalcule tous les prix. */
+export async function analyzeQuotesForTender(
+  db: SupabaseClient,
+  userId: string,
+  tenderId: string,
+): Promise<{ analyzed: number; withPrice: number; results: Array<{ supplier: string; price: number | null }> }> {
+  const { data: consultations } = await db
+    .from('consultation_suppliers')
+    .select('supplier_id, supplier:suppliers(id, email, name)')
+    .eq('tender_id', tenderId)
+
+  if (!consultations?.length) return { analyzed: 0, withPrice: 0, results: [] }
+
+  let analyzed = 0
+  let withPrice = 0
+  const results: Array<{ supplier: string; price: number | null }> = []
+
+  for (const c of consultations) {
+    const supplier = c.supplier as { id: string; email: string; name: string } | null
+    if (!supplier?.email) continue
+
+    const supplierEmail = extractEmailAddress(supplier.email) ?? supplier.email.toLowerCase()
+    const domain = emailDomain(supplier.email)
+    const orFilter = [
+      `tender_id.eq.${tenderId}`,
+      `from_address.ilike.%${supplierEmail}%`,
+      domain ? `from_address.ilike.%@${domain}%` : '',
+    ].filter(Boolean).join(',')
+
+    const { data: emails } = await db
+      .from('emails')
+      .select('id, from_address, subject, body_text, body_html, has_attachments, attachments, received_at')
+      .eq('user_id', userId)
+      .or(orFilter)
+      .order('received_at', { ascending: false })
+      .limit(20)
+
+    let bestQuote: { price_ht: number | null } | null = null
+
+    for (const email of emails ?? []) {
+      const from = extractEmailAddress(email.from_address ?? '')
+      const fromRaw = (email.from_address ?? '').toLowerCase()
+      const fromDom = from ? emailDomain(from) : null
+      const matches =
+        (from && from === supplierEmail) ||
+        fromRaw.includes(supplierEmail) ||
+        (domain && fromDom === domain)
+
+      if (!matches) continue
+
+      const enriched = await reEnrichEmailIfNeeded(db, userId, email.id, { force: true })
+      const attachments = enriched?.attachments ?? (email.attachments as StoredEmailAttachment[]) ?? []
+      const fullText = [
+        email.subject ?? '',
+        enriched?.bodyText ?? email.body_text ?? '',
+        email.body_html ? stripHtml(email.body_html) : '',
+      ].filter(Boolean).join('\n')
+
+      const quote = await upsertQuoteFromEmail(
+        db,
+        tenderId,
+        supplier.id,
+        email.id,
+        fullText,
+        attachments,
+        true,
+      )
+
+      if (quote) {
+        await db
+          .from('consultation_suppliers')
+          .update({ status: 'repondu', updated_at: new Date().toISOString() })
+          .eq('tender_id', tenderId)
+          .eq('supplier_id', supplier.id)
+
+        await db.from('emails').update({ tender_id: tenderId }).eq('id', email.id)
+        analyzed++
+        if (quote.price_ht != null) bestQuote = quote
+      }
+    }
+
+    results.push({
+      supplier: supplier.name,
+      price: bestQuote?.price_ht ?? null,
+    })
+    if (bestQuote?.price_ht != null) withPrice++
+  }
+
+  return { analyzed, withPrice, results }
 }
 
 /** Télécharge PJ depuis IMAP si besoin, puis crée/met à jour le devis lié à l'AO. */
