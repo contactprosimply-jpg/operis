@@ -312,6 +312,7 @@ export default function TenderDetailPage() {
   const headerBorder = tender.priorite === 'urgente' ? '#ef4444'
     : tender.priorite === 'haute' ? '#f59e0b' : 'var(--border-hi)'
 
+  const quoteBySupplier = new Map(quotes.map((q: any) => [q.supplier_id, q]))
   const sortedQuotes = [...quotes].sort((a: any, b: any) => (parseFloat(a.price_ht) || 0) - (parseFloat(b.price_ht) || 0))
   const bestQuoteId = sortedQuotes.find((q: any) => q.price_ht)?.id
   const pricesWithValues = quotes.filter((q: any) => q.price_ht).map((q: any) => parseFloat(q.price_ht))
@@ -463,47 +464,105 @@ export default function TenderDetailPage() {
             Aucun fournisseur — <button onClick={() => setShowAddSupplierModal(true)} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>en ajouter un</button>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {consultations.map((c: any, i: number) => (
-              <div key={c.id} className="animate-slide" style={{
-                display: 'flex', gap: 16, padding: '14px 4px',
-                borderBottom: i < consultations.length - 1 ? '1px solid var(--border)' : 'none',
-                animationDelay: `${i * 50}ms`, opacity: 0,
-              }}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 20, flexShrink: 0 }}>
-                  <div style={{
-                    width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
-                    background: c.status === 'repondu' ? '#10b981' : c.status === 'refuse' ? '#ef4444' : '#3b7ef6',
-                    boxShadow: `0 0 8px ${c.status === 'repondu' ? 'rgba(16,185,129,0.5)' : 'rgba(59,126,246,0.4)'}`,
-                  }} />
-                  {i < consultations.length - 1 && <div style={{ width: 2, flex: 1, background: 'var(--border-hi)', marginTop: 4 }} />}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>{c.supplier?.name ?? '—'}</span>
-                    <ConsultationStatusBadge status={c.status} />
-                    {c.relaunch_count > 0 && <Badge color="amber">{c.relaunch_count} relance{c.relaunch_count > 1 ? 's' : ''}</Badge>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {consultations.map((c: any, i: number) => {
+              const quote = quoteBySupplier.get(c.supplier_id)
+              const price = quote?.price_ht ? parseFloat(quote.price_ht) : null
+              const hasResponse = c.status === 'repondu' || quote
+              const isBest = quote?.id === bestQuoteId && price != null
+              const isSelected = quote?.is_selected || selectedWinner === c.supplier_id
+              return (
+                <div key={c.id} className="animate-slide" style={{
+                  display: 'flex', alignItems: 'stretch', gap: 12, padding: '12px 14px',
+                  border: `1px solid ${isSelected ? 'rgba(59,126,246,0.35)' : isBest ? 'rgba(16,185,129,0.35)' : 'var(--border)'}`,
+                  borderRadius: 10,
+                  background: isSelected ? 'rgba(59,126,246,0.06)' : isBest ? 'rgba(16,185,129,0.06)' : 'var(--bg-secondary)',
+                  animationDelay: `${i * 50}ms`, opacity: 0,
+                }}>
+                  <button
+                    type="button"
+                    title="Sélectionner ce devis"
+                    disabled={!hasResponse}
+                    onClick={() => setSelectedWinner(prev => prev === c.supplier_id ? null : c.supplier_id)}
+                    style={{
+                      width: 22, height: 22, borderRadius: 6, flexShrink: 0, marginTop: 2,
+                      border: `2px solid ${isSelected ? 'var(--accent)' : 'var(--border-hi)'}`,
+                      background: isSelected ? 'var(--accent)' : 'transparent',
+                      cursor: hasResponse ? 'pointer' : 'not-allowed',
+                      opacity: hasResponse ? 1 : 0.35,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: '#fff', fontSize: 12, fontWeight: 700,
+                    }}
+                  >
+                    {isSelected ? '✓' : ''}
+                  </button>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 600, fontSize: 13 }}>{c.supplier?.name ?? '—'}</span>
+                      <ConsultationStatusBadge status={c.status} />
+                      {isBest && <Badge color="green">Meilleur prix</Badge>}
+                      {quote?.is_selected && <Badge color="blue">Retenu</Badge>}
+                      {c.relaunch_count > 0 && <Badge color="amber">{c.relaunch_count} relance{c.relaunch_count > 1 ? 's' : ''}</Badge>}
+                    </div>
+                    <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 6 }}>
+                      {c.supplier?.email ?? '—'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {quote?.received_at
+                          ? `Réponse : ${new Date(quote.received_at).toLocaleDateString('fr-FR')}`
+                          : c.last_sent_at
+                            ? `Envoyé : ${new Date(c.last_sent_at).toLocaleDateString('fr-FR')}`
+                            : 'Pas encore contacté'}
+                      </span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {quote?.source_email_id && (
+                          <button type="button" onClick={() => router.push(`/mail?email=${quote.source_email_id}`)}
+                            style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
+                            Voir l'email
+                          </button>
+                        )}
+                        {c.status === 'en_attente' && (
+                          <Button variant="ghost" onClick={() => openConsultModal([c.supplier_id])} style={{ fontSize: 11, padding: '4px 10px' }}>Envoyer</Button>
+                        )}
+                        {['envoye', 'relance', 'relance_2'].includes(c.status) && (
+                          <Button variant="ghost" onClick={() => handleRelaunch(c.supplier_id)} style={{ fontSize: 11, padding: '4px 10px' }}>Relancer</Button>
+                        )}
+                      </div>
+                    </div>
+                    {quote?.notes && !price && (
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>{quote.notes}</div>
+                    )}
                   </div>
-                  <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 8 }}>{c.supplier?.email ?? '—'}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {c.last_sent_at ? `Derniere action : ${new Date(c.last_sent_at).toLocaleDateString('fr-FR')}` : 'Pas encore contacte'}
-                    </span>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {c.status === 'en_attente' && (
-                        <Button variant="ghost" onClick={() => openConsultModal([c.supplier_id])} style={{ fontSize: 11, padding: '4px 10px' }}>
-                          Envoyer
-                        </Button>
-                      )}
-                      {['envoye', 'relance', 'relance_2'].includes(c.status) && (
-                        <Button variant="ghost" onClick={() => handleRelaunch(c.supplier_id)} style={{ fontSize: 11, padding: '4px 10px' }}>Relancer</Button>
-                      )}
+
+                  <div style={{
+                    minWidth: 110, flexShrink: 0, alignSelf: 'center',
+                    padding: '10px 14px', borderRadius: 8, textAlign: 'center',
+                    background: price ? (isBest ? 'rgba(16,185,129,0.15)' : 'var(--bg-card)') : 'transparent',
+                    border: price ? `1px solid ${isBest ? 'rgba(16,185,129,0.35)' : 'var(--border)'}` : '1px dashed var(--border)',
+                  }}>
+                    <div style={{ fontSize: 9, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 4 }}>
+                      Devis HT
+                    </div>
+                    <div style={{
+                      fontSize: price ? 16 : 12,
+                      fontWeight: 700,
+                      fontFamily: 'DM Mono, monospace',
+                      color: price ? (isBest ? '#34d399' : 'var(--text-primary)') : 'var(--text-muted)',
+                    }}>
+                      {price ? `${price.toLocaleString('fr-FR')} €` : hasResponse ? 'À analyser' : '—'}
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
+          {selectedWinner && (
+            <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
+              <Button variant="success" onClick={() => setShowValidateModal(true)}>✓ Valider le devis sélectionné</Button>
+            </div>
+          )}
         )}
       </div>
 

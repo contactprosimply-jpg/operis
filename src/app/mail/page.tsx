@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
@@ -87,6 +87,8 @@ function SignaturePreview({ html }: { html: string }) {
 
 export default function MailPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const pendingEmailId = searchParams.get('email')
   const { session, ready } = useAuth()
   const [emails, setEmails] = useState<Email[]>([])
   const [loading, setLoading] = useState(true)
@@ -322,6 +324,12 @@ export default function MailPage() {
     loadEmailDetail(email.id)
     if (!email.is_read) handleMarkRead(email)
   }
+
+  useEffect(() => {
+    if (!pendingEmailId || emails.length === 0) return
+    const target = emails.find(e => e.id === pendingEmailId)
+    if (target && selected?.id !== target.id) selectEmail(target)
+  }, [pendingEmailId, emails, selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCompose = (prefill: Partial<typeof compose> = {}) => {
     setCompose({ to: '', cc: '', subject: '', body: '', ...prefill })

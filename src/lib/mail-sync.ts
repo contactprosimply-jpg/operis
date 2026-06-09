@@ -201,15 +201,22 @@ async function enrichEmailFromSource(
   }
 
   try {
-    await tryCreateQuoteFromInboundEmail(
-      db,
-      userId,
-      emailId,
-      parsed.from?.text ?? envelope.from,
-      parsed.text ?? '',
-      savedAttachments,
-      null,
-    )
+          const quoteText = [
+            parsed.subject ?? envelope.subject,
+            parsed.text ?? '',
+            parsed.html ? parsed.html.replace(/<[^>]+>/g, ' ') : '',
+          ].join('\n')
+          await tryCreateQuoteFromInboundEmail(
+            db,
+            userId,
+            emailId,
+            parsed.from?.text ?? envelope.from,
+            quoteText,
+            savedAttachments,
+            null,
+            undefined,
+            hasAttachments || savedAttachments.length > 0,
+          )
   } catch (quoteErr) {
     console.error('[Mail sync] quote extract:', quoteErr)
   }

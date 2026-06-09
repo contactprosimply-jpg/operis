@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import { collectTenderDocuments } from '@/lib/tender-documents'
+import { backfillQuotesForTender } from '@/lib/mail-quote-extract'
 
 export async function GET(
   req: NextRequest,
@@ -25,6 +26,8 @@ export async function GET(
   if (error || !tender) {
     return Response.json({ success: false, error: 'AO introuvable' }, { status: 404 })
   }
+
+  await backfillQuotesForTender(db, userId, id)
 
   const { data: consultations } = await db
     .from('consultation_suppliers')
