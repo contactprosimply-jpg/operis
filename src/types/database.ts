@@ -57,6 +57,13 @@ export interface ConsultationSupplier {
   updated_at: string
 }
 
+export interface EmailAttachment {
+  filename: string
+  contentType: string
+  size: number
+  data?: string
+}
+
 export interface Quote {
   id: string
   tender_id: string
@@ -64,6 +71,8 @@ export interface Quote {
   price_ht: number | null
   document_url: string | null
   notes: string | null
+  source_email_id?: string | null
+  is_selected?: boolean
   received_at: string
   created_at: string
 }
@@ -82,6 +91,8 @@ export interface Email {
   is_ao: boolean
   ao_score: number
   tender_id: string | null
+  attachments?: EmailAttachment[]
+  has_attachments?: boolean
   created_at: string
 }
 

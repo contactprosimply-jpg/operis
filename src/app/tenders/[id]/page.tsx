@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { authFetch } from '@/lib/auth-client'
+import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { useRefreshOnFocus } from '@/hooks'
 import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast, Card } from '@/components/ui'
 
@@ -208,6 +208,24 @@ export default function TenderDetailPage() {
     setValidatingQuote(false)
   }
 
+  const downloadMailAttachment = async (emailId: string, index: number, filename: string) => {
+    try {
+      const token = await getAccessToken()
+      if (!token) return
+      const res = await fetch(`/api/mail/emails/${emailId}/attachments/${index}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) { show('Pièce jointe indisponible'); return }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch { show('Erreur téléchargement') }
+  }
+
   const handleDelete = async () => {
     if (!confirm('Supprimer cet AO définitivement ?')) return
     const res = await authFetch(`/api/tenders/${id}`, { method: 'DELETE' })
@@ -225,6 +243,7 @@ export default function TenderDetailPage() {
 
   const consultations = tender.consultations ?? []
   const quotes = tender.quotes ?? []
+  const linkedEmails = tender.linked_emails ?? []
   const alreadyAdded = new Set(consultations.map((c: any) => c.supplier_id))
   const availableSuppliers = suppliers.filter(s => !alreadyAdded.has(s.id))
 
@@ -233,7 +252,21 @@ export default function TenderDetailPage() {
     : tender.priorite === 'haute' ? '#f59e0b' : 'var(--border-hi)'
 
   const sortedQuotes = [...quotes].sort((a: any, b: any) => (parseFloat(a.price_ht) || 0) - (parseFloat(b.price_ht) || 0))
-  const bestQuoteId = sortedQuotes[0]?.id
+  const bestQuoteId = sortedQuotes.find((q: any) => q.price_ht)?.id
+  const pricesWithValues = quotes.filter((q: any) => q.price_ht).map((q: any) => parseFloat(q.price_ht))
+  const minPrice = pricesWithValues.length ? Math.min(...pricesWithValues) : null
+  const maxPrice = pricesWithValues.length ? Math.max(...pricesWithValues) : null
+  const avgPrice = pricesWithValues.length ? pricesWithValues.reduce((a: number, b: number) => a + b, 0) / pricesWithValues.length : null
+  const budget = tender.budget_ht ? parseFloat(tender.budget_ht) : null
+
+  const fmtPrice = (v: number | null) => v != null ? `${v.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €` : '—'
+
+  const budgetDelta = (price: number | null) => {
+    if (!budget || !price) return null
+    const delta = price - budget
+    const pct = (delta / budget) * 100
+    return { delta, pct }
+  }
 
   return (
     <div className="animate-fade">
@@ -299,7 +332,7 @@ export default function TenderDetailPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Informations de l'AO</div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 20 }}>
           <div>
             <div style={label}>Client</div>
             <div style={value}>{tender.client}</div>
@@ -406,52 +439,151 @@ export default function TenderDetailPage() {
         )}
       </div>
 
+      {/* Analyse des devis */}
+      {quotes.length > 0 && (
+        <div style={card}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16 }}>Analyse des devis</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16 }}>
+            <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '14px 16px', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>Meilleur prix</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#34d399', fontFamily: 'DM Mono, monospace' }}>{fmtPrice(minPrice)}</div>
+            </div>
+            <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '14px 16px', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>Prix moyen</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'DM Mono, monospace' }}>{fmtPrice(avgPrice)}</div>
+            </div>
+            <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '14px 16px', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>Prix max</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#fbbf24', fontFamily: 'DM Mono, monospace' }}>{fmtPrice(maxPrice)}</div>
+            </div>
+            {budget && (
+              <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '14px 16px', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>Budget estimé</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#60a5fa', fontFamily: 'DM Mono, monospace' }}>{fmtPrice(budget)}</div>
+                {minPrice && budgetDelta(minPrice) && (
+                  <div style={{ fontSize: 11, marginTop: 6, color: budgetDelta(minPrice)!.delta <= 0 ? '#4ade80' : '#f87171', fontFamily: 'DM Mono, monospace' }}>
+                    Écart meilleur devis : {budgetDelta(minPrice)!.delta > 0 ? '+' : ''}{budgetDelta(minPrice)!.delta.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} € ({budgetDelta(minPrice)!.pct > 0 ? '+' : ''}{budgetDelta(minPrice)!.pct.toFixed(1)}%)
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Devis reçus */}
       {quotes.length > 0 && (
         <div style={card}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Devis reçus ({quotes.length})</div>
             <Button variant="success" onClick={() => setShowValidateModal(true)}>✓ Valider un devis</Button>
           </div>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 520 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Fournisseur', 'Montant HT', 'Reçu le', 'Notes'].map(h => (
+                  {['Fournisseur', 'Montant HT', 'vs budget', 'Reçu le', 'Pièces jointes', 'Notes'].map(h => (
                     <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {sortedQuotes.map((q: any) => {
-                  const isBest = q.id === bestQuoteId && sortedQuotes.length > 1
+                  const isBest = q.id === bestQuoteId && pricesWithValues.length > 1
+                  const price = q.price_ht ? parseFloat(q.price_ht) : null
+                  const delta = budgetDelta(price)
                   return (
                   <tr key={q.id} style={{
                     borderBottom: '1px solid var(--border)',
-                    background: isBest ? 'rgba(16,185,129,0.08)' : 'transparent',
-                    borderLeft: isBest ? '3px solid #10b981' : '3px solid transparent',
+                    background: isBest ? 'rgba(16,185,129,0.08)' : q.is_selected ? 'rgba(59,126,246,0.08)' : 'transparent',
+                    borderLeft: isBest ? '3px solid #10b981' : q.is_selected ? '3px solid var(--accent)' : '3px solid transparent',
                   }}>
                     <td style={{ padding: '10px 12px', fontWeight: 500 }}>
                       {isBest && (
                         <span style={{
                           fontSize: 10, color: '#10b981', marginRight: 8, fontWeight: 700,
                           background: 'rgba(16,185,129,0.15)', padding: '2px 8px', borderRadius: 5,
-                          boxShadow: '0 0 10px rgba(16,185,129,0.3)',
-                        }}>Meilleur prix</span>
+                        }}>Meilleur</span>
+                      )}
+                      {q.is_selected && (
+                        <span style={{ fontSize: 10, color: 'var(--accent)', marginRight: 8, fontWeight: 700, background: 'var(--accent-soft)', padding: '2px 8px', borderRadius: 5 }}>Retenu</span>
                       )}
                       {q.supplier?.name ?? '—'}
                     </td>
                     <td style={{ padding: '10px 12px', fontFamily: 'DM Mono, monospace', color: isBest ? '#34d399' : 'var(--text-primary)', fontWeight: isBest ? 700 : 400 }}>
-                      {q.price_ht ? `${parseFloat(q.price_ht).toLocaleString('fr-FR')} €` : '—'}
+                      {price ? `${price.toLocaleString('fr-FR')} €` : '—'}
+                    </td>
+                    <td style={{ padding: '10px 12px', fontFamily: 'DM Mono, monospace', fontSize: 11 }}>
+                      {delta ? (
+                        <span style={{ color: delta.delta <= 0 ? '#4ade80' : '#f87171' }}>
+                          {delta.delta > 0 ? '+' : ''}{delta.pct.toFixed(1)}%
+                        </span>
+                      ) : '—'}
                     </td>
                     <td style={{ padding: '10px 12px', fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--text-muted)' }}>
                       {q.received_at ? new Date(q.received_at).toLocaleDateString('fr-FR') : '—'}
                     </td>
-                    <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', fontSize: 12 }}>{q.notes ?? '—'}</td>
+                    <td style={{ padding: '10px 12px', fontSize: 12 }}>
+                      {q.source_email_id ? (
+                        <button type="button" onClick={() => downloadMailAttachment(q.source_email_id, 0, 'devis')}
+                          style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, padding: 0, fontFamily: 'DM Sans, system-ui' }}>
+                          📎 Télécharger
+                        </button>
+                      ) : q.document_url ? (
+                        <a href={q.document_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: 11 }}>
+                          📎 Lien
+                        </a>
+                      ) : '—'}
+                    </td>
+                    <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', fontSize: 12, maxWidth: 200 }}>{q.notes ?? '—'}</td>
                   </tr>
                 )})}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Emails liés à l'AO */}
+      {linkedEmails.length > 0 && (
+        <div style={card}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16 }}>
+            Emails liés ({linkedEmails.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {linkedEmails.map((em: any, i: number) => (
+              <div key={em.id} style={{
+                padding: '12px 4px',
+                borderBottom: i < linkedEmails.length - 1 ? '1px solid var(--border)' : 'none',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 4 }}>{em.subject}</div>
+                    <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+                      {em.from_address} · {em.received_at ? new Date(em.received_at).toLocaleDateString('fr-FR') : '—'}
+                    </div>
+                    {(em.attachments?.length ?? 0) > 0 && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                        {em.attachments.map((att: any, idx: number) => (
+                          <button key={idx} type="button" onClick={() => downloadMailAttachment(em.id, idx, att.filename)}
+                            style={{
+                              fontSize: 10, padding: '3px 8px', borderRadius: 5,
+                              background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+                              color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Mono, monospace',
+                            }}>
+                            📎 {att.filename}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => router.push('/mail')} style={{
+                    fontSize: 11, color: 'var(--accent)', background: 'none', border: '1px solid var(--border-hi)',
+                    borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
+                  }}>Voir mail</button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

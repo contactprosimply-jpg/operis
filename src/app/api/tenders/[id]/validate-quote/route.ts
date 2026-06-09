@@ -9,17 +9,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!userId) return unauthorized()
 
   const { id } = await params
-  const { quote_id, supplier_ids_to_notify } = await req.json()
-
-  if (!quote_id) return Response.json({ success: false, error: 'quote_id requis' }, { status: 400 })
+  const { quote_id, winner_supplier_id, supplier_ids_to_notify } = await req.json()
 
   const db = createAdminClient()
+  let resolvedQuoteId = quote_id
 
-  // Mark quote as selected
+  if (!resolvedQuoteId && winner_supplier_id) {
+    const { data: q } = await db
+      .from('quotes')
+      .select('id')
+      .eq('tender_id', id)
+      .eq('supplier_id', winner_supplier_id)
+      .order('received_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    resolvedQuoteId = q?.id
+  }
+
+  if (!resolvedQuoteId) return Response.json({ success: false, error: 'quote_id requis' }, { status: 400 })
+
   const { data: quote, error } = await db
     .from('quotes')
     .update({ is_selected: true, validated_at: new Date().toISOString(), validated_by: userId })
-    .eq('id', quote_id)
+    .eq('id', resolvedQuoteId)
     .select('*, supplier:suppliers(*)')
     .single()
 

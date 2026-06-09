@@ -42,12 +42,20 @@ export async function GET(
     .eq('tender_id', id)
     .single()
 
+  const { data: linkedEmails } = await db
+    .from('emails')
+    .select('id, subject, from_address, received_at, has_attachments, attachments, is_read, body_text')
+    .eq('tender_id', id)
+    .eq('user_id', userId)
+    .order('received_at', { ascending: false })
+
   return Response.json({
     success: true,
     data: {
       ...tender,
       consultations: consultations ?? [],
       quotes: quotes ?? [],
+      linked_emails: linkedEmails ?? [],
       stats,
     }
   })

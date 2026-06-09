@@ -4,6 +4,8 @@ import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { fetchRecentMessages } from '@/lib/imap-client'
 import { simpleParser } from 'mailparser'
+import { parseMailAttachments } from '@/lib/mail-attachments'
+import { tryCreateQuoteFromInboundEmail } from '@/lib/mail-quote-extract'
 
 export const maxDuration = 60
 
@@ -66,8 +68,9 @@ async function syncAccount(userId: string, account: any) {
         if (existing) continue
 
         const { isAo, score } = detectAo(parsed.subject ?? '', parsed.text ?? '')
+        const { attachments, hasAttachments } = parseMailAttachments(parsed.attachments)
 
-        const { error } = await db.from('emails').insert({
+        const insertPayload: Record<string, unknown> = {
           user_id: userId,
           message_id: messageId,
           subject: parsed.subject ?? '(sans objet)',
@@ -80,9 +83,27 @@ async function syncAccount(userId: string, account: any) {
           is_ao: isAo,
           ao_score: score,
           tender_id: null,
-        })
+          attachments,
+          has_attachments: hasAttachments,
+        }
 
-        if (!error) stored++
+        let { data: inserted, error } = await db.from('emails').insert(insertPayload).select('id').single()
+
+        if (error && (error.message.includes('attachments') || error.message.includes('has_attachments'))) {
+          delete insertPayload.attachments
+          delete insertPayload.has_attachments
+          const retry = await db.from('emails').insert(insertPayload).select('id').single()
+          inserted = retry.data
+          error = retry.error
+        }
+
+        if (!error && inserted?.id) {
+          await tryCreateQuoteFromInboundEmail(
+            db, userId, inserted.id,
+            parsed.from?.text ?? '', parsed.text ?? '', attachments, null
+          )
+          stored++
+        }
       } catch { continue }
     }
 

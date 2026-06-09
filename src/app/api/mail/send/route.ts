@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
-  const { to, subject, body, cc, signature } = await req.json()
+  const { to, subject, body, cc, signature, attachments: rawAttachments } = await req.json()
 
   const bodyText = typeof body === 'string' ? body : ''
   const signatureText = typeof signature === 'string' ? signature.trim() : ''
@@ -70,6 +70,16 @@ export async function POST(req: NextRequest) {
     finalText = bodyText
   }
 
+  const mailAttachments = Array.isArray(rawAttachments)
+    ? rawAttachments
+        .filter((a: { data?: string; filename?: string }) => a?.data && a?.filename)
+        .map((a: { filename: string; contentType?: string; data: string }) => ({
+          filename: a.filename,
+          content: Buffer.from(a.data, 'base64'),
+          contentType: a.contentType || 'application/octet-stream',
+        }))
+    : []
+
   try {
     await transporter.sendMail({
       from: `"${account.smtp_user.split('@')[0]}" <${account.smtp_user}>`,
@@ -78,6 +88,7 @@ export async function POST(req: NextRequest) {
       subject,
       text: finalText,
       html: finalHtml,
+      attachments: mailAttachments.length > 0 ? mailAttachments : undefined,
     })
 
     // Logger l'envoi (ne pas bloquer si le log echoue)
