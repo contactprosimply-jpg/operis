@@ -1,14 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { StoredEmailAttachment } from '@/lib/mail-attachments'
 import { downloadAttachmentBuffer } from '@/lib/mail-storage'
-import { extractLargestAmountFromText, extractPriceFromText } from '@/lib/quote-price-extract'
+import { extractFinalPriceFromText } from '@/lib/quote-price-extract'
 
 const MAX_PARSE_BYTES = 15 * 1024 * 1024
 
 const DOC_EXT = /\.(pdf|docx?|xlsx?|xls|csv|txt)$/i
 const DOC_MIME = /pdf|spreadsheet|excel|word|msword|officedocument|csv|plain/i
-
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i
+
+const ROW_TOTAL_LABEL = /total|montant|net\s*[àa]\s*payer|devis|offre|ukupno|iznos|neto|gesamt|totale|za\s*uplatu|za\s*placanje|bez\s*pdv|sa\s*pdv/i
 
 export function isQuoteDocument(filename: string, contentType?: string): boolean {
   if (IMAGE_EXT.test(filename)) return false
@@ -18,69 +19,105 @@ export function isQuoteDocument(filename: string, contentType?: string): boolean
   return false
 }
 
-async function extractPdfText(buffer: Buffer): Promise<string> {
+interface DocumentTextResult {
+  fullText: string
+  endSection: string
+}
+
+async function extractPdfContent(buffer: Buffer): Promise<DocumentTextResult> {
   const { PDFParse } = await import('pdf-parse')
   const parser = new PDFParse({ data: new Uint8Array(buffer) })
-  let text = ''
+  let fullText = ''
+  const pageTexts: string[] = []
+
   try {
     const result = await parser.getText()
-    text = result.text ?? ''
+    fullText = result.text ?? ''
+    const total = result.total ?? 0
+    for (let p = 1; p <= total; p++) {
+      try {
+        pageTexts.push(result.getPageText(p))
+      } catch {
+        break
+      }
+    }
   } catch (err) {
     console.error('[PDF] getText failed:', err)
   }
 
   try {
     const tables = await parser.getTable()
+    let tableTail = ''
     for (const table of tables.mergedTables ?? []) {
       for (const row of table) {
-        text += '\n' + row.join(' ')
+        const line = row.join(' ')
+        fullText += '\n' + line
+        tableTail += '\n' + line
       }
     }
+    if (tableTail.trim()) pageTexts.push(tableTail)
   } catch {
     // tables optionnelles
   }
 
-  if (!text.trim()) {
-    text = buffer.toString('latin1').replace(/[^\x20-\x7E\u00A0-\u024F\n\r\t€;,.\-+]/g, ' ')
+  if (!fullText.trim()) {
+    fullText = buffer.toString('latin1').replace(/[^\x20-\x7E\u00A0-\u024F\n\r\t€;,.\-+]/g, ' ')
   }
 
-  return text
+  const lastPages = pageTexts.length >= 2
+    ? pageTexts.slice(-2).join('\n')
+    : pageTexts.length === 1
+      ? pageTexts[0]
+      : fullText.slice(Math.floor(fullText.length * 0.55))
+
+  return { fullText, endSection: lastPages }
 }
 
-async function extractDocxText(buffer: Buffer): Promise<string> {
+async function extractDocxContent(buffer: Buffer): Promise<DocumentTextResult> {
   const mammoth = await import('mammoth')
   const result = await mammoth.extractRawText({ buffer })
-  return result.value ?? ''
+  const fullText = result.value ?? ''
+  return {
+    fullText,
+    endSection: fullText.slice(Math.floor(fullText.length * 0.55)),
+  }
 }
 
-function extractXlsxText(buffer: Buffer): string {
+function extractXlsxContent(buffer: Buffer): DocumentTextResult {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const XLSX = require('xlsx') as typeof import('xlsx')
   const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true })
   const parts: string[] = []
+  const tailParts: string[] = []
+
   for (const name of workbook.SheetNames) {
     const sheet = workbook.Sheets[name]
     if (!sheet) continue
+    const csv = XLSX.utils.sheet_to_csv(sheet, { FS: ';' })
     parts.push(`--- ${name} ---`)
-    parts.push(XLSX.utils.sheet_to_csv(sheet, { FS: ';' }))
+    parts.push(csv)
+    const lines = csv.split('\n')
+    tailParts.push(lines.slice(Math.max(0, lines.length - 25)).join('\n'))
   }
-  return parts.join('\n')
+
+  return {
+    fullText: parts.join('\n'),
+    endSection: tailParts.join('\n'),
+  }
 }
 
-/** Cherche le total dans une feuille Excel (lignes « Total », « Montant », etc.). */
+/** Cherche le total final en scannant les lignes du bas vers le haut. */
 export function extractPriceFromSpreadsheet(buffer: Buffer): number | null {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const XLSX = require('xlsx') as typeof import('xlsx')
   const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true })
-  const labeledTotals: number[] = []
-  const allNumbers: number[] = []
 
   for (const name of workbook.SheetNames) {
     const sheet = workbook.Sheets[name]
     if (!sheet || !sheet['!ref']) continue
     const range = XLSX.utils.decode_range(sheet['!ref'])
 
-    for (let R = range.s.r; R <= range.e.r; R++) {
+    for (let R = range.e.r; R >= range.s.r; R--) {
       let rowHasTotalLabel = false
       const rowNumbers: number[] = []
 
@@ -90,74 +127,77 @@ export function extractPriceFromSpreadsheet(buffer: Buffer): number | null {
         if (!cell) continue
 
         const strVal = cell.w ?? (typeof cell.v === 'string' ? cell.v : '')
-        if (/total|montant|net\s*[àa]\s*payer|devis|offre/i.test(String(strVal))) {
-          rowHasTotalLabel = true
-        }
+        if (ROW_TOTAL_LABEL.test(String(strVal))) rowHasTotalLabel = true
 
         if (cell.t === 'n' && typeof cell.v === 'number') {
           const v = cell.v
-          if (v >= 50 && v < 100_000_000) {
-            rowNumbers.push(v)
-            allNumbers.push(v)
-          }
+          if (v >= 50 && v < 500_000_000) rowNumbers.push(v)
         } else if (cell.t === 's' && typeof cell.v === 'string') {
-          const p = extractPriceFromText(cell.v)
-          if (p != null) {
-            rowNumbers.push(p)
-            allNumbers.push(p)
-          }
+          const { price } = extractFinalPriceFromText(cell.v)
+          if (price != null) rowNumbers.push(price)
         }
       }
 
       if (rowHasTotalLabel && rowNumbers.length) {
-        labeledTotals.push(Math.max(...rowNumbers))
+        return Math.max(...rowNumbers)
       }
     }
   }
 
-  if (labeledTotals.length) return Math.max(...labeledTotals)
-  if (allNumbers.length) return Math.max(...allNumbers)
-  return null
+  const { endSection } = extractXlsxContent(buffer)
+  return extractFinalPriceFromText(endSection, endSection).price
 }
 
+export async function extractDocumentContent(
+  filename: string,
+  contentType: string,
+  buffer: Buffer,
+): Promise<DocumentTextResult> {
+  if (buffer.length > MAX_PARSE_BYTES) return { fullText: '', endSection: '' }
+
+  const lower = filename.toLowerCase()
+  try {
+    if (lower.endsWith('.pdf') || contentType.includes('pdf')) {
+      return await extractPdfContent(buffer)
+    }
+    if (lower.endsWith('.docx') || contentType.includes('wordprocessingml')) {
+      return await extractDocxContent(buffer)
+    }
+    if (/\.(xlsx?|xls|csv)$/i.test(lower) || /spreadsheet|excel|csv/i.test(contentType)) {
+      return extractXlsxContent(buffer)
+    }
+    if (lower.endsWith('.txt') || contentType.includes('plain')) {
+      const fullText = buffer.toString('utf8')
+      return { fullText, endSection: fullText.slice(Math.floor(fullText.length * 0.55)) }
+    }
+    if (lower.endsWith('.doc')) {
+      const fullText = buffer.toString('latin1').replace(/[^\x20-\x7E\u00A0-\u024F\n\r\t€;,.\-+]/g, ' ')
+      return { fullText, endSection: fullText.slice(Math.floor(fullText.length * 0.55)) }
+    }
+  } catch (err) {
+    console.error('[Doc extract]', filename, err)
+  }
+  return { fullText: '', endSection: '' }
+}
+
+/** @deprecated utilise extractDocumentContent */
 export async function extractTextFromBuffer(
   filename: string,
   contentType: string,
   buffer: Buffer,
 ): Promise<string> {
-  if (buffer.length > MAX_PARSE_BYTES) return ''
-
-  const lower = filename.toLowerCase()
-  try {
-    if (lower.endsWith('.pdf') || contentType.includes('pdf')) {
-      return await extractPdfText(buffer)
-    }
-    if (lower.endsWith('.docx') || contentType.includes('wordprocessingml')) {
-      return await extractDocxText(buffer)
-    }
-    if (/\.(xlsx?|xls|csv)$/i.test(lower) || /spreadsheet|excel|csv/i.test(contentType)) {
-      return extractXlsxText(buffer)
-    }
-    if (lower.endsWith('.txt') || contentType.includes('plain')) {
-      return buffer.toString('utf8')
-    }
-    if (lower.endsWith('.doc')) {
-      // .doc binaire — extraction partielle via texte brut
-      return buffer.toString('latin1').replace(/[^\x20-\x7E\u00A0-\u024F\n\r\t€;,.\-+]/g, ' ')
-    }
-  } catch (err) {
-    console.error('[Doc extract]', filename, err)
-  }
-  return ''
+  const { fullText } = await extractDocumentContent(filename, contentType, buffer)
+  return fullText
 }
 
 export async function extractPriceFromAttachments(
   db: SupabaseClient,
   attachments: StoredEmailAttachment[],
-): Promise<{ price: number | null; combinedText: string; sourceFile?: string }> {
+): Promise<{ price: number | null; combinedText: string; sourceFile?: string; priceNote?: string }> {
   let combinedText = ''
   let bestPrice: number | null = null
   let sourceFile: string | undefined
+  let priceNote = ''
 
   const sorted = [...attachments].sort((a, b) => {
     const aPdf = /\.pdf$/i.test(a.filename) ? 0 : 1
@@ -179,28 +219,29 @@ export async function extractPriceFromAttachments(
     const isPdf = /\.pdf$/i.test(att.filename) || (att.contentType ?? '').includes('pdf')
 
     let filePrice: number | null = null
+    let fileNote = ''
+
     if (isSheet) {
       filePrice = extractPriceFromSpreadsheet(buffer)
+      if (filePrice != null) fileNote = 'Prix final (fin du tableau Excel)'
     }
 
-    const text = await extractTextFromBuffer(att.filename, att.contentType, buffer)
-    if (text) combinedText += `\n--- ${att.filename} ---\n${text}`
+    const { fullText, endSection } = await extractDocumentContent(att.filename, att.contentType, buffer)
+    if (fullText) combinedText += `\n--- ${att.filename} ---\n${fullText}`
 
-    if (filePrice == null && text) {
-      filePrice = extractPriceFromText(text, true)
-      if (filePrice == null && (isPdf || isSheet)) {
-        filePrice = extractLargestAmountFromText(text)
-      }
+    if (filePrice == null && (fullText || endSection)) {
+      const extracted = extractFinalPriceFromText(fullText, endSection)
+      filePrice = extracted.price
+      fileNote = extracted.note
     }
 
     if (filePrice != null) {
-      if (bestPrice == null || filePrice > bestPrice) {
-        bestPrice = filePrice
-        sourceFile = att.filename
-      }
+      bestPrice = filePrice
+      sourceFile = att.filename
+      priceNote = fileNote || `Prix final extrait de ${att.filename}`
       if (isPdf) break
     }
   }
 
-  return { price: bestPrice, combinedText, sourceFile }
+  return { price: bestPrice, combinedText, sourceFile, priceNote }
 }

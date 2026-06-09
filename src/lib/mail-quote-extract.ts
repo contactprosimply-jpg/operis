@@ -3,9 +3,9 @@ import type { StoredEmailAttachment } from '@/lib/mail-attachments'
 import { extractEmailAddress } from '@/lib/mail-attachments'
 import { extractPriceFromAttachments } from '@/lib/document-text-extract'
 import { isEmailIncompleteForEnrich, reEnrichEmailIfNeeded } from '@/lib/mail-enrich'
-import { extractPriceFromText } from '@/lib/quote-price-extract'
+import { extractFinalPriceFromText, extractPriceFromText } from '@/lib/quote-price-extract'
 
-export { extractPriceFromText } from '@/lib/quote-price-extract'
+export { extractFinalPriceFromText, extractPriceFromText } from '@/lib/quote-price-extract'
 
 function stripHtml(html: string): string {
   return html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -110,12 +110,12 @@ async function resolveQuotePrice(
 
   if (attResult.price != null) {
     priceHt = attResult.price
-    priceNote = attResult.sourceFile
-      ? `Prix extrait de ${attResult.sourceFile}`
-      : 'Prix extrait des pièces jointes'
+    priceNote = attResult.priceNote
+      ?? (attResult.sourceFile ? `Prix final — ${attResult.sourceFile}` : 'Prix final (pièce jointe)')
   } else if (!priceHt && attResult.combinedText) {
-    priceHt = extractPriceFromText(attResult.combinedText, true)
-    if (priceHt) priceNote = 'Prix extrait du document (PDF/Excel/Word)'
+    const final = extractFinalPriceFromText(attResult.combinedText)
+    priceHt = final.price
+    if (priceHt) priceNote = final.note || 'Prix final (document)'
   }
 
   return { priceHt, priceNote }
