@@ -30,7 +30,12 @@ export async function GET(
   }
 
   const analyze = req.nextUrl.searchParams.get('analyze') !== 'false'
-  let quoteAnalysis: { price_ht: number | null; tender_id: string | null; enriched: boolean } | null = null
+  let quoteAnalysis: {
+    price_ht: number | null
+    tender_id: string | null
+    enriched: boolean
+    supplier_missing?: boolean
+  } | null = null
 
   if (analyze) {
     try {
@@ -39,6 +44,7 @@ export async function GET(
         price_ht: result.quote?.price_ht ?? null,
         tender_id: result.tenderId,
         enriched: result.enriched,
+        supplier_missing: result.supplierMissing,
       }
     } catch (err) {
       console.error('[Mail email] quote analysis:', err)

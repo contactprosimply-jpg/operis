@@ -9,8 +9,22 @@ function parseAmount(raw: string): number | null {
     normalized = normalized.replace(/\s/g, '').replace(',', '.')
   }
   const value = parseFloat(normalized)
-  if (Number.isNaN(value) || value < 50 || value >= 100_000_000) return null
+  if (Number.isNaN(value) || value < 50 || value >= 500_000_000) return null
   return value
+}
+
+/** Dernier recours : plus grand montant plausible dans un document de devis. */
+export function extractLargestAmountFromText(text: string): number | null {
+  if (!text) return null
+  const candidates: number[] = []
+  const re = /(?<![\d])(\d{1,3}(?:[\s.]\d{3})+(?:[,.]\d{2})?|\d{4,}(?:[,.]\d{2})?)(?![\d])/g
+  let match: RegExpExecArray | null
+  while ((match = re.exec(text)) !== null) {
+    const value = parseAmount(match[1])
+    if (value != null && value >= 500) candidates.push(value)
+  }
+  if (!candidates.length) return null
+  return Math.max(...candidates)
 }
 
 export function extractPriceFromText(text: string, preferMax = false): number | null {
@@ -20,6 +34,8 @@ export function extractPriceFromText(text: string, preferMax = false): number | 
   const totalLabelPatterns = [
     /(?:total\s*(?:g[eé]n[eé]ral|ht|ttc|h\.?\s*t\.?)?|montant\s*(?:total|ht|h\.?\s*t\.?)?|net\s*[àa]\s*payer|total\s*devis|total\s*offre|prix\s*total)[^\d]{0,40}(\d[\d\s.,]*)/gi,
     /(?:total|montant)\s*h\.?\s*t\.?\s*[:\s]+(\d[\d\s.,]*)/gi,
+    /(?:ukupno|iznos|neto|ponuda|cena|vrijednost|sa\s*pdv|bez\s*pdv|bruto)[^\d]{0,40}(\d[\d\s.,]*)/gi,
+    /(?:amount|grand\s*total|subtotal|net\s*amount)[^\d]{0,40}(\d[\d\s.,]*)/gi,
   ]
   for (const pattern of totalLabelPatterns) {
     let match: RegExpExecArray | null
@@ -34,8 +50,9 @@ export function extractPriceFromText(text: string, preferMax = false): number | 
     /(?:montant|total|prix|devis|offre|facturation|tarif)[^\d]{0,30}(\d[\d\s.,]*)\s*€/gi,
     /(\d[\d\s.,]*)\s*€\s*(?:HT|ht|TTC|ttc)?/gi,
     /€\s*(\d[\d\s.,]*)/gi,
-    /(\d[\d\s.,]*)\s*(?:EUR|euros?)/gi,
+    /(\d[\d\s.,]*)\s*(?:EUR|euros?|RSD|HRK|kn)/gi,
     /(?:total|montant)\s*[:\s]+(\d[\d\s.,]*)/gi,
+    /(\d[\d\s.,]+)\s*(?:€|EUR|RSD|kn)\b/gi,
   ]
 
   const candidates: number[] = []

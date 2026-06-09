@@ -168,7 +168,12 @@ export default function MailPage() {
       const data = await res.json()
       if (data.success) {
         const full = data.data as Email & {
-          quote_analysis?: { price_ht: number | null; tender_id: string | null; enriched: boolean }
+          quote_analysis?: {
+            price_ht: number | null
+            tender_id: string | null
+            enriched: boolean
+            supplier_missing?: boolean
+          }
         }
         const tenderId = full.tender_id ?? full.quote_analysis?.tender_id ?? null
         const merged = { ...full, tender_id: tenderId }
@@ -181,8 +186,12 @@ export default function MailPage() {
         } : e))
         if (!silent && full.quote_analysis?.price_ht) {
           showToast(`Prix détecté : ${Number(full.quote_analysis.price_ht).toLocaleString('fr-FR')} € HT`)
+        } else if (!silent && full.quote_analysis?.supplier_missing) {
+          showToast('Fournisseur non reconnu — vérifiez l\'email du fournisseur dans Operis')
         } else if (!silent && full.quote_analysis?.enriched) {
           showToast('Email et pièces jointes importés')
+        } else if (!silent && full.has_attachments && !full.quote_analysis?.price_ht) {
+          showToast('Prix non trouvé dans le PDF — saisie manuelle sur l\'AO')
         }
       }
     } catch (e) { console.error(e) }
@@ -857,6 +866,11 @@ export default function MailPage() {
               {loadingDetail && (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
                   Analyse de l&apos;email et des pièces jointes…
+                </div>
+              )}
+              {(selected as Email & { quote_analysis?: { supplier_missing?: boolean; price_ht?: number | null } }).quote_analysis?.supplier_missing && (
+                <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, fontSize: 12, color: '#fbbf24' }}>
+                  Fournisseur non reconnu ({selected.from_address}). Mettez cette adresse (ou le même domaine) sur le fournisseur consulté.
                 </div>
               )}
 

@@ -27,6 +27,11 @@ function hasDevisAttachment(attachments: StoredEmailAttachment[], hasAttachments
   )
 }
 
+function emailDomain(email: string): string | null {
+  const e = extractEmailAddress(email)
+  return e?.split('@')[1]?.toLowerCase() ?? null
+}
+
 async function findSupplierByFromEmail(db: SupabaseClient, userId: string, fromAddress: string) {
   const fromEmail = extractEmailAddress(fromAddress)
   if (!fromEmail) return null
@@ -44,10 +49,52 @@ async function findSupplierByFromEmail(db: SupabaseClient, userId: string, fromA
     .select('id, email')
     .eq('user_id', userId)
 
-  return (all ?? []).find(s => {
+  const fromLower = fromAddress.toLowerCase()
+  const exactLoose = (all ?? []).find(s => {
     const e = extractEmailAddress(s.email ?? '')
-    return e && (e === fromEmail || fromAddress.toLowerCase().includes(e))
-  }) ?? null
+    return e && (e === fromEmail || fromLower.includes(e))
+  })
+  if (exactLoose) return exactLoose
+
+  const fromDomain = emailDomain(fromEmail)
+  if (!fromDomain) return null
+
+  return (all ?? []).find(s => emailDomain(s.email ?? '') === fromDomain) ?? null
+}
+
+/** Retrouve le fournisseur même si la réponse vient d'un autre contact du même domaine. */
+async function findSupplierForReply(
+  db: SupabaseClient,
+  userId: string,
+  fromAddress: string,
+  tenderIdHint?: string | null,
+) {
+  const direct = await findSupplierByFromEmail(db, userId, fromAddress)
+  if (direct) return direct
+
+  const fromEmail = extractEmailAddress(fromAddress)
+  const fromDomain = fromEmail ? emailDomain(fromEmail) : null
+  if (!fromDomain) return null
+
+  if (tenderIdHint) {
+    const { data: consultations } = await db
+      .from('consultation_suppliers')
+      .select('supplier_id, supplier:suppliers(id, email)')
+      .eq('tender_id', tenderIdHint)
+
+    for (const c of consultations ?? []) {
+      const s = c.supplier as { id: string; email: string } | null
+      if (!s?.id) continue
+      const sDomain = emailDomain(s.email ?? '')
+      if (sDomain === fromDomain) return { id: s.id, email: s.email }
+      const se = extractEmailAddress(s.email ?? '')
+      if (fromEmail && se && (fromEmail === se || fromAddress.toLowerCase().includes(se))) {
+        return { id: s.id, email: s.email }
+      }
+    }
+  }
+
+  return null
 }
 
 async function resolveQuotePrice(
@@ -93,9 +140,17 @@ export async function upsertQuoteFromEmail(
     attachmentSummary(attachments) ? `PJ: ${attachmentSummary(attachments)}` : '',
   ].filter(Boolean).join(' — ')
 
-  const documentUrl = hasDevisFile
-    ? `/api/mail/emails/${emailId}/attachments/0`
-    : null
+  const pdfIdx = attachments.findIndex(a =>
+    /\.pdf$/i.test(a.filename) || (a.contentType ?? '').includes('pdf'),
+  )
+  const devisIdx = pdfIdx >= 0
+    ? pdfIdx
+    : attachments.findIndex(a => /\.(pdf|xlsx?|xls|docx?)$/i.test(a.filename))
+  const documentUrl = hasDevisFile && devisIdx >= 0
+    ? `/api/mail/emails/${emailId}/attachments/${devisIdx}`
+    : hasDevisFile
+      ? `/api/mail/emails/${emailId}/attachments/0`
+      : null
 
   const { data: existing } = await db
     .from('quotes')
@@ -146,7 +201,7 @@ export async function tryCreateQuoteFromInboundEmail(
   extraText?: string,
   hasAttachmentsFlag?: boolean,
 ) {
-  const supplier = await findSupplierByFromEmail(db, userId, fromAddress)
+  const supplier = await findSupplierForReply(db, userId, fromAddress, tenderIdHint)
   if (!supplier) return null
 
   let tenderId = tenderIdHint ?? null
@@ -292,6 +347,8 @@ export async function processInboundEmailQuotes(
   enriched: boolean
   quote: { price_ht: number | null } | null
   tenderId: string | null
+  supplierFound: boolean
+  supplierMissing: boolean
 }> {
   const { data: email } = await db
     .from('emails')
@@ -300,7 +357,7 @@ export async function processInboundEmailQuotes(
     .eq('user_id', userId)
     .single()
 
-  if (!email) return { enriched: false, quote: null, tenderId: null }
+  if (!email) return { enriched: false, quote: null, tenderId: null, supplierFound: false, supplierMissing: false }
 
   const enriched = await reEnrichEmailIfNeeded(db, userId, emailId, { force: isEmailIncompleteForEnrich(email) })
 
@@ -332,9 +389,13 @@ export async function processInboundEmailQuotes(
 
   const { data: linked } = await db.from('emails').select('tender_id').eq('id', emailId).single()
 
+  const supplier = await findSupplierForReply(db, userId, row.from_address ?? '', row.tender_id)
+
   return {
     enriched: !!enriched,
     quote: quote ? { price_ht: quote.price_ht } : null,
     tenderId: linked?.tender_id ?? row.tender_id ?? null,
+    supplierFound: !!supplier,
+    supplierMissing: !supplier && !!row.from_address,
   }
 }

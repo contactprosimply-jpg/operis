@@ -1,14 +1,18 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { StoredEmailAttachment } from '@/lib/mail-attachments'
 import { downloadAttachmentBuffer } from '@/lib/mail-storage'
-import { extractPriceFromText } from '@/lib/quote-price-extract'
+import { extractLargestAmountFromText, extractPriceFromText } from '@/lib/quote-price-extract'
 
 const MAX_PARSE_BYTES = 15 * 1024 * 1024
 
 const DOC_EXT = /\.(pdf|docx?|xlsx?|xls|csv|txt)$/i
 const DOC_MIME = /pdf|spreadsheet|excel|word|msword|officedocument|csv|plain/i
 
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i
+
 export function isQuoteDocument(filename: string, contentType?: string): boolean {
+  if (IMAGE_EXT.test(filename)) return false
+  if (contentType?.startsWith('image/')) return false
   if (DOC_EXT.test(filename)) return true
   if (contentType && DOC_MIME.test(contentType)) return true
   return false
@@ -17,8 +21,30 @@ export function isQuoteDocument(filename: string, contentType?: string): boolean
 async function extractPdfText(buffer: Buffer): Promise<string> {
   const { PDFParse } = await import('pdf-parse')
   const parser = new PDFParse({ data: new Uint8Array(buffer) })
-  const result = await parser.getText()
-  return result.text ?? ''
+  let text = ''
+  try {
+    const result = await parser.getText()
+    text = result.text ?? ''
+  } catch (err) {
+    console.error('[PDF] getText failed:', err)
+  }
+
+  try {
+    const tables = await parser.getTable()
+    for (const table of tables.mergedTables ?? []) {
+      for (const row of table) {
+        text += '\n' + row.join(' ')
+      }
+    }
+  } catch {
+    // tables optionnelles
+  }
+
+  if (!text.trim()) {
+    text = buffer.toString('latin1').replace(/[^\x20-\x7E\u00A0-\u024F\n\r\t€;,.\-+]/g, ' ')
+  }
+
+  return text
 }
 
 async function extractDocxText(buffer: Buffer): Promise<string> {
@@ -133,14 +159,24 @@ export async function extractPriceFromAttachments(
   let bestPrice: number | null = null
   let sourceFile: string | undefined
 
-  for (const att of attachments) {
+  const sorted = [...attachments].sort((a, b) => {
+    const aPdf = /\.pdf$/i.test(a.filename) ? 0 : 1
+    const bPdf = /\.pdf$/i.test(b.filename) ? 0 : 1
+    return aPdf - bPdf
+  })
+
+  for (const att of sorted) {
     if (!isQuoteDocument(att.filename, att.contentType)) continue
 
     const buffer = await downloadAttachmentBuffer(db, att)
-    if (!buffer?.length) continue
+    if (!buffer?.length) {
+      console.error('[Doc extract] empty buffer:', att.filename, att.path)
+      continue
+    }
 
     const isSheet = /\.(xlsx?|xls|csv)$/i.test(att.filename) ||
       /spreadsheet|excel|csv/i.test(att.contentType ?? '')
+    const isPdf = /\.pdf$/i.test(att.filename) || (att.contentType ?? '').includes('pdf')
 
     let filePrice: number | null = null
     if (isSheet) {
@@ -152,6 +188,9 @@ export async function extractPriceFromAttachments(
 
     if (filePrice == null && text) {
       filePrice = extractPriceFromText(text, true)
+      if (filePrice == null && (isPdf || isSheet)) {
+        filePrice = extractLargestAmountFromText(text)
+      }
     }
 
     if (filePrice != null) {
@@ -159,6 +198,7 @@ export async function extractPriceFromAttachments(
         bestPrice = filePrice
         sourceFile = att.filename
       }
+      if (isPdf) break
     }
   }
 
