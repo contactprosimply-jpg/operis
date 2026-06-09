@@ -6,6 +6,8 @@ import { createAdminClient } from '@/lib/supabase'
 import { collectTenderDocuments } from '@/lib/tender-documents'
 import { backfillQuotesForTender } from '@/lib/mail-quote-extract'
 
+export const maxDuration = 60
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

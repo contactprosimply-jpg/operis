@@ -242,6 +242,41 @@ export async function fetchRecentEnvelopes(
   }
 }
 
+/** Télécharge le source brut d'un email via son Message-ID (ré-enrichissement). */
+export async function fetchMessageSourceByMessageId(
+  config: MailAccountConfig,
+  messageId: string,
+): Promise<Buffer | null> {
+  const bare = messageId.replace(/^<|>$/g, '')
+  const candidates = [messageId, `<${bare}>`, bare]
+
+  const client = createImapClient(config)
+  await client.connect()
+  const lock = await client.getMailboxLock('INBOX')
+
+  try {
+    let uid: number | undefined
+    for (const mid of candidates) {
+      const uids = await client.search({ header: ['Message-ID', mid] }, { uid: true })
+      if (Array.isArray(uids) && uids.length) {
+        uid = uids[uids.length - 1]
+        break
+      }
+    }
+    if (!uid) return null
+
+    for await (const message of client.fetch([uid], { source: true }, { uid: true })) {
+      if (message.source) return message.source
+    }
+    return null
+  } finally {
+    lock.release()
+    try {
+      await client.logout()
+    } catch {}
+  }
+}
+
 /** Télécharge le corps complet uniquement pour les UIDs demandés. */
 export async function fetchMessageSources(
   config: MailAccountConfig,
