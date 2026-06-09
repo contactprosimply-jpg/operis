@@ -8,6 +8,7 @@ import {
   type ImapEnvelopeMeta,
 } from '@/lib/imap-client'
 import { parseMailAttachments, extractEmailAddress, type StoredEmailAttachment } from '@/lib/mail-attachments'
+import { isEmailIncompleteForEnrich } from '@/lib/mail-enrich'
 import { tryCreateQuoteFromInboundEmail } from '@/lib/mail-quote-extract'
 import { attachmentMetaOnly, persistAttachmentsToStorage } from '@/lib/mail-storage'
 import { createAdminClient } from '@/lib/supabase'
@@ -325,6 +326,53 @@ export async function syncMailAccount(
       }
     } catch (err) {
       console.error('[Mail sync] source fetch error:', err)
+    }
+  }
+
+  // Phase 2b — emails déjà en base mais sans corps/PJ (réponses fournisseurs visibles sans analyse)
+  if (existingEnvelopes.length) {
+    const { data: recentDbEmails } = await db
+      .from('emails')
+      .select('id, message_id, body_text, body_html, has_attachments, attachments')
+      .eq('user_id', userId)
+      .order('received_at', { ascending: false })
+      .limit(80)
+
+    const incompleteByMsgId = new Map<string, string>()
+    for (const em of recentDbEmails ?? []) {
+      if (em.message_id && isEmailIncompleteForEnrich(em)) {
+        incompleteByMsgId.set(em.message_id, em.id)
+      }
+    }
+
+    const existingEnrichList: { uid: number; envelope: ImapEnvelopeMeta; emailId: string }[] = []
+    for (const envelope of existingEnvelopes) {
+      const emailId = incompleteByMsgId.get(envelope.messageId)
+      if (emailId) existingEnrichList.push({ uid: envelope.uid, envelope, emailId })
+    }
+
+    const phase2bLimit = quick ? 10 : 25
+    const toEnrichExisting = existingEnrichList.slice(0, phase2bLimit)
+
+    if (toEnrichExisting.length) {
+      try {
+        const sources = await fetchMessageSources(account, toEnrichExisting.map(e => e.uid))
+        const byUid = new Map(toEnrichExisting.map(e => [e.uid, e]))
+
+        for (const { uid, source } of sources) {
+          const item = byUid.get(uid)
+          if (!item) continue
+          try {
+            await enrichEmailFromSource(db, userId, item.emailId, source, item.envelope, account, result)
+            result.updated++
+          } catch (err) {
+            result.errors++
+            console.error('[Mail sync] existing enrich error:', err)
+          }
+        }
+      } catch (err) {
+        console.error('[Mail sync] existing source fetch error:', err)
+      }
     }
   }
 

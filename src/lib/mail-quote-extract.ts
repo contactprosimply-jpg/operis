@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { StoredEmailAttachment } from '@/lib/mail-attachments'
 import { extractEmailAddress } from '@/lib/mail-attachments'
 import { extractPriceFromAttachments } from '@/lib/document-text-extract'
-import { reEnrichEmailIfNeeded } from '@/lib/mail-enrich'
+import { isEmailIncompleteForEnrich, reEnrichEmailIfNeeded } from '@/lib/mail-enrich'
 import { extractPriceFromText } from '@/lib/quote-price-extract'
 
 export { extractPriceFromText } from '@/lib/quote-price-extract'
@@ -281,4 +281,60 @@ export async function backfillQuotesForTender(
   }
 
   return { updated }
+}
+
+/** Télécharge PJ depuis IMAP si besoin, puis crée/met à jour le devis lié à l'AO. */
+export async function processInboundEmailQuotes(
+  db: SupabaseClient,
+  userId: string,
+  emailId: string,
+): Promise<{
+  enriched: boolean
+  quote: { price_ht: number | null } | null
+  tenderId: string | null
+}> {
+  const { data: email } = await db
+    .from('emails')
+    .select('id, subject, from_address, body_text, body_html, has_attachments, attachments, tender_id')
+    .eq('id', emailId)
+    .eq('user_id', userId)
+    .single()
+
+  if (!email) return { enriched: false, quote: null, tenderId: null }
+
+  const enriched = await reEnrichEmailIfNeeded(db, userId, emailId, { force: isEmailIncompleteForEnrich(email) })
+
+  const { data: current } = await db
+    .from('emails')
+    .select('subject, from_address, body_text, body_html, has_attachments, attachments, tender_id')
+    .eq('id', emailId)
+    .single()
+
+  const row = current ?? email
+  const attachments = (enriched?.attachments ?? row.attachments ?? []) as StoredEmailAttachment[]
+  const bodyText = [
+    row.subject ?? '',
+    enriched?.bodyText ?? row.body_text ?? '',
+    row.body_html ? stripHtml(row.body_html) : '',
+  ].filter(Boolean).join('\n')
+
+  const quote = await tryCreateQuoteFromInboundEmail(
+    db,
+    userId,
+    emailId,
+    row.from_address ?? '',
+    bodyText,
+    attachments,
+    row.tender_id,
+    undefined,
+    row.has_attachments || attachments.length > 0,
+  )
+
+  const { data: linked } = await db.from('emails').select('tender_id').eq('id', emailId).single()
+
+  return {
+    enriched: !!enriched,
+    quote: quote ? { price_ht: quote.price_ht } : null,
+    tenderId: linked?.tender_id ?? row.tender_id ?? null,
+  }
 }

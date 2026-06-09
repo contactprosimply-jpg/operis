@@ -6,6 +6,17 @@ import { isQuoteDocument } from '@/lib/document-text-extract'
 import { attachmentMetaOnly, downloadAttachmentBuffer, persistAttachmentsToStorage } from '@/lib/mail-storage'
 import { resolveMailAccount } from '@/lib/mail-sync'
 
+export function isEmailIncompleteForEnrich(email: {
+  body_text?: string | null
+  body_html?: string | null
+  has_attachments?: boolean | null
+  attachments?: StoredEmailAttachment[] | null
+}): boolean {
+  const attachments = (email.attachments as StoredEmailAttachment[]) ?? []
+  if (!email.body_text?.trim() && !email.body_html?.trim()) return true
+  return attachmentsNeedReload(attachments, email.has_attachments)
+}
+
 function attachmentsNeedReload(
   attachments: StoredEmailAttachment[],
   hasAttachments?: boolean,
@@ -45,11 +56,10 @@ export async function reEnrichEmailIfNeeded(
   if (!email?.message_id) return null
 
   const attachments = (email.attachments as StoredEmailAttachment[]) ?? []
-  const needsBody = !email.body_text?.trim() && !email.body_html?.trim()
-  const needsAtt = attachmentsNeedReload(attachments, email.has_attachments) ||
+  const incomplete = isEmailIncompleteForEnrich(email) ||
     await quoteAttachmentsMissingFromStorage(db, attachments)
 
-  if (!options?.force && !needsBody && !needsAtt) return null
+  if (!options?.force && !incomplete) return null
 
   const account = await resolveMailAccount(userId)
   if (!account) return null
@@ -61,13 +71,13 @@ export async function reEnrichEmailIfNeeded(
   const { attachments: parsedAtts, hasAttachments } = parseMailAttachments(parsed.attachments)
 
   const updates: Record<string, unknown> = {}
-  if (needsBody) {
-    updates.body_text = parsed.text ?? ''
-    updates.body_html = parsed.html || ''
+  if (!email.body_text?.trim() || parsed.text) {
+    updates.body_text = parsed.text ?? email.body_text ?? ''
+    updates.body_html = parsed.html || email.body_html || ''
   }
 
   let savedAttachments = attachments
-  if ((needsAtt || options?.force) && hasAttachments) {
+  if (hasAttachments && parsedAtts.length > 0) {
     savedAttachments = await persistAttachmentsToStorage(db, userId, emailId, parsedAtts)
     const meta = savedAttachments.map(attachmentMetaOnly)
     updates.attachments = meta

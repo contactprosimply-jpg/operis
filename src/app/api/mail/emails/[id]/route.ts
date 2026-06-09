@@ -4,6 +4,9 @@ import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { toAttachmentMeta } from '@/lib/mail-attachments'
+import { processInboundEmailQuotes } from '@/lib/mail-quote-extract'
+
+export const maxDuration = 60
 
 export async function GET(
   req: NextRequest,
@@ -26,16 +29,40 @@ export async function GET(
     return Response.json({ success: false, error: 'Email introuvable' }, { status: 404 })
   }
 
-  const attachments = toAttachmentMeta(email.attachments)
-  const hasAttachments = !!email.has_attachments || attachments.length > 0
+  const analyze = req.nextUrl.searchParams.get('analyze') !== 'false'
+  let quoteAnalysis: { price_ht: number | null; tender_id: string | null; enriched: boolean } | null = null
+
+  if (analyze) {
+    try {
+      const result = await processInboundEmailQuotes(db, userId, id)
+      quoteAnalysis = {
+        price_ht: result.quote?.price_ht ?? null,
+        tender_id: result.tenderId,
+        enriched: result.enriched,
+      }
+    } catch (err) {
+      console.error('[Mail email] quote analysis:', err)
+    }
+  }
+
+  const { data: refreshed } = await db
+    .from('emails')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  const row = refreshed ?? email
+  const attachments = toAttachmentMeta(row.attachments)
+  const hasAttachments = !!row.has_attachments || attachments.length > 0
 
   return Response.json({
     success: true,
     data: {
-      ...email,
+      ...row,
       has_attachments: hasAttachments,
       attachments,
       attachments_pending: hasAttachments && attachments.length === 0,
+      quote_analysis: quoteAnalysis,
     },
   })
 }

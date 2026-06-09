@@ -162,18 +162,28 @@ export default function MailPage() {
 
   const loadEmailDetail = useCallback(async (emailId: string, silent = false) => {
     if (!silent) setLoadingDetail(true)
-    const safetyTimer = setTimeout(() => { if (!silent) setLoadingDetail(false) }, 12000)
+    const safetyTimer = setTimeout(() => { if (!silent) setLoadingDetail(false) }, 60000)
     try {
       const res = await authFetch(`/api/mail/emails/${emailId}`)
       const data = await res.json()
       if (data.success) {
-        const full = data.data as Email
-        setSelected(full)
+        const full = data.data as Email & {
+          quote_analysis?: { price_ht: number | null; tender_id: string | null; enriched: boolean }
+        }
+        const tenderId = full.tender_id ?? full.quote_analysis?.tender_id ?? null
+        const merged = { ...full, tender_id: tenderId }
+        setSelected(merged)
         setEmails(prev => prev.map(e => e.id === full.id ? {
           ...e,
           has_attachments: full.has_attachments,
           attachments: full.attachments,
+          tender_id: tenderId ?? e.tender_id,
         } : e))
+        if (!silent && full.quote_analysis?.price_ht) {
+          showToast(`Prix détecté : ${Number(full.quote_analysis.price_ht).toLocaleString('fr-FR')} € HT`)
+        } else if (!silent && full.quote_analysis?.enriched) {
+          showToast('Email et pièces jointes importés')
+        }
       }
     } catch (e) { console.error(e) }
     finally {
@@ -833,10 +843,20 @@ export default function MailPage() {
               )}
               {selected.tender_id && (
                 <div style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 12, color: '#86efac', flex: 1 }}>AO lié à cet email</span>
+                  <span style={{ fontSize: 12, color: '#86efac', flex: 1 }}>
+                    AO lié
+                    {(selected as Email & { quote_analysis?: { price_ht: number | null } }).quote_analysis?.price_ht
+                      ? ` — ${Number((selected as Email & { quote_analysis?: { price_ht: number | null } }).quote_analysis!.price_ht).toLocaleString('fr-FR')} € HT détecté`
+                      : ''}
+                  </span>
                   <button onClick={() => router.push(`/tenders/${selected.tender_id}`)} style={{ background: 'rgba(34,197,94,0.1)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
                     Voir l'AO
                   </button>
+                </div>
+              )}
+              {loadingDetail && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+                  Analyse de l&apos;email et des pièces jointes…
                 </div>
               )}
 
@@ -889,9 +909,13 @@ export default function MailPage() {
               )}
               {selected.has_attachments && !(selected.attachments?.length) && !loadingDetail && (
                 <div style={{ marginBottom: 20, padding: '12px 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)' }}>
-                  {selected.attachments_pending ? 'Pièces jointes en attente — ' : 'Pièces jointes détectées — '}
+                  Pièces jointes non importées —
+                  <button type="button" onClick={() => loadEmailDetail(selected.id)} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontFamily: 'DM Sans, system-ui', padding: 4, minHeight: 32 }}>
+                    analyser maintenant
+                  </button>
+                  {' ou '}
                   <button type="button" onClick={handleSync} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontFamily: 'DM Sans, system-ui', padding: 4, minHeight: 32 }}>
-                    synchroniser maintenant
+                    synchroniser
                   </button>
                 </div>
               )}
