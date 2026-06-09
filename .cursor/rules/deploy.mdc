@@ -1,0 +1,17 @@
+---
+description: Déploiement automatique en production après changements
+alwaysApply: true
+---
+
+# Déploiement automatique
+
+Après des changements de code fonctionnels, déployer en production **sans demander confirmation** :
+
+1. `git add` des fichiers pertinents (pas les secrets `.env`)
+2. `git commit` avec message concis
+3. `git push origin main`
+4. `npx vercel --prod --yes`
+
+Prod : https://operis-f26g78.vercel.app
+
+Ne pas attendre une autorisation explicite pour push/deploy — l'utilisateur a demandé le déploiement automatique.
