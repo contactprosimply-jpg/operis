@@ -2,11 +2,23 @@
   "name": "operis",
   "version": "0.1.0",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "desktop": "electron .",
+    "desktop:build": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "fr.nikodex.operis",
+    "productName": "Operis",
+    "directories": { "output": "dist-desktop" },
+    "files": ["electron/**/*"],
+    "win": {
+      "target": ["portable"]
+    }
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",
@@ -23,6 +35,8 @@
     "tailwindcss": "^3.4.19"
   },
   "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^20",
     "@types/nodemailer": "^8.0.0",

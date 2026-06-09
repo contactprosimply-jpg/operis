@@ -72,3 +72,11 @@ html, body {
   .kpi-grid { grid-template-columns: repeat(2, 1fr) !important; }
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
+
+/* Mode application installée (PWA standalone) */
+@media (display-mode: standalone) {
+  body {
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+}

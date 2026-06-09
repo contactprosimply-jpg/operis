@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import { AuthProvider } from '@/components/AuthProvider'
 import Sidebar from '@/components/Sidebar'
+import PwaInstaller from '@/components/PwaInstaller'
 
 const PUBLIC_ROUTES = ['/login', '/register']
 
@@ -12,6 +13,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthProvider>
+      <PwaInstaller />
       {isPublic ? (
         children
       ) : (

@@ -5,7 +5,14 @@ import AppShell from '@/components/AppShell'
 export const metadata: Metadata = {
   title: 'Operis — Gestion des Appels d\'Offres BTP',
   description: 'Plateforme SaaS de gestion des AO pour les entreprises BTP. Centralisez vos consultations, suivez vos devis, ne ratez plus une opportunité.',
-  icons: { icon: '/favicon.svg' },
+  applicationName: 'Operis',
+  appleWebApp: {
+    capable: true,
+    title: 'Operis',
+    statusBarStyle: 'black-translucent',
+  },
+  formatDetection: { telephone: false },
+  icons: { icon: '/favicon.svg', apple: '/apple-icon' },
   openGraph: {
     title: 'Operis — Gestion des Appels d\'Offres BTP',
     description: 'Plateforme SaaS de gestion des AO pour les entreprises BTP. Centralisez vos consultations, suivez vos devis, ne ratez plus une opportunité.',
@@ -21,8 +28,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
         <meta name="theme-color" content="#080d18" />
+        <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body style={{ fontFamily: "'DM Sans', system-ui, sans-serif", overflow: 'hidden' }}>
         <AppShell>{children}</AppShell>
