@@ -61,6 +61,8 @@ export default function TenderDetailPage() {
   const [validatingQuote, setValidatingQuote] = useState(false)
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null)
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false)
+  const [consultFiles, setConsultFiles] = useState<File[]>([])
+  const [uploadingDoc, setUploadingDoc] = useState(false)
 
   // Form édition AO
   const [editForm, setEditForm] = useState({
@@ -174,13 +176,58 @@ export default function TenderDetailPage() {
     else show(`Erreur : ${data.error}`)
   }
 
+  const fileToBase64 = async (file: File) => {
+    const buffer = await file.arrayBuffer()
+    const bytes = new Uint8Array(buffer)
+    let binary = ''
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+    return btoa(binary)
+  }
+
+  const handleUploadTenderDoc = async (files: FileList | File[]) => {
+    setUploadingDoc(true)
+    try {
+      for (const f of Array.from(files)) {
+        const data = await fileToBase64(f)
+        const res = await authFetch(`/api/tenders/${id}/documents`, {
+          method: 'POST',
+          body: JSON.stringify({ filename: f.name, contentType: f.type, data, source: 'upload' }),
+        })
+        const json = await res.json()
+        if (!json.success) show(`Erreur : ${json.error}`)
+      }
+      show('Document(s) ajouté(s)')
+      await refreshTender()
+    } catch (e: any) { show(`Erreur : ${e.message}`) }
+    setUploadingDoc(false)
+  }
+
   const handleSendConsult = async () => {
     if (selectedSuppliers.length === 0) return
     setSendingConsult(true)
-    const res = await authFetch(`/api/tenders/${id}/consult`, { method: 'POST', body: JSON.stringify({ supplier_ids: selectedSuppliers, message: consultMsg }) })
-    const data = await res.json()
-    if (data.success) { show(`${data.data.sent} consultation(s) envoyée(s)`); setShowConsultModal(false); await refreshTender() }
-    else show(`Erreur : ${data.error}`)
+    try {
+      const documentIds: string[] = []
+      for (const f of consultFiles) {
+        const data = await fileToBase64(f)
+        const up = await authFetch(`/api/tenders/${id}/documents`, {
+          method: 'POST',
+          body: JSON.stringify({ filename: f.name, contentType: f.type, data, source: 'consultation' }),
+        })
+        const upJson = await up.json()
+        if (upJson.success) documentIds.push(upJson.data.id)
+      }
+      const res = await authFetch(`/api/tenders/${id}/consult`, {
+        method: 'POST',
+        body: JSON.stringify({ supplier_ids: selectedSuppliers, message: consultMsg, document_ids: documentIds }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        show(`${data.data.sent} consultation(s) envoyée(s)`)
+        setShowConsultModal(false)
+        setConsultFiles([])
+        await refreshTender()
+      } else show(`Erreur : ${data.error}`)
+    } catch (e: any) { show(`Erreur : ${e.message}`) }
     setSendingConsult(false)
   }
 
@@ -208,14 +255,14 @@ export default function TenderDetailPage() {
     setValidatingQuote(false)
   }
 
-  const downloadMailAttachment = async (emailId: string, index: number, filename: string) => {
+  const downloadTenderDocument = async (docId: string, filename: string) => {
     try {
       const token = await getAccessToken()
       if (!token) return
-      const res = await fetch(`/api/mail/emails/${emailId}/attachments/${index}`, {
+      const res = await fetch(`/api/tenders/${id}/documents/${encodeURIComponent(docId)}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (!res.ok) { show('Pièce jointe indisponible'); return }
+      if (!res.ok) { show('Fichier indisponible'); return }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -243,7 +290,9 @@ export default function TenderDetailPage() {
 
   const consultations = tender.consultations ?? []
   const quotes = tender.quotes ?? []
-  const linkedEmails = tender.linked_emails ?? []
+  const documents = tender.documents ?? { received: [], sent: [] }
+  const receivedDocs = documents.received ?? []
+  const sentDocs = documents.sent ?? []
   const alreadyAdded = new Set(consultations.map((c: any) => c.supplier_id))
   const availableSuppliers = suppliers.filter(s => !alreadyAdded.has(s.id))
 
@@ -439,6 +488,89 @@ export default function TenderDetailPage() {
         )}
       </div>
 
+      {/* Documents & pièces jointes */}
+      <div style={card}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+            Documents & pièces jointes
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input type="file" multiple style={{ display: 'none' }} id="tender-doc-upload"
+              onChange={e => { if (e.target.files?.length) handleUploadTenderDoc(e.target.files); e.target.value = '' }} />
+            <Button variant="ghost" loading={uploadingDoc} onClick={() => document.getElementById('tender-doc-upload')?.click()}>
+              + Ajouter un document
+            </Button>
+          </div>
+        </div>
+
+        {receivedDocs.length === 0 && sentDocs.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 24 }}>
+            Aucun document — les devis fournisseurs et PJ envoyées apparaîtront ici
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+            <div>
+              <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+                Reçus ({receivedDocs.length})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {receivedDocs.length === 0 ? (
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucun devis / PJ reçue</span>
+                ) : receivedDocs.map((doc: any) => (
+                  <div key={doc.id} style={{
+                    padding: '10px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8,
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                  }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        📎 {doc.filename}
+                      </div>
+                      <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+                        {doc.supplier_name ?? doc.label ?? '—'}
+                        {doc.date ? ` · ${new Date(doc.date).toLocaleDateString('fr-FR')}` : ''}
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => downloadTenderDocument(doc.id, doc.filename)}
+                      style={{ fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', flexShrink: 0, fontFamily: 'DM Sans, system-ui' }}>
+                      Télécharger
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+                Envoyés ({sentDocs.length})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {sentDocs.length === 0 ? (
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucune PJ envoyée (consultation)</span>
+                ) : sentDocs.map((doc: any) => (
+                  <div key={doc.id} style={{
+                    padding: '10px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8,
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                  }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        📎 {doc.filename}
+                      </div>
+                      <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+                        {doc.supplier_name ? `→ ${doc.supplier_name}` : doc.label ?? 'Document AO'}
+                        {doc.date ? ` · ${new Date(doc.date).toLocaleDateString('fr-FR')}` : ''}
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => downloadTenderDocument(doc.id, doc.filename)}
+                      style={{ fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', flexShrink: 0, fontFamily: 'DM Sans, system-ui' }}>
+                      Télécharger
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Analyse des devis */}
       {quotes.length > 0 && (
         <div style={card}>
@@ -525,14 +657,10 @@ export default function TenderDetailPage() {
                     </td>
                     <td style={{ padding: '10px 12px', fontSize: 12 }}>
                       {q.source_email_id ? (
-                        <button type="button" onClick={() => downloadMailAttachment(q.source_email_id, 0, 'devis')}
+                        <button type="button" onClick={() => downloadTenderDocument(`mail:${q.source_email_id}:0`, 'devis')}
                           style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, padding: 0, fontFamily: 'DM Sans, system-ui' }}>
-                          📎 Télécharger
+                          📎 Voir docs
                         </button>
-                      ) : q.document_url ? (
-                        <a href={q.document_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: 11 }}>
-                          📎 Lien
-                        </a>
                       ) : '—'}
                     </td>
                     <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', fontSize: 12, maxWidth: 200 }}>{q.notes ?? '—'}</td>
@@ -540,50 +668,6 @@ export default function TenderDetailPage() {
                 )})}
               </tbody>
             </table>
-          </div>
-        </div>
-      )}
-
-      {/* Emails liés à l'AO */}
-      {linkedEmails.length > 0 && (
-        <div style={card}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16 }}>
-            Emails liés ({linkedEmails.length})
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {linkedEmails.map((em: any, i: number) => (
-              <div key={em.id} style={{
-                padding: '12px 4px',
-                borderBottom: i < linkedEmails.length - 1 ? '1px solid var(--border)' : 'none',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 4 }}>{em.subject}</div>
-                    <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
-                      {em.from_address} · {em.received_at ? new Date(em.received_at).toLocaleDateString('fr-FR') : '—'}
-                    </div>
-                    {(em.attachments?.length ?? 0) > 0 && (
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                        {em.attachments.map((att: any, idx: number) => (
-                          <button key={idx} type="button" onClick={() => downloadMailAttachment(em.id, idx, att.filename)}
-                            style={{
-                              fontSize: 10, padding: '3px 8px', borderRadius: 5,
-                              background: 'var(--bg-secondary)', border: '1px solid var(--border)',
-                              color: 'var(--accent)', cursor: 'pointer', fontFamily: 'DM Mono, monospace',
-                            }}>
-                            📎 {att.filename}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <button onClick={() => router.push('/mail')} style={{
-                    fontSize: 11, color: 'var(--accent)', background: 'none', border: '1px solid var(--border-hi)',
-                    borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
-                  }}>Voir mail</button>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       )}
@@ -700,6 +784,18 @@ export default function TenderDetailPage() {
           <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Message personnalisé (optionnel)</div>
           <textarea value={consultMsg} onChange={e => setConsultMsg(e.target.value)} rows={4} placeholder="Message additionnel..."
             style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-hi)', borderRadius: 8, padding: '9px 13px', fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Pièces jointes (DCE, plans…)</div>
+          <input type="file" multiple onChange={e => { if (e.target.files) setConsultFiles(Array.from(e.target.files)) }}
+            style={{ fontSize: 12, color: 'var(--text-secondary)' }} />
+          {consultFiles.length > 0 && (
+            <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {consultFiles.map((f, i) => (
+                <span key={i} style={{ fontSize: 11, padding: '3px 8px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 5 }}>📎 {f.name}</span>
+              ))}
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Button variant="ghost" onClick={() => setShowConsultModal(false)}>Annuler</Button>

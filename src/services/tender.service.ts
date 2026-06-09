@@ -8,6 +8,9 @@ import { consultationRepository } from '@/repositories/consultation.repository'
 import { supplierRepository } from '@/repositories/supplier.repository'
 import { emailLogRepository } from '@/repositories/emailLog.repository'
 import { sendEmail } from '@/lib/mailer'
+import { createAdminClient } from '@/lib/supabase'
+import { downloadDevisFile } from '@/lib/devis-storage'
+import { attachmentMetaOnly } from '@/lib/mail-storage'
 import {
   CreateTenderPayload,
   UpdateTenderPayload,
@@ -116,11 +119,41 @@ export const tenderService = {
   async sendConsultation(
     tenderId: string,
     userId: string,
-    supplierIds: string[]
+    supplierIds: string[],
+    options?: { message?: string; document_ids?: string[] }
   ): Promise<ApiResponse<{ sent: number; errors: number }>> {
     try {
       const tender = await tenderRepository.findById(tenderId, userId)
       if (!tender) return { success: false, error: 'AO introuvable' }
+
+      const db = createAdminClient()
+      let mailAttachments: Array<{ filename: string; content: Buffer; contentType: string }> = []
+      const attachmentMeta: Array<ReturnType<typeof attachmentMetaOnly>> = []
+
+      if (options?.document_ids?.length) {
+        const { data: docs } = await db
+          .from('tender_documents')
+          .select('*')
+          .eq('tender_id', tenderId)
+          .eq('user_id', userId)
+          .in('id', options.document_ids)
+
+        for (const doc of docs ?? []) {
+          const buf = await downloadDevisFile(db, doc.storage_path)
+          if (!buf) continue
+          mailAttachments.push({
+            filename: doc.filename,
+            content: buf,
+            contentType: doc.content_type || 'application/octet-stream',
+          })
+          attachmentMeta.push(attachmentMetaOnly({
+            filename: doc.filename,
+            contentType: doc.content_type || 'application/octet-stream',
+            size: doc.size ?? buf.length,
+            path: doc.storage_path,
+          }))
+        }
+      }
 
       let sent = 0
       let errors = 0
@@ -129,35 +162,35 @@ export const tenderService = {
         const supplier = await supplierRepository.findById(supplierId, userId)
         if (!supplier) continue
 
+        const body = buildConsultationEmail(tender, supplier.name, options?.message)
+
         try {
-          // Envoyer l'email
           await sendEmail({
             to: supplier.email,
             subject: `Consultation — ${tender.title}`,
-            body: buildConsultationEmail(tender, supplier.name),
+            body,
+            attachments: mailAttachments.length > 0 ? mailAttachments : undefined,
           })
 
-          // Mettre à jour le statut en UNE opération
           await consultationRepository.updateStatus(tenderId, supplierId, 'envoye', {
             last_sent_at: new Date().toISOString(),
           })
 
-          // Logger l'envoi
           await emailLogRepository.create({
             tender_id: tenderId,
             supplier_id: supplierId,
             type: 'consultation',
             to_address: supplier.email,
             subject: `Consultation — ${tender.title}`,
-            body: buildConsultationEmail(tender, supplier.name),
+            body,
             sent_at: new Date().toISOString(),
             success: true,
             error_message: null,
+            attachments: attachmentMeta,
           })
 
           sent++
         } catch (emailError: any) {
-          // Logger l'échec sans bloquer les autres envois
           await emailLogRepository.create({
             tender_id: tenderId,
             supplier_id: supplierId,
@@ -168,6 +201,7 @@ export const tenderService = {
             sent_at: new Date().toISOString(),
             success: false,
             error_message: emailError.message,
+            attachments: [],
           })
           errors++
         }
@@ -268,14 +302,15 @@ export const tenderService = {
 // Templates emails
 // ============================================================
 
-function buildConsultationEmail(tender: any, supplierName: string): string {
+function buildConsultationEmail(tender: any, supplierName: string, customMessage?: string): string {
+  const extra = customMessage?.trim() ? `\n\n${customMessage.trim()}\n` : '\n'
   return `Bonjour ${supplierName},
 
 Nous vous contactons dans le cadre d'un appel d'offres et souhaiterions recueillir votre devis pour le projet suivant :
 
 Projet : ${tender.title}
 Client : ${tender.client}
-${tender.description ? `Description : ${tender.description}\n` : ''}${tender.deadline ? `Date limite de réponse : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}\n` : ''}
+${tender.description ? `Description : ${tender.description}\n` : ''}${tender.deadline ? `Date limite de réponse : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}\n` : ''}${extra}
 Merci de nous faire parvenir votre offre dans les meilleurs délais.
 
 Cordialement,

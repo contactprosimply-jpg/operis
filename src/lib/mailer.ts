@@ -9,6 +9,7 @@ interface SendEmailOptions {
   to: string
   subject: string
   body: string
+  attachments?: Array<{ filename: string; content: Buffer; contentType?: string }>
 }
 
 // Créer le transporteur SMTP une seule fois
@@ -24,7 +25,7 @@ function createTransporter() {
   })
 }
 
-export async function sendEmail({ to, subject, body }: SendEmailOptions): Promise<void> {
+export async function sendEmail({ to, subject, body, attachments }: SendEmailOptions): Promise<void> {
   const transporter = createTransporter()
   await transporter.sendMail({
     from: `"Operis" <${process.env.SMTP_USER}>`,
@@ -32,6 +33,11 @@ export async function sendEmail({ to, subject, body }: SendEmailOptions): Promis
     subject,
     text: body,
     html: body.replace(/\n/g, '<br>'),
+    attachments: attachments?.map(a => ({
+      filename: a.filename,
+      content: a.content,
+      contentType: a.contentType || 'application/octet-stream',
+    })),
   })
 }
 

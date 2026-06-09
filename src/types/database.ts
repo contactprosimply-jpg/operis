@@ -110,6 +110,7 @@ export interface EmailLog {
   sent_at: string
   success: boolean
   error_message: string | null
+  attachments?: EmailAttachment[]
 }
 
 export interface TenderStats {
