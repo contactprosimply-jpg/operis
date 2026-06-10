@@ -20,6 +20,7 @@ export interface Profile {
   company: string | null
   role: string
   onboarding_done?: boolean
+  tour_done?: boolean
   created_at: string
 }
 

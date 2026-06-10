@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { authFetch } from '@/lib/auth-client'
 import { Button, Field, ProgressBar } from '@/components/ui'
-import { TOUR_START_KEY } from '@/lib/product-tour'
 
 const STORAGE_KEY = 'operis_onboarding_step'
 
@@ -177,7 +176,6 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       body: JSON.stringify({ onboarding_done: true }),
     })
     localStorage.removeItem(STORAGE_KEY)
-    localStorage.setItem(TOUR_START_KEY, '1')
     onComplete()
     if (tenderId) router.push(`/tenders/${tenderId}`)
   }

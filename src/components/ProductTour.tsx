@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import { authFetch } from '@/lib/auth-client'
 import {
   PRODUCT_TOUR_STEPS,
   markProductTourDone,
@@ -98,6 +99,10 @@ export default function ProductTour() {
 
   const finish = useCallback(() => {
     markProductTourDone()
+    void authFetch('/api/profile', {
+      method: 'PATCH',
+      body: JSON.stringify({ tour_done: true }),
+    })
     setActive(false)
   }, [])
 

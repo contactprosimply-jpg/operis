@@ -251,6 +251,10 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={() => {
+                  void authFetch('/api/profile', {
+                    method: 'PATCH',
+                    body: JSON.stringify({ tour_done: false }),
+                  })
                   requestProductTour()
                   setTab('general')
                 }}

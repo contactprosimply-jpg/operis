@@ -5,6 +5,7 @@ import { AuthProvider } from '@/components/AuthProvider'
 import Sidebar from '@/components/Sidebar'
 import PwaInstaller from '@/components/PwaInstaller'
 import ProductTour from '@/components/ProductTour'
+import UserJourney from '@/components/UserJourney'
 
 const PUBLIC_ROUTES = ['/', '/login', '/register']
 
@@ -25,6 +26,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               {children}
             </div>
           </main>
+          <UserJourney />
           <ProductTour />
         </div>
       )}
