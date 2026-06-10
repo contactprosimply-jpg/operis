@@ -44,6 +44,7 @@ export default function SettingsPage() {
   const [inviting, setInviting] = useState(false)
   const [orgName, setOrgName] = useState('')
   const [creatingOrg, setCreatingOrg] = useState(false)
+  const [resettingTenders, setResettingTenders] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -84,6 +85,30 @@ export default function SettingsPage() {
   const handleSaveGeneral = () => {
     localStorage.setItem('operis_general', JSON.stringify(general))
     show('Sauvegardes')
+  }
+
+  const handleResetAllTenders = async () => {
+    const ok = confirm(
+      'Supprimer TOUS les appels d\'offres ?\n\nDevis, consultations, documents AO et liens mail seront effacés. Les emails restent dans la messagerie.\n\nAction irréversible.',
+    )
+    if (!ok) return
+    const ok2 = confirm('Confirmer la suppression de tous les AO ?')
+    if (!ok2) return
+    setResettingTenders(true)
+    try {
+      const res = await authFetch('/api/tenders', {
+        method: 'DELETE',
+        body: JSON.stringify({ confirm: 'DELETE_ALL_TENDERS' }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        show(`${data.data.deleted_tenders} AO supprimé(s) — base réinitialisée`)
+      } else show(`Erreur : ${data.error}`)
+    } catch (e: unknown) {
+      const err = e as { message?: string }
+      show(`Erreur : ${err.message ?? 'réseau'}`)
+    }
+    setResettingTenders(false)
   }
 
   const handleTest = async () => {
@@ -221,6 +246,16 @@ export default function SettingsPage() {
             <Field label="Nom de la societe" value={general.companyName} onChange={v => setGeneral(g => ({ ...g, companyName: v }))} placeholder="Ex: Nikodex" />
             <Field label="Votre nom" value={general.userName} onChange={v => setGeneral(g => ({ ...g, userName: v }))} placeholder="Ex: Uros Baralic" />
             <Button variant="primary" onClick={handleSaveGeneral}>Sauvegarder</Button>
+            <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+              <div style={sTitle}>Réinitialiser les appels d&apos;offres</div>
+              <div style={sSub}>
+                Supprime tous les AO, devis, consultations et documents. Délie les emails de la messagerie. Les fournisseurs et les emails ne sont pas supprimés.
+              </div>
+              <Button variant="ghost" loading={resettingTenders} onClick={handleResetAllTenders}
+                style={{ color: '#f87171', borderColor: 'rgba(248,113,113,0.35)' }}>
+                Supprimer tous les AO
+              </Button>
+            </div>
           </div>
         )}
 
