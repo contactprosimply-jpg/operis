@@ -4,8 +4,7 @@ import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { toAttachmentMeta } from '@/lib/mail-attachments'
-import { sanitizeEmailsTenderLinks } from '@/lib/email-tender-link'
-import { processInboundEmailQuotes } from '@/lib/mail-quote-extract'
+import { enrichInboundEmailForDisplay } from '@/lib/mail-quote-extract'
 
 export const maxDuration = 60
 
@@ -40,15 +39,15 @@ export async function GET(
 
   if (analyze) {
     try {
-      const result = await processInboundEmailQuotes(db, userId, id)
+      const result = await enrichInboundEmailForDisplay(db, userId, id)
       quoteAnalysis = {
-        price_ht: result.quote?.price_ht ?? null,
+        price_ht: result.price_ht,
         tender_id: result.tenderId,
         enriched: result.enriched,
         supplier_missing: result.supplierMissing,
       }
     } catch (err) {
-      console.error('[Mail email] quote analysis:', err)
+      console.error('[Mail email] enrich:', err)
     }
   }
 
@@ -62,13 +61,10 @@ export async function GET(
   const attachments = toAttachmentMeta(row.attachments)
   const hasAttachments = !!row.has_attachments || attachments.length > 0
 
-  const [sanitized] = await sanitizeEmailsTenderLinks(db, userId, [row])
-  const safeRow = sanitized ?? row
-
   return Response.json({
     success: true,
     data: {
-      ...safeRow,
+      ...row,
       has_attachments: hasAttachments,
       attachments,
       attachments_pending: hasAttachments && attachments.length === 0,

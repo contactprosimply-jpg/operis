@@ -4,7 +4,6 @@ import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { EMAIL_LIST_FIELDS, toListEmail } from '@/lib/mail-api'
-import { sanitizeEmailsTenderLinks } from '@/lib/email-tender-link'
 
 export async function GET(req: NextRequest) {
   const userId = await getUserFromRequest(req)
@@ -16,6 +15,7 @@ export async function GET(req: NextRequest) {
              : undefined
   const isRead = searchParams.get('unread') === 'true' ? false : undefined
   const hasAttachments = searchParams.get('attachments') === 'true' ? true : undefined
+  const unlinked = searchParams.get('unlinked') === 'true'
   const tenderId = searchParams.get('tender_id') || undefined
 
   const db = createAdminClient()
@@ -30,14 +30,13 @@ export async function GET(req: NextRequest) {
   if (isAo !== undefined) query = query.eq('is_ao', isAo)
   if (isRead !== undefined) query = query.eq('is_read', isRead)
   if (hasAttachments) query = query.eq('has_attachments', true)
+  if (unlinked) query = query.is('tender_id', null)
   if (tenderId) query = query.eq('tender_id', tenderId)
 
   const { data, error } = await query
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
 
-  const list = (data ?? []).map(toListEmail)
-  const sanitized = await sanitizeEmailsTenderLinks(db, userId, list)
-  return Response.json({ success: true, data: sanitized })
+  return Response.json({ success: true, data: (data ?? []).map(toListEmail) })
 }
 
 export async function PATCH(req: NextRequest) {
@@ -45,7 +44,7 @@ export async function PATCH(req: NextRequest) {
   if (!userId) return unauthorized()
 
   const body = await req.json()
-  const { id, is_read, is_ao, ao_score, ids } = body
+  const { id, is_read, is_ao, ao_score, tender_id, ids } = body
 
   const db = createAdminClient()
 
@@ -69,10 +68,23 @@ export async function PATCH(req: NextRequest) {
     return Response.json({ success: false, error: 'id requis' }, { status: 400 })
   }
 
+  if (tender_id !== undefined && tender_id !== null) {
+    const { data: tender } = await db
+      .from('tenders')
+      .select('id')
+      .eq('id', tender_id)
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (!tender) {
+      return Response.json({ success: false, error: 'AO introuvable' }, { status: 404 })
+    }
+  }
+
   const patch: Record<string, unknown> = {}
   if (is_read !== undefined) patch.is_read = is_read
   if (is_ao !== undefined) patch.is_ao = is_ao
   if (ao_score !== undefined) patch.ao_score = ao_score
+  if (tender_id !== undefined) patch.tender_id = tender_id
   if (!Object.keys(patch).length) patch.is_read = true
 
   const { data, error } = await db

@@ -55,14 +55,30 @@ export default function DashboardPage() {
   const { tenders, loading } = useTenders()
   const { show, ToastComponent } = useToast()
   const [emails, setEmails] = useState<Email[]>([])
+  const [quoteEmails, setQuoteEmails] = useState<Email[]>([])
   const [creatingAo, setCreatingAo] = useState<string | null>(null)
 
   useEffect(() => {
     if (!ready || !accessToken) return
     const load = async () => {
-      const res = await authFetch('/api/mail/emails?ao=true')
-      const data = await res.json()
-      if (data.success) setEmails(data.data.filter((e: Email) => !e.tender_id))
+      const [aoRes, unlinkedRes] = await Promise.all([
+        authFetch('/api/mail/emails?ao=true'),
+        authFetch('/api/mail/emails?unlinked=true&limit=150'),
+      ])
+      const aoData = await aoRes.json()
+      const unlinkedData = await unlinkedRes.json()
+      if (aoData.success) {
+        setEmails((aoData.data as Email[]).filter(e => !e.tender_id))
+      }
+      if (unlinkedData.success) {
+        const devisLike = (unlinkedData.data as Email[]).filter(e =>
+          !e.is_ao && !e.tender_id && (
+            e.has_attachments ||
+            /devis|ponuda|chiffrage|offre|proposition/i.test(e.subject ?? '')
+          ),
+        )
+        setQuoteEmails(devisLike)
+      }
     }
     load()
   }, [ready, accessToken])
@@ -201,11 +217,33 @@ export default function DashboardPage() {
         </table>
       </Card>
 
+      {quoteEmails.length > 0 && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, marginTop: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>
+              Devis recus non lies ({quoteEmails.length})
+            </span>
+            <button onClick={() => router.push('/mail')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Messagerie →</button>
+          </div>
+          <Card hover={false} style={{ padding: 0, overflow: 'hidden', marginBottom: 24 }}>
+            {quoteEmails.slice(0, 5).map(email => (
+              <div key={email.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => router.push(`/mail?email=${email.id}`)}>
+                  <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.subject}</div>
+                  <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>{email.from_address}</div>
+                </div>
+                <Badge color="purple">Devis</Badge>
+              </div>
+            ))}
+          </Card>
+        </>
+      )}
+
       {emails.length > 0 && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>
-              Emails AO detectes ({emails.length})
+              Emails AO non lies ({emails.length})
             </span>
             <button onClick={() => router.push('/mail')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Voir tous →</button>
           </div>

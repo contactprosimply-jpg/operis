@@ -10,7 +10,6 @@ export interface DetectionResult {
   matchedKeywords: string[]
 }
 
-// ── Mots clés par catégorie avec leur poids ──────────────────
 const SUBJECT_AO_PATTERNS = [
   /\bappel d['']offres?\b/i,
   /\b(ao|dce|rfp)\b/i,
@@ -21,7 +20,6 @@ const SUBJECT_AO_PATTERNS = [
 ]
 
 const KEYWORDS: { terms: string[]; weight: number }[] = [
-  // Très fort (40 pts chacun)
   {
     weight: 40,
     terms: [
@@ -36,7 +34,6 @@ const KEYWORDS: { terms: string[]; weight: number }[] = [
       'consultation entreprises',
     ],
   },
-  // Fort (25 pts chacun)
   {
     weight: 25,
     terms: [
@@ -61,21 +58,18 @@ const KEYWORDS: { terms: string[]; weight: number }[] = [
       'memoire technique',
     ],
   },
-  // Moyen (15 pts chacun)
   {
     weight: 15,
     terms: [
-      'devis',
-      'offre de prix',
-      'proposition commerciale',
       'cahier des charges',
       'cctp',
       'dpgf',
       'bpu',
       'dqe',
+      'demande d\'offre',
+      'demande d\'offres',
     ],
   },
-  // Signal faible (8 pts chacun)
   {
     weight: 8,
     terms: [
@@ -92,7 +86,6 @@ const KEYWORDS: { terms: string[]; weight: number }[] = [
   },
 ]
 
-// ── Mots qui diminuent le score (spam, newsletters, etc.) ────
 const NEGATIVE_KEYWORDS = [
   'désabonner',
   'unsubscribe',
@@ -104,6 +97,19 @@ const NEGATIVE_KEYWORDS = [
   'reset your password',
   'supabase auth',
   'vercel',
+  'veuillez trouver',
+  'ci-joint notre offre',
+  'ci joint notre offre',
+  'notre proposition',
+  'suite à votre demande',
+  'suite a votre demande',
+  'en réponse à',
+  'en reponse a',
+  'devis n°',
+  'devis n ',
+  'chiffrage',
+  'notre devis',
+  'ponuda',
 ]
 
 const OWN_OUTBOUND_PREFIXES = [
@@ -115,7 +121,31 @@ const OWN_OUTBOUND_PREFIXES = [
   'relance 2 -',
 ]
 
-// ── Fonction principale de détection ─────────────────────────
+/** Réponse fournisseur (devis/chiffrage) — pas une demande AO entrante. */
+export function looksLikeSupplierQuoteEmail(subject: string, body: string): boolean {
+  const text = `${subject} ${body}`.toLowerCase()
+  const replyPhrases = [
+    'veuillez trouver',
+    'ci-joint notre',
+    'ci joint notre',
+    'notre proposition',
+    'suite à votre',
+    'suite a votre',
+    'en réponse à',
+    'en reponse a',
+    'devis n°',
+    'devis n ',
+    'offre n°',
+    'notre devis',
+    'ponuda',
+    'notre offre',
+  ]
+  if (replyPhrases.some(p => text.includes(p))) return true
+  const hasQuoteWord = /devis|chiffrage|offre de prix|proposition commerciale|ponuda/i.test(text)
+  const hasAmount = /€|euros|\beur\b|\bht\b|\bttc\b|\d[\d\s.,]{3,}\s*€/i.test(text)
+  return hasQuoteWord && hasAmount
+}
+
 export function detectAo(subject: string, body: string): DetectionResult {
   const cleanSubject = subject.replace(/^(re:|fwd:|tr:|fw:)\s*/gi, '').trim()
   const subjectLower = cleanSubject.toLowerCase()
@@ -126,17 +156,21 @@ export function detectAo(subject: string, body: string): DetectionResult {
     }
   }
 
+  const text = `${cleanSubject} ${body}`.toLowerCase()
+
+  if (looksLikeSupplierQuoteEmail(cleanSubject, body)) {
+    return { isAo: false, score: 0, matchedKeywords: ['réponse devis'] }
+  }
+
   for (const pattern of SUBJECT_AO_PATTERNS) {
     if (pattern.test(cleanSubject)) {
       return { isAo: true, score: 85, matchedKeywords: ['sujet AO'] }
     }
   }
 
-  const text = `${cleanSubject} ${body}`.toLowerCase()
   const matchedKeywords: string[] = []
   let score = 0
 
-  // Appliquer les mots clés positifs
   for (const category of KEYWORDS) {
     for (const term of category.terms) {
       if (text.includes(term.toLowerCase())) {
@@ -146,54 +180,47 @@ export function detectAo(subject: string, body: string): DetectionResult {
     }
   }
 
-  // Appliquer les mots clés négatifs
   for (const neg of NEGATIVE_KEYWORDS) {
     if (text.includes(neg.toLowerCase())) {
-      score -= 20
+      score -= 25
     }
   }
 
-  // Bonus si mots clés forts dans le sujet (sujet = plus important)
   for (const category of KEYWORDS.slice(0, 2)) {
     for (const term of category.terms) {
       if (subjectLower.includes(term.toLowerCase())) {
-        score += 15 // bonus sujet
+        score += 15
       }
     }
   }
 
-  // Plafonner entre 0 et 100
   score = Math.max(0, Math.min(100, score))
 
-  // Pièces jointes typiques AO dans le corps
   if (/\b(dce|cctp|dpgf|bpu|dqe)\b/i.test(text)) score += 10
+
+  if (looksLikeSupplierQuoteEmail(cleanSubject, body)) {
+    score = 0
+  }
 
   return {
     isAo: score >= 25,
     score,
-    matchedKeywords: [...new Set(matchedKeywords)], // dédupliquer
+    matchedKeywords: [...new Set(matchedKeywords)],
   }
 }
 
-// ── Extraire un titre propre depuis l'email ──────────────────
 export function extractTenderTitle(subject: string): string {
-  // Nettoyer les préfixes email communs
   return subject
     .replace(/^(re:|fwd:|tr:|fw:)\s*/gi, '')
     .replace(/\s+/g, ' ')
     .trim()
 }
 
-// ── Extraire le client depuis l'adresse email ─────────────────
 export function extractClientFromEmail(fromAddress: string): string {
-  // Ex: "Jean Dupont <jean@nexity.fr>" → "Nexity"
   const emailMatch = fromAddress.match(/<(.+)>/)
   const email = emailMatch ? emailMatch[1] : fromAddress
-
   const domainMatch = email.match(/@([^.]+)/)
   if (!domainMatch) return fromAddress
-
-  // Capitaliser le nom de domaine
   const domain = domainMatch[1]
   return domain.charAt(0).toUpperCase() + domain.slice(1)
 }

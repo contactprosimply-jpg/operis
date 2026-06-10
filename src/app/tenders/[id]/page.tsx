@@ -65,6 +65,10 @@ export default function TenderDetailPage() {
   const [priceInput, setPriceInput] = useState('')
   const [savingPrice, setSavingPrice] = useState(false)
   const [activeTab, setActiveTab] = useState<'fournisseurs' | 'devis' | 'documents' | 'infos'>('fournisseurs')
+  const [linkedEmails, setLinkedEmails] = useState<any[]>([])
+  const [showLinkEmailModal, setShowLinkEmailModal] = useState(false)
+  const [unlinkedEmails, setUnlinkedEmails] = useState<any[]>([])
+  const [linkingEmail, setLinkingEmail] = useState(false)
 
   // Form édition AO
   const [editForm, setEditForm] = useState({
@@ -103,6 +107,64 @@ export default function TenderDetailPage() {
   }, [id])
 
   const refreshTender = useCallback(() => loadTender(true), [loadTender])
+
+  const loadLinkedEmails = useCallback(async () => {
+    try {
+      const res = await authFetch(`/api/mail/emails?tender_id=${id}`)
+      const data = await res.json()
+      if (data.success) setLinkedEmails(data.data ?? [])
+    } catch { /* ignore */ }
+  }, [id])
+
+  const openLinkEmailModal = async () => {
+    setShowLinkEmailModal(true)
+    try {
+      const res = await authFetch('/api/mail/emails?unlinked=true&limit=150')
+      const data = await res.json()
+      if (data.success) setUnlinkedEmails(data.data ?? [])
+    } catch {
+      showRef.current('Erreur chargement emails')
+    }
+  }
+
+  const handleLinkEmail = async (emailId: string) => {
+    setLinkingEmail(true)
+    try {
+      const res = await authFetch('/api/mail/emails', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: emailId, tender_id: id }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        await loadLinkedEmails()
+        setShowLinkEmailModal(false)
+        showRef.current('Email lié à cet AO')
+      } else showRef.current(`Erreur : ${data.error}`)
+    } catch {
+      showRef.current('Erreur liaison email')
+    }
+    setLinkingEmail(false)
+  }
+
+  const handleUnlinkEmail = async (emailId: string) => {
+    try {
+      const res = await authFetch('/api/mail/emails', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: emailId, tender_id: null }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        await loadLinkedEmails()
+        showRef.current('Email délié')
+      } else showRef.current(`Erreur : ${data.error}`)
+    } catch {
+      showRef.current('Erreur déliaison')
+    }
+  }
+
+  useEffect(() => {
+    if (tender) loadLinkedEmails()
+  }, [tender, loadLinkedEmails])
 
   const handleAnalyzeQuotes = async () => {
     setAnalyzingQuotes(true)
@@ -541,7 +603,50 @@ export default function TenderDetailPage() {
             <div style={{ fontSize: 13, color: '#fde68a', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{tender.notes_internes}</div>
           </div>
         )}
+        <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Emails liés ({linkedEmails.length})</div>
+            <Button variant="ghost" onClick={openLinkEmailModal}>+ Lier un email</Button>
+          </div>
+          {linkedEmails.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucun email lié — associez un devis ou une demande reçue par mail</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {linkedEmails.map((em: any) => (
+                <div key={em.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{em.subject}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>{em.from_address}</div>
+                  </div>
+                  <button type="button" onClick={() => router.push(`/mail?email=${em.id}`)} style={{ fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>Voir</button>
+                  <button type="button" onClick={() => handleUnlinkEmail(em.id)} style={{ fontSize: 11, color: '#f87171', background: 'transparent', border: '1px solid rgba(248,113,113,0.35)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>Délier</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+      )}
+
+      {showLinkEmailModal && (
+        <Modal open={showLinkEmailModal} onClose={() => setShowLinkEmailModal(false)} title="Lier un email à cet AO">
+          <div style={{ maxHeight: 360, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {unlinkedEmails.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucun email non lié</div>
+            ) : unlinkedEmails.map((em: any) => (
+              <button
+                key={em.id}
+                type="button"
+                disabled={linkingEmail}
+                onClick={() => handleLinkEmail(em.id)}
+                style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer' }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 600 }}>{em.subject}</div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{em.from_address}</div>
+              </button>
+            ))}
+          </div>
+        </Modal>
       )}
 
       {activeTab === 'fournisseurs' && (

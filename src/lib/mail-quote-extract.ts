@@ -5,11 +5,11 @@ import { extractPriceFromAttachments } from '@/lib/document-text-extract'
 import { isEmailIncompleteForEnrich, reEnrichEmailIfNeeded } from '@/lib/mail-enrich'
 import { extractFinalPriceFromText, extractPriceFromText } from '@/lib/quote-price-extract'
 import {
-  clearWrongTenderLinkForAoEmail,
   looksLikeIncomingAoRequest,
   looksLikeSupplierQuoteReply,
   resolveTenderForSupplierReply,
 } from '@/lib/email-tender-link'
+import { looksLikeSupplierQuoteEmail } from '@/services/aoDetector.service'
 
 export { extractFinalPriceFromText, extractPriceFromText } from '@/lib/quote-price-extract'
 
@@ -246,8 +246,6 @@ export async function tryCreateQuoteFromInboundEmail(
     .eq('tender_id', tenderId)
     .eq('supplier_id', supplier.id)
 
-  await db.from('emails').update({ tender_id: tenderId }).eq('id', emailId)
-
   return quote
 }
 
@@ -272,7 +270,6 @@ export async function backfillQuotesForTender(
     const supplierEmail = extractEmailAddress(supplier.email) ?? supplier.email.toLowerCase()
     const domain = emailDomain(supplier.email)
     const orFilter = [
-      `tender_id.eq.${tenderId}`,
       `from_address.ilike.%${supplierEmail}%`,
       domain ? `from_address.ilike.%@${domain}%` : '',
     ].filter(Boolean).join(',')
@@ -284,8 +281,6 @@ export async function backfillQuotesForTender(
       .or(orFilter)
       .order('received_at', { ascending: false })
       .limit(15)
-
-    let linkedEmailId: string | null = null
 
     for (const email of emails ?? []) {
       const from = extractEmailAddress(email.from_address ?? '')
@@ -344,17 +339,9 @@ export async function backfillQuotesForTender(
           .eq('tender_id', tenderId)
           .eq('supplier_id', supplier.id)
 
-        if (!linkedEmailId) linkedEmailId = email.id
         updated++
-        if (quote.price_ht != null) {
-          linkedEmailId = email.id
-          break
-        }
+        if (quote.price_ht != null) break
       }
-    }
-
-    if (linkedEmailId) {
-      await db.from('emails').update({ tender_id: tenderId }).eq('id', linkedEmailId)
     }
   }
 
@@ -385,7 +372,6 @@ export async function analyzeQuotesForTender(
     const supplierEmail = extractEmailAddress(supplier.email) ?? supplier.email.toLowerCase()
     const domain = emailDomain(supplier.email)
     const orFilter = [
-      `tender_id.eq.${tenderId}`,
       `from_address.ilike.%${supplierEmail}%`,
       domain ? `from_address.ilike.%@${domain}%` : '',
     ].filter(Boolean).join(',')
@@ -399,7 +385,6 @@ export async function analyzeQuotesForTender(
       .limit(20)
 
     let bestQuote: { price_ht: number | null } | null = null
-    let linkedEmailId: string | null = null
 
     for (const email of emails ?? []) {
       const from = extractEmailAddress(email.from_address ?? '')
@@ -438,18 +423,12 @@ export async function analyzeQuotesForTender(
           .eq('tender_id', tenderId)
           .eq('supplier_id', supplier.id)
 
-        if (!linkedEmailId) linkedEmailId = email.id
         analyzed++
         if (quote.price_ht != null) {
           bestQuote = quote
-          linkedEmailId = email.id
           break
         }
       }
-    }
-
-    if (linkedEmailId) {
-      await db.from('emails').update({ tender_id: tenderId }).eq('id', linkedEmailId)
     }
 
     results.push({
@@ -462,14 +441,14 @@ export async function analyzeQuotesForTender(
   return { analyzed, withPrice, results }
 }
 
-/** Télécharge PJ depuis IMAP si besoin, puis crée/met à jour le devis lié à l'AO. */
-export async function processInboundEmailQuotes(
+/** Enrichit l'email (IMAP/PJ) sans lier automatiquement à un AO. */
+export async function enrichInboundEmailForDisplay(
   db: SupabaseClient,
   userId: string,
   emailId: string,
 ): Promise<{
   enriched: boolean
-  quote: { price_ht: number | null } | null
+  price_ht: number | null
   tenderId: string | null
   supplierFound: boolean
   supplierMissing: boolean
@@ -481,64 +460,34 @@ export async function processInboundEmailQuotes(
     .eq('user_id', userId)
     .single()
 
-  if (!email) return { enriched: false, quote: null, tenderId: null, supplierFound: false, supplierMissing: false }
-
-  await clearWrongTenderLinkForAoEmail(db, userId, emailId)
+  if (!email) {
+    return { enriched: false, price_ht: null, tenderId: null, supplierFound: false, supplierMissing: false }
+  }
 
   const enriched = await reEnrichEmailIfNeeded(db, userId, emailId, { force: isEmailIncompleteForEnrich(email) })
 
   const { data: current } = await db
     .from('emails')
-    .select('subject, from_address, body_text, body_html, has_attachments, attachments, tender_id')
+    .select('subject, from_address, body_text, body_html, tender_id')
     .eq('id', emailId)
     .single()
 
   const row = current ?? email
-  const attachments = (enriched?.attachments ?? row.attachments ?? []) as StoredEmailAttachment[]
   const bodyText = [
     row.subject ?? '',
     enriched?.bodyText ?? row.body_text ?? '',
     row.body_html ? stripHtml(row.body_html) : '',
   ].filter(Boolean).join('\n')
 
-  const { data: emailAfterClear } = await db
-    .from('emails')
-    .select('tender_id, is_ao, ao_score, subject')
-    .eq('id', emailId)
-    .single()
-
-  const rowAfter = emailAfterClear ?? row
-  const isIncomingAo = looksLikeIncomingAoRequest(
-    rowAfter.subject ?? '',
-    bodyText,
-    rowAfter.is_ao ?? false,
-    rowAfter.ao_score ?? 0,
-  )
-
-  const quote = isIncomingAo
-    ? null
-    : await tryCreateQuoteFromInboundEmail(
-        db,
-        userId,
-        emailId,
-        row.from_address ?? '',
-        bodyText,
-        attachments,
-      )
-
-  const { data: linked } = await db.from('emails').select('tender_id').eq('id', emailId).single()
-
-  const supplier = isIncomingAo
-    ? null
-    : await findSupplierForReply(db, userId, row.from_address ?? '', rowAfter.tender_id)
-
-  const tenderIdForUi = isIncomingAo ? linked?.tender_id ?? null : linked?.tender_id ?? rowAfter.tender_id ?? null
+  const priceHt = extractPriceFromText(bodyText)
+  const supplier = await findSupplierForReply(db, userId, row.from_address ?? '', null)
+  const looksQuote = looksLikeSupplierQuoteEmail(row.subject ?? '', bodyText)
 
   return {
     enriched: !!enriched,
-    quote: quote ? { price_ht: quote.price_ht } : null,
-    tenderId: tenderIdForUi,
+    price_ht: priceHt,
+    tenderId: row.tender_id ?? null,
     supplierFound: !!supplier,
-    supplierMissing: !isIncomingAo && !supplier && !!row.from_address,
+    supplierMissing: looksQuote && !supplier && !!row.from_address,
   }
 }

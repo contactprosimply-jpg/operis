@@ -9,8 +9,6 @@ import {
 } from '@/lib/imap-client'
 import { parseMailAttachments, extractEmailAddress, type StoredEmailAttachment } from '@/lib/mail-attachments'
 import { isEmailIncompleteForEnrich } from '@/lib/mail-enrich'
-import { reconcileMislinkedAoEmails } from '@/lib/email-tender-link'
-import { tryCreateQuoteFromInboundEmail } from '@/lib/mail-quote-extract'
 import { attachmentMetaOnly, persistAttachmentsToStorage } from '@/lib/mail-storage'
 import { createAdminClient } from '@/lib/supabase'
 import { detectAo } from '@/services/aoDetector.service'
@@ -202,23 +200,6 @@ async function enrichEmailFromSource(
     savedAttachments = await saveEmailAttachments(db, userId, emailId, attachments)
   }
 
-  try {
-          const quoteText = [
-            parsed.subject ?? envelope.subject,
-            parsed.text ?? '',
-            parsed.html ? parsed.html.replace(/<[^>]+>/g, ' ') : '',
-          ].join('\n')
-          await tryCreateQuoteFromInboundEmail(
-            db,
-            userId,
-            emailId,
-            parsed.from?.text ?? envelope.from,
-            quoteText,
-            savedAttachments,
-          )
-  } catch (quoteErr) {
-    console.error('[Mail sync] quote extract:', quoteErr)
-  }
 }
 
 export async function syncMailAccount(
@@ -400,13 +381,6 @@ export async function syncMailAccount(
         last_sync_uid: result.maxUid,
       })
       .eq('id', account.id)
-  }
-
-  try {
-    const cleared = await reconcileMislinkedAoEmails(db, userId)
-    if (cleared > 0) result.updated += cleared
-  } catch (err) {
-    console.error('[Mail sync] reconcile AO links:', err)
   }
 
   return result

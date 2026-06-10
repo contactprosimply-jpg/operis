@@ -103,6 +103,9 @@ export default function MailPage() {
   const [sendError, setSendError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [creatingAoId, setCreatingAoId] = useState<string | null>(null)
+  const [linkModalOpen, setLinkModalOpen] = useState(false)
+  const [tendersForLink, setTendersForLink] = useState<Array<{ id: string; title: string; client: string }>>([])
+  const [linkingTender, setLinkingTender] = useState(false)
   const [filter, setFilter] = useState<MailFilter>('all')
   const [toast, setToast] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(false)
@@ -175,17 +178,13 @@ export default function MailPage() {
             supplier_missing?: boolean
           }
         }
-        const isIncomingAo = full.is_ao && (full.ao_score ?? 0) >= 30
-        const tenderId = isIncomingAo
-          ? full.tender_id
-          : (full.tender_id ?? full.quote_analysis?.tender_id ?? null)
-        const merged = { ...full, tender_id: tenderId }
+        const merged = { ...full, tender_id: full.tender_id ?? null }
         setSelected(merged)
         setEmails(prev => prev.map(e => e.id === full.id ? {
           ...e,
           has_attachments: full.has_attachments,
           attachments: full.attachments,
-          tender_id: tenderId ?? e.tender_id,
+          tender_id: merged.tender_id ?? e.tender_id,
         } : e))
         if (!silent && full.quote_analysis?.price_ht) {
           showToast(`Prix détecté : ${Number(full.quote_analysis.price_ht).toLocaleString('fr-FR')} € HT`)
@@ -510,6 +509,57 @@ export default function MailPage() {
     setCreating(false)
   }
 
+  const handleUnlinkTender = async (email: Email) => {
+    try {
+      const res = await authFetch('/api/mail/emails', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: email.id, tender_id: null }),
+      })
+      const data = await res.json()
+      if (!data.success) { showToast(`Erreur : ${data.error}`); return }
+      setEmails(prev => prev.map(e => e.id === email.id ? { ...e, tender_id: null } : e))
+      if (selected?.id === email.id) setSelected(prev => prev ? { ...prev, tender_id: null } : prev)
+      showToast('Email délié de l\'AO')
+    } catch { showToast('Erreur déliaison') }
+  }
+
+  const openLinkTenderModal = async (email?: Email) => {
+    if (email) setSelected(email)
+    setLinkModalOpen(true)
+    try {
+      const res = await authFetch('/api/tenders')
+      const data = await res.json()
+      if (data.success) {
+        const list = (data.data ?? []).map((t: { id?: string; tender_id?: string; title: string; client: string }) => ({
+          id: t.id ?? t.tender_id ?? '',
+          title: t.title,
+          client: t.client,
+        })).filter((t: { id: string }) => t.id)
+        setTendersForLink(list)
+      }
+    } catch { showToast('Impossible de charger les AO') }
+  }
+
+  const handleLinkToTender = async (tenderId: string, email?: Email) => {
+    const target = email ?? selected
+    if (!target) return
+    setLinkingTender(true)
+    try {
+      const res = await authFetch('/api/mail/emails', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: target.id, tender_id: tenderId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setEmails(prev => prev.map(e => e.id === target.id ? { ...e, tender_id: tenderId } : e))
+        if (selected?.id === target.id) setSelected(prev => prev ? { ...prev, tender_id: tenderId } : prev)
+        setLinkModalOpen(false)
+        showToast('Email lié à l\'AO')
+      } else showToast(`Erreur : ${data.error}`)
+    } catch { showToast('Erreur liaison') }
+    setLinkingTender(false)
+  }
+
   const handleMarkAsAo = async (email: Email) => {
     try {
       await authFetch('/api/mail/emails', {
@@ -717,7 +767,9 @@ export default function MailPage() {
                           disabled={creatingAoId === email.id}
                           onClick={(e) => {
                             e.stopPropagation()
-                            handleCreateAo(email)
+                            if (email.tender_id) router.push(`/tenders/${email.tender_id}`)
+                            else if (email.is_ao) handleCreateAo(email)
+                            else openLinkTenderModal(email)
                           }}
                           style={{
                             background: email.tender_id ? 'rgba(34,197,94,0.12)' : email.is_ao ? 'rgba(245,158,11,0.15)' : 'var(--bg-hover)',
@@ -734,7 +786,7 @@ export default function MailPage() {
                             opacity: creatingAoId === email.id ? 0.6 : 1,
                           }}
                         >
-                          {creatingAoId === email.id ? '…' : 'AO'}
+                          {creatingAoId === email.id ? '…' : email.tender_id ? 'Voir' : email.is_ao ? 'AO' : 'Lier'}
                         </button>
                       </div>
                     </div>
@@ -842,7 +894,7 @@ export default function MailPage() {
                   display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
                 }}>
                   <span style={{ fontSize: 12, color: selected.is_ao ? '#93c5fd' : 'var(--text-muted)', flex: 1 }}>
-                    {selected.is_ao ? `AO détecté — Score ${selected.ao_score}/100` : 'Pas détecté comme AO'}
+                    {selected.is_ao ? `AO détecté — Score ${selected.ao_score}/100` : 'Non lié à un AO'}
                   </span>
                   {!selected.is_ao && (
                     <button type="button" onClick={() => handleMarkAsAo(selected)} style={{
@@ -850,25 +902,36 @@ export default function MailPage() {
                       borderRadius: 7, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
                     }}>Marquer AO</button>
                   )}
-                  <button type="button" onClick={() => handleCreateAo()} disabled={creating} style={{
-                    background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
-                    padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    opacity: creating ? 0.5 : 1, fontFamily: 'DM Sans, system-ui',
+                  {selected.is_ao && (
+                    <button type="button" onClick={() => handleCreateAo()} disabled={creating} style={{
+                      background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
+                      padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                      opacity: creating ? 0.5 : 1, fontFamily: 'DM Sans, system-ui',
+                    }}>
+                      {creating ? '...' : '+ Créer AO'}
+                    </button>
+                  )}
+                  <button type="button" onClick={() => openLinkTenderModal()} style={{
+                    background: 'transparent', color: 'var(--accent)', border: '1px solid rgba(59,126,246,0.35)',
+                    borderRadius: 7, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
                   }}>
-                    {creating ? '...' : 'Créer AO'}
+                    Lier à un AO
                   </button>
                 </div>
               )}
               {selected.tender_id && (
                 <div style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 12, color: '#86efac', flex: 1 }}>
-                    AO lié
+                    Lié à un AO
                     {(selected as Email & { quote_analysis?: { price_ht: number | null } }).quote_analysis?.price_ht
-                      ? ` — ${Number((selected as Email & { quote_analysis?: { price_ht: number | null } }).quote_analysis!.price_ht).toLocaleString('fr-FR')} € HT détecté`
+                      ? ` — ${Number((selected as Email & { quote_analysis?: { price_ht: number | null } }).quote_analysis!.price_ht).toLocaleString('fr-FR')} € HT estimé`
                       : ''}
                   </span>
-                  <button onClick={() => router.push(`/tenders/${selected.tender_id}`)} style={{ background: 'rgba(34,197,94,0.1)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
-                    Voir l'AO
+                  <button type="button" onClick={() => router.push(`/tenders/${selected.tender_id}`)} style={{ background: 'rgba(34,197,94,0.1)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
+                    Voir l&apos;AO →
+                  </button>
+                  <button type="button" onClick={() => handleUnlinkTender(selected)} style={{ background: 'transparent', color: '#f87171', border: '1px solid rgba(248,113,113,0.35)', borderRadius: 7, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
+                    Délier
                   </button>
                 </div>
               )}
@@ -958,6 +1021,42 @@ export default function MailPage() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {linkModalOpen && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={() => setLinkModalOpen(false)}
+        >
+          <div
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, maxWidth: 440, width: '100%', maxHeight: '70vh', overflow: 'auto' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: 'var(--text-primary)' }}>Lier à un appel d&apos;offres</div>
+            {tendersForLink.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucun AO disponible</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {tendersForLink.map(t => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    disabled={linkingTender}
+                    onClick={() => handleLinkToTender(t.id)}
+                    style={{
+                      textAlign: 'left', padding: '10px 12px', borderRadius: 8,
+                      border: '1px solid var(--border)', background: 'var(--bg-secondary)',
+                      cursor: linkingTender ? 'wait' : 'pointer', fontFamily: 'DM Sans, system-ui',
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{t.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{t.client}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
