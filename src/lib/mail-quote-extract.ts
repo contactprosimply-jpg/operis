@@ -19,11 +19,10 @@ function attachmentSummary(attachments: StoredEmailAttachment[]): string {
   return attachments.map(a => a.filename).join(', ')
 }
 
-function hasDevisAttachment(attachments: StoredEmailAttachment[], hasAttachmentsFlag?: boolean): boolean {
-  if (hasAttachmentsFlag) return true
+function hasDevisAttachment(attachments: StoredEmailAttachment[]): boolean {
   return attachments.some(a =>
     /\.(pdf|xlsx?|xls|docx?|csv)$/i.test(a.filename) ||
-    /pdf|spreadsheet|excel|word|octet-stream/i.test(a.contentType ?? ''),
+    /pdf|spreadsheet|excel|word|officedocument/i.test(a.contentType ?? ''),
   )
 }
 
@@ -128,9 +127,8 @@ export async function upsertQuoteFromEmail(
   emailId: string,
   bodyText: string,
   attachments: StoredEmailAttachment[],
-  hasAttachmentsFlag?: boolean,
 ): Promise<{ id: string; price_ht: number | null } | null> {
-  const hasDevisFile = hasDevisAttachment(attachments, hasAttachmentsFlag)
+  const hasDevisFile = hasDevisAttachment(attachments)
   const { priceHt, priceNote } = await resolveQuotePrice(db, bodyText, attachments)
 
   if (!priceHt && !hasDevisFile) return null
@@ -199,7 +197,6 @@ export async function tryCreateQuoteFromInboundEmail(
   attachments: StoredEmailAttachment[],
   tenderIdHint?: string | null,
   extraText?: string,
-  hasAttachmentsFlag?: boolean,
 ) {
   const supplier = await findSupplierForReply(db, userId, fromAddress, tenderIdHint)
   if (!supplier) return null
@@ -233,7 +230,7 @@ export async function tryCreateQuoteFromInboundEmail(
 
   const fullText = [extraText, bodyText].filter(Boolean).join('\n')
   const quote = await upsertQuoteFromEmail(
-    db, tenderId, supplier.id, emailId, fullText, attachments, hasAttachmentsFlag,
+    db, tenderId, supplier.id, emailId, fullText, attachments,
   )
   if (!quote) return null
 
@@ -282,6 +279,8 @@ export async function backfillQuotesForTender(
       .order('received_at', { ascending: false })
       .limit(15)
 
+    let linkedEmailId: string | null = null
+
     for (const email of emails ?? []) {
       const from = extractEmailAddress(email.from_address ?? '')
       const fromRaw = (email.from_address ?? '').toLowerCase()
@@ -299,6 +298,8 @@ export async function backfillQuotesForTender(
       ]
       let attachments = (email.attachments as StoredEmailAttachment[]) ?? []
 
+      if (!hasDevisAttachment(attachments) && !extractPriceFromText(textParts.join('\n'))) continue
+
       let enriched = await reEnrichEmailIfNeeded(db, userId, email.id)
       if (enriched) {
         textParts = [email.subject ?? '', enriched.bodyText]
@@ -314,10 +315,9 @@ export async function backfillQuotesForTender(
         email.id,
         fullText,
         attachments,
-        email.has_attachments,
       )
 
-      if (quote && quote.price_ht == null && (email.has_attachments || attachments.length > 0)) {
+      if (quote && quote.price_ht == null && attachments.length > 0) {
         enriched = await reEnrichEmailIfNeeded(db, userId, email.id, { force: true })
         if (enriched) {
           quote = await upsertQuoteFromEmail(
@@ -327,7 +327,6 @@ export async function backfillQuotesForTender(
             email.id,
             [email.subject ?? '', enriched.bodyText].filter(Boolean).join('\n'),
             enriched.attachments,
-            true,
           )
         }
       }
@@ -339,10 +338,17 @@ export async function backfillQuotesForTender(
           .eq('tender_id', tenderId)
           .eq('supplier_id', supplier.id)
 
-        await db.from('emails').update({ tender_id: tenderId }).eq('id', email.id)
+        if (!linkedEmailId) linkedEmailId = email.id
         updated++
-        if (quote.price_ht != null) break
+        if (quote.price_ht != null) {
+          linkedEmailId = email.id
+          break
+        }
       }
+    }
+
+    if (linkedEmailId) {
+      await db.from('emails').update({ tender_id: tenderId }).eq('id', linkedEmailId)
     }
   }
 
@@ -387,6 +393,7 @@ export async function analyzeQuotesForTender(
       .limit(20)
 
     let bestQuote: { price_ht: number | null } | null = null
+    let linkedEmailId: string | null = null
 
     for (const email of emails ?? []) {
       const from = extractEmailAddress(email.from_address ?? '')
@@ -407,6 +414,8 @@ export async function analyzeQuotesForTender(
         email.body_html ? stripHtml(email.body_html) : '',
       ].filter(Boolean).join('\n')
 
+      if (!hasDevisAttachment(attachments) && !extractPriceFromText(fullText)) continue
+
       const quote = await upsertQuoteFromEmail(
         db,
         tenderId,
@@ -414,7 +423,6 @@ export async function analyzeQuotesForTender(
         email.id,
         fullText,
         attachments,
-        true,
       )
 
       if (quote) {
@@ -424,10 +432,18 @@ export async function analyzeQuotesForTender(
           .eq('tender_id', tenderId)
           .eq('supplier_id', supplier.id)
 
-        await db.from('emails').update({ tender_id: tenderId }).eq('id', email.id)
+        if (!linkedEmailId) linkedEmailId = email.id
         analyzed++
-        if (quote.price_ht != null) bestQuote = quote
+        if (quote.price_ht != null) {
+          bestQuote = quote
+          linkedEmailId = email.id
+          break
+        }
       }
+    }
+
+    if (linkedEmailId) {
+      await db.from('emails').update({ tender_id: tenderId }).eq('id', linkedEmailId)
     }
 
     results.push({
@@ -485,8 +501,6 @@ export async function processInboundEmailQuotes(
     bodyText,
     attachments,
     row.tender_id,
-    undefined,
-    row.has_attachments || attachments.length > 0,
   )
 
   const { data: linked } = await db.from('emails').select('tender_id').eq('id', emailId).single()

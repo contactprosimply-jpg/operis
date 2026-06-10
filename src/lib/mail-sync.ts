@@ -214,9 +214,6 @@ async function enrichEmailFromSource(
             parsed.from?.text ?? envelope.from,
             quoteText,
             savedAttachments,
-            null,
-            undefined,
-            hasAttachments || savedAttachments.length > 0,
           )
   } catch (quoteErr) {
     console.error('[Mail sync] quote extract:', quoteErr)

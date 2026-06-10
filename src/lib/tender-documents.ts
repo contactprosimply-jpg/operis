@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { toAttachmentMeta } from '@/lib/mail-attachments'
-import { extractEmailAddress } from '@/lib/mail-attachments'
+import { toAttachmentMeta, extractEmailAddress } from '@/lib/mail-attachments'
+import { isQuoteDocument } from '@/lib/document-text-extract'
 
 export interface TenderDocumentItem {
   id: string
@@ -17,85 +17,189 @@ export interface TenderDocumentItem {
   document_id?: string
 }
 
-function fromMatchesSupplier(fromAddress: string | null, supplierEmails: string[]) {
-  if (!fromAddress) return false
-  const from = extractEmailAddress(fromAddress) || fromAddress.toLowerCase()
-  return supplierEmails.some(e => from.includes(e) || e.includes(from))
+type ConsultationRow = {
+  supplier_id: string
+  status?: string
+  supplier?: { id?: string; email?: string; name?: string } | null
 }
 
-function attachmentDedupKey(emailId: string, index: number, filename: string, size?: number) {
-  return `mail:${emailId}:${index}:${filename}:${size ?? 0}`
+type QuoteRow = {
+  id: string
+  supplier_id?: string
+  supplier?: { id?: string; name?: string } | null
+  source_email_id?: string | null
 }
 
-function sentDedupKey(filename: string, size?: number, path?: string) {
-  return `sent:${filename}:${size ?? 0}:${path ?? ''}`
+function supplierAddr(email: string): string | null {
+  return extractEmailAddress(email)?.toLowerCase() ?? null
+}
+
+function supplierDomain(email: string): string | null {
+  const addr = supplierAddr(email)
+  return addr?.split('@')[1] ?? null
+}
+
+/** Correspondance stricte (même adresse) — pas de domaine seul. */
+function fromMatchesSupplierExact(fromAddress: string | null, supplierEmail: string): boolean {
+  const from = supplierAddr(fromAddress ?? '')
+  const supplier = supplierAddr(supplierEmail)
+  return from != null && supplier != null && from === supplier
+}
+
+/** Domaine identique + pièce jointe type devis (réponse d'un autre contact du fournisseur). */
+function fromMatchesSupplierDomainWithDevis(
+  fromAddress: string | null,
+  supplierEmail: string,
+  attachments: { filename: string; contentType?: string }[],
+): boolean {
+  const fromDom = supplierAddr(fromAddress ?? '')?.split('@')[1]
+  const dom = supplierDomain(supplierEmail)
+  if (!fromDom || !dom || fromDom !== dom) return false
+  return attachments.some(a => isQuoteDocument(a.filename, a.contentType))
+}
+
+function fileFingerprint(filename: string, size?: number) {
+  return `${filename.toLowerCase()}:${size ?? 0}`
+}
+
+/** Filtre les PDF comptabilité / factures qui ne sont pas des devis AO. */
+function isLikelySupplierQuote(subject: string, filename: string): boolean {
+  const blob = `${subject} ${filename}`.toLowerCase()
+  if (/devis|ponuda|offre|quote|proposition|tender|pro\s+logements/i.test(blob)) return true
+  if (/chorus|facture|situation|depot|avancement|liste de travail|cardinet|semip/i.test(blob)) return false
+  return /\.(pdf|xlsx?|xls|docx?)$/i.test(filename)
+}
+
+type EmailCandidate = {
+  id: string
+  subject?: string | null
+  from_address?: string | null
+  received_at?: string | null
+  attachments: ReturnType<typeof toAttachmentMeta>
+}
+
+function pickBestQuoteAttachment(email: EmailCandidate) {
+  const quoteAtts = email.attachments
+    .filter(a => isQuoteDocument(a.filename, a.contentType))
+    .filter(a => isLikelySupplierQuote(email.subject ?? '', a.filename))
+    .sort((a, b) => {
+      const aPdf = /\.pdf$/i.test(a.filename) ? 0 : 1
+      const bPdf = /\.pdf$/i.test(b.filename) ? 0 : 1
+      return aPdf - bPdf
+    })
+  return quoteAtts[0] ?? null
+}
+
+async function findQuoteEmailForSupplier(
+  db: SupabaseClient,
+  userId: string,
+  supplierEmail: string,
+  preferredEmailId?: string | null,
+): Promise<EmailCandidate | null> {
+  if (preferredEmailId) {
+    const { data: preferred } = await db
+      .from('emails')
+      .select('id, subject, from_address, received_at, attachments')
+      .eq('user_id', userId)
+      .eq('id', preferredEmailId)
+      .maybeSingle()
+    if (preferred) {
+      const attachments = toAttachmentMeta(preferred.attachments)
+      if (pickBestQuoteAttachment({ ...preferred, attachments })) {
+        return { ...preferred, attachments }
+      }
+    }
+  }
+
+  const addr = supplierAddr(supplierEmail)
+  if (!addr) return null
+
+  const { data: emails } = await db
+    .from('emails')
+    .select('id, subject, from_address, received_at, attachments')
+    .eq('user_id', userId)
+    .ilike('from_address', `%${addr}%`)
+    .order('received_at', { ascending: false })
+    .limit(20)
+
+  for (const em of emails ?? []) {
+    const attachments = toAttachmentMeta(em.attachments)
+    if (!fromMatchesSupplierExact(em.from_address, supplierEmail)) continue
+    if (pickBestQuoteAttachment({ ...em, attachments })) return { ...em, attachments }
+  }
+
+  const domain = supplierDomain(supplierEmail)
+  if (domain) {
+    const { data: domainEmails } = await db
+      .from('emails')
+      .select('id, subject, from_address, received_at, attachments')
+      .eq('user_id', userId)
+      .ilike('from_address', `%@${domain}%`)
+      .order('received_at', { ascending: false })
+      .limit(30)
+
+    for (const em of domainEmails ?? []) {
+      const attachments = toAttachmentMeta(em.attachments)
+      if (!fromMatchesSupplierDomainWithDevis(em.from_address, supplierEmail, attachments)) continue
+      if (pickBestQuoteAttachment({ ...em, attachments })) return { ...em, attachments }
+    }
+  }
+
+  return null
 }
 
 export async function collectTenderDocuments(
   db: SupabaseClient,
   userId: string,
   tenderId: string,
-  consultations: Array<{ supplier?: { email?: string; name?: string } | null }>,
-  quotes: Array<{ id: string; supplier?: { name?: string } | null; source_email_id?: string | null }>,
+  consultations: ConsultationRow[],
+  quotes: QuoteRow[],
 ): Promise<{ received: TenderDocumentItem[]; sent: TenderDocumentItem[] }> {
   const received: TenderDocumentItem[] = []
   const sent: TenderDocumentItem[] = []
+  const seenFiles = new Set<string>()
 
-  const supplierEmails = consultations
-    .map(c => extractEmailAddress(c.supplier?.email ?? ''))
-    .filter(Boolean)
+  const quoteBySupplier = new Map(
+    quotes.map(q => [q.supplier_id ?? q.supplier?.id, q]),
+  )
 
-  const quoteEmailIds = [...new Set(
-    quotes.map(q => q.source_email_id).filter((id): id is string => !!id),
-  )]
+  for (const c of consultations) {
+    const supplierEmail = c.supplier?.email ?? ''
+    if (!supplierEmail) continue
 
-  let emailQuery = db
-    .from('emails')
-    .select('id, subject, from_address, received_at, has_attachments, attachments, tender_id')
-    .eq('user_id', userId)
-    .order('received_at', { ascending: false })
-    .limit(80)
-
-  if (quoteEmailIds.length) {
-    emailQuery = emailQuery.or(`tender_id.eq.${tenderId},id.in.(${quoteEmailIds.join(',')})`)
-  } else {
-    emailQuery = emailQuery.eq('tender_id', tenderId)
-  }
-
-  const { data: emails } = await emailQuery
-
-  const seenReceived = new Set<string>()
-
-  for (const em of emails ?? []) {
-    const linked = em.tender_id === tenderId
-    const fromSupplier = fromMatchesSupplier(em.from_address, supplierEmails)
-    const fromQuote = quoteEmailIds.includes(em.id)
-    if (!linked && !fromSupplier && !fromQuote) continue
-
-    const supplier = consultations.find(c =>
-      fromMatchesSupplier(em.from_address, [extractEmailAddress(c.supplier?.email ?? '')]),
+    const quote = quoteBySupplier.get(c.supplier_id)
+    const email = await findQuoteEmailForSupplier(
+      db,
+      userId,
+      supplierEmail,
+      quote?.source_email_id,
     )
-    const attachments = toAttachmentMeta(em.attachments)
+    if (!email) continue
 
-    for (let i = 0; i < attachments.length; i++) {
-      const att = attachments[i]
-      const key = attachmentDedupKey(em.id, i, att.filename, att.size)
-      if (seenReceived.has(key)) continue
-      seenReceived.add(key)
-      received.push({
-        id: `mail:${em.id}:${i}`,
-        kind: 'received',
-        filename: att.filename,
-        contentType: att.contentType,
-        size: att.size,
-        date: em.received_at,
-        label: em.subject,
-        supplier_name: supplier?.supplier?.name ?? em.from_address?.split('<')[0].trim(),
-        download_type: 'mail',
-        email_id: em.id,
-        attachment_index: i,
-      })
-    }
+    const att = pickBestQuoteAttachment(email)
+    if (!att) continue
+
+    const fp = fileFingerprint(att.filename, att.size)
+    if (seenFiles.has(fp)) continue
+    seenFiles.add(fp)
+
+    const origIndex = email.attachments.findIndex(
+      a => a.filename === att.filename && a.size === att.size,
+    )
+
+    received.push({
+      id: `mail:${email.id}:${origIndex >= 0 ? origIndex : 0}`,
+      kind: 'received',
+      filename: att.filename,
+      contentType: att.contentType,
+      size: att.size,
+      date: email.received_at,
+      label: email.subject,
+      supplier_name: c.supplier?.name ?? email.from_address?.split('<')[0].trim(),
+      download_type: 'mail',
+      email_id: email.id,
+      attachment_index: origIndex >= 0 ? origIndex : 0,
+    })
   }
 
   const { data: tenderDocs } = await db
@@ -132,13 +236,20 @@ export async function collectTenderDocuments(
     .eq('tender_id', tenderId)
     .order('sent_at', { ascending: false })
 
+  const sentFileFp = new Set<string>()
+
   for (const log of emailLogs ?? []) {
     const attachments = toAttachmentMeta(log.attachments)
     for (let i = 0; i < attachments.length; i++) {
       const att = attachments[i]
+      const fp = fileFingerprint(att.filename, att.size)
+      if (sentFileFp.has(fp)) continue
+      sentFileFp.add(fp)
+
       const key = sentDedupKey(att.filename, att.size, `log:${log.id}:${i}`)
       if (seenSent.has(key)) continue
       seenSent.add(key)
+
       sent.push({
         id: `log:${log.id}:${i}`,
         kind: 'sent',
@@ -155,4 +266,8 @@ export async function collectTenderDocuments(
   }
 
   return { received, sent }
+}
+
+function sentDedupKey(filename: string, size?: number, path?: string) {
+  return `sent:${filename}:${size ?? 0}:${path ?? ''}`
 }

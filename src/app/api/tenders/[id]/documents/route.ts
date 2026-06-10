@@ -26,7 +26,7 @@ export async function GET(
 
   const { data: quotes } = await db
     .from('quotes')
-    .select('id, source_email_id, supplier:suppliers(name)')
+    .select('id, supplier_id, source_email_id, supplier:suppliers(id, name)')
     .eq('tender_id', id)
 
   const documents = await collectTenderDocuments(db, userId, id, consultations ?? [], quotes ?? [])
