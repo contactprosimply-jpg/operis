@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { authFetch, getAccessToken } from '@/lib/auth-client'
-import { useRefreshOnFocus } from '@/hooks'
 import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast, Card } from '@/components/ui'
 import ConsultationComposeModal, { type ConsultationComposePayload } from '@/components/ConsultationComposeModal'
 
@@ -65,6 +64,7 @@ export default function TenderDetailPage() {
   const [editingPriceSupplierId, setEditingPriceSupplierId] = useState<string | null>(null)
   const [priceInput, setPriceInput] = useState('')
   const [savingPrice, setSavingPrice] = useState(false)
+  const [activeTab, setActiveTab] = useState<'fournisseurs' | 'devis' | 'documents' | 'infos'>('fournisseurs')
 
   // Form édition AO
   const [editForm, setEditForm] = useState({
@@ -176,7 +176,6 @@ export default function TenderDetailPage() {
     loadTender(false)
     loadAllSuppliers()
   }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
-  useRefreshOnFocus(refreshTender, !!tender)
 
   const handleQuickStatus = async (status: string) => {
     if (!tender || tender.status === status) return
@@ -453,7 +452,45 @@ export default function TenderDetailPage() {
         </div>
       </Card>
 
-      {/* Infos AO */}
+      {/* Onglets */}
+      <div style={{
+        display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap',
+        padding: '4px', background: 'var(--bg-card)', borderRadius: 12,
+        border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)',
+      }}>
+        {([
+          { id: 'fournisseurs' as const, label: 'Fournisseurs', count: consultations.length },
+          { id: 'devis' as const, label: 'Devis', count: quotes.length },
+          { id: 'documents' as const, label: 'Documents', count: receivedDocs.length + sentDocs.length },
+          { id: 'infos' as const, label: 'Informations', count: 0 },
+        ]).map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              flex: '1 1 auto', minWidth: 100, padding: '10px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+              fontFamily: 'DM Sans, system-ui', fontSize: 13, fontWeight: activeTab === tab.id ? 600 : 500,
+              background: activeTab === tab.id ? 'var(--accent)' : 'transparent',
+              color: activeTab === tab.id ? '#fff' : 'var(--text-secondary)',
+              transition: 'background 0.15s, color 0.15s',
+            }}
+          >
+            {tab.label}
+            {tab.count > 0 && (
+              <span style={{
+                marginLeft: 6, fontSize: 10, fontFamily: 'DM Mono, monospace',
+                background: activeTab === tab.id ? 'rgba(255,255,255,0.25)' : 'var(--bg-hover)',
+                padding: '2px 6px', borderRadius: 10,
+              }}>
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'infos' && (
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Informations de l'AO</div>
@@ -505,8 +542,9 @@ export default function TenderDetailPage() {
           </div>
         )}
       </div>
+      )}
 
-      {/* Fournisseurs / Consultations */}
+      {activeTab === 'fournisseurs' && (
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -678,8 +716,9 @@ export default function TenderDetailPage() {
           </>
         )}
       </div>
+      )}
 
-      {/* Documents & pièces jointes */}
+      {activeTab === 'documents' && (
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -761,9 +800,9 @@ export default function TenderDetailPage() {
           </div>
         )}
       </div>
+      )}
 
-      {/* Analyse des devis */}
-      {quotes.length > 0 && (
+      {activeTab === 'devis' && quotes.length > 0 && (
         <div style={card}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16 }}>Analyse des devis</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16 }}>
@@ -794,8 +833,7 @@ export default function TenderDetailPage() {
         </div>
       )}
 
-      {/* Devis reçus */}
-      {quotes.length > 0 && (
+      {activeTab === 'devis' && quotes.length > 0 && (
         <div style={card}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Devis reçus ({quotes.length})</div>
@@ -860,6 +898,12 @@ export default function TenderDetailPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'devis' && quotes.length === 0 && (
+        <div style={{ ...card, textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>
+          Aucun devis — consultez les fournisseurs puis cliquez « Analyser les devis PDF »
         </div>
       )}
 

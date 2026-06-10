@@ -278,12 +278,12 @@ export default function MailPage() {
     void runSync(true)
   }, [ready, userId, runSync])
 
-  // Sync en arrière-plan toutes les 60s si visible
+  // Sync en arrière-plan toutes les 25s si visible
   useEffect(() => {
     if (!ready || !userId) return
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') runSync(true)
-    }, 60 * 1000)
+    }, 25 * 1000)
     return () => clearInterval(interval)
   }, [ready, userId, runSync])
 
@@ -309,6 +309,7 @@ export default function MailPage() {
         })
         emailCountRef.current += 1
         showToast(`Nouvel email : ${lite.subject?.slice(0, 40)}`)
+        void runSync(true)
       })
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'emails',

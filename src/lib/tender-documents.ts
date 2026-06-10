@@ -23,6 +23,14 @@ function fromMatchesSupplier(fromAddress: string | null, supplierEmails: string[
   return supplierEmails.some(e => from.includes(e) || e.includes(from))
 }
 
+function attachmentDedupKey(emailId: string, index: number, filename: string, size?: number) {
+  return `mail:${emailId}:${index}:${filename}:${size ?? 0}`
+}
+
+function sentDedupKey(filename: string, size?: number, path?: string) {
+  return `sent:${filename}:${size ?? 0}:${path ?? ''}`
+}
+
 export async function collectTenderDocuments(
   db: SupabaseClient,
   userId: string,
@@ -37,32 +45,45 @@ export async function collectTenderDocuments(
     .map(c => extractEmailAddress(c.supplier?.email ?? ''))
     .filter(Boolean)
 
-  const { data: emails } = await db
+  const quoteEmailIds = [...new Set(
+    quotes.map(q => q.source_email_id).filter((id): id is string => !!id),
+  )]
+
+  let emailQuery = db
     .from('emails')
     .select('id, subject, from_address, received_at, has_attachments, attachments, tender_id')
     .eq('user_id', userId)
     .order('received_at', { ascending: false })
-    .limit(200)
+    .limit(80)
 
-  const seen = new Set<string>()
+  if (quoteEmailIds.length) {
+    emailQuery = emailQuery.or(`tender_id.eq.${tenderId},id.in.(${quoteEmailIds.join(',')})`)
+  } else {
+    emailQuery = emailQuery.eq('tender_id', tenderId)
+  }
+
+  const { data: emails } = await emailQuery
+
+  const seenReceived = new Set<string>()
 
   for (const em of emails ?? []) {
     const linked = em.tender_id === tenderId
     const fromSupplier = fromMatchesSupplier(em.from_address, supplierEmails)
-    if (!linked && !fromSupplier) continue
+    const fromQuote = quoteEmailIds.includes(em.id)
+    if (!linked && !fromSupplier && !fromQuote) continue
 
     const supplier = consultations.find(c =>
-      fromMatchesSupplier(em.from_address, [extractEmailAddress(c.supplier?.email ?? '')])
+      fromMatchesSupplier(em.from_address, [extractEmailAddress(c.supplier?.email ?? '')]),
     )
     const attachments = toAttachmentMeta(em.attachments)
 
     for (let i = 0; i < attachments.length; i++) {
       const att = attachments[i]
-      const key = `mail:${em.id}:${i}`
-      if (seen.has(key)) continue
-      seen.add(key)
+      const key = attachmentDedupKey(em.id, i, att.filename, att.size)
+      if (seenReceived.has(key)) continue
+      seenReceived.add(key)
       received.push({
-        id: key,
+        id: `mail:${em.id}:${i}`,
         kind: 'received',
         filename: att.filename,
         contentType: att.contentType,
@@ -75,36 +96,6 @@ export async function collectTenderDocuments(
         attachment_index: i,
       })
     }
-
-    if (!em.tender_id && fromSupplier && (attachments.length > 0 || em.has_attachments)) {
-      await db.from('emails').update({ tender_id: tenderId }).eq('id', em.id)
-    }
-  }
-
-  for (const q of quotes) {
-    if (!q.source_email_id) continue
-    const em = (emails ?? []).find(e => e.id === q.source_email_id)
-    const attachments = toAttachmentMeta(em?.attachments)
-    const supplierName = q.supplier?.name ?? 'Fournisseur'
-    for (let i = 0; i < attachments.length; i++) {
-      const att = attachments[i]
-      const key = `quote-${q.id}-${i}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      received.push({
-        id: key,
-        kind: 'received',
-        filename: att.filename,
-        contentType: att.contentType,
-        size: att.size,
-        date: em?.received_at,
-        label: `Devis — ${supplierName}`,
-        supplier_name: supplierName,
-        download_type: 'mail',
-        email_id: q.source_email_id,
-        attachment_index: i,
-      })
-    }
   }
 
   const { data: tenderDocs } = await db
@@ -114,9 +105,14 @@ export async function collectTenderDocuments(
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
 
+  const seenSent = new Set<string>()
+
   for (const doc of tenderDocs ?? []) {
     if (doc.source === 'consultation') continue
-    const item: TenderDocumentItem = {
+    const key = sentDedupKey(doc.filename, doc.size, doc.id)
+    if (seenSent.has(key)) continue
+    seenSent.add(key)
+    sent.push({
       id: doc.id,
       kind: 'sent',
       filename: doc.filename,
@@ -127,8 +123,7 @@ export async function collectTenderDocuments(
       supplier_name: (doc.supplier as { name?: string } | null)?.name,
       download_type: 'tender_doc',
       document_id: doc.id,
-    }
-    sent.push(item)
+    })
   }
 
   const { data: emailLogs } = await db
@@ -141,6 +136,9 @@ export async function collectTenderDocuments(
     const attachments = toAttachmentMeta(log.attachments)
     for (let i = 0; i < attachments.length; i++) {
       const att = attachments[i]
+      const key = sentDedupKey(att.filename, att.size, `log:${log.id}:${i}`)
+      if (seenSent.has(key)) continue
+      seenSent.add(key)
       sent.push({
         id: `log:${log.id}:${i}`,
         kind: 'sent',

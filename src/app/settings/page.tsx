@@ -4,14 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { authFetch } from '@/lib/auth-client'
 import { Button, Field, useToast, Spinner } from '@/components/ui'
 import { buildFieldsSignatureHtml, saveSignatureToStorage } from '@/lib/email-signature'
-
-const THEMES = [
-  { id: 'dark',    label: 'Sombre',    vars: { '--bg-primary': '#0f1117', '--bg-secondary': '#1a1d27', '--bg-card': '#1e2130', '--bg-hover': '#252839', '--text-primary': '#f1f3f9', '--text-secondary': '#8b92a5', '--text-muted': '#4a5168' } },
-  { id: 'light',   label: 'Clair',     vars: { '--bg-primary': '#f8fafc', '--bg-secondary': '#f1f5f9', '--bg-card': '#ffffff', '--bg-hover': '#e2e8f0', '--text-primary': '#0f172a', '--text-secondary': '#475569', '--text-muted': '#94a3b8' } },
-  { id: 'navy',    label: 'Marine',    vars: { '--bg-primary': '#021246', '--bg-secondary': '#0a1f6e', '--bg-card': '#0d2580', '--bg-hover': '#1030a0', '--text-primary': '#e8eeff', '--text-secondary': '#93aedd', '--text-muted': '#4a6aaa' } },
-  { id: 'slate',   label: 'Ardoise',   vars: { '--bg-primary': '#0f172a', '--bg-secondary': '#1e293b', '--bg-card': '#1e293b', '--bg-hover': '#334155', '--text-primary': '#f1f5f9', '--text-secondary': '#94a3b8', '--text-muted': '#475569' } },
-  { id: 'darker',  label: 'Noir',      vars: { '--bg-primary': '#000000', '--bg-secondary': '#0a0a0a', '--bg-card': '#111111', '--bg-hover': '#1a1a1a', '--text-primary': '#ffffff', '--text-secondary': '#aaaaaa', '--text-muted': '#555555' } },
-]
+import { THEMES, applyTheme, DEFAULT_THEME_ID, DEFAULT_ACCENT } from '@/lib/theme'
 
 const ACCENT_COLORS = ['#3b7ef6', '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316']
 
@@ -39,8 +32,8 @@ export default function SettingsPage() {
   const [general, setGeneral] = useState({ companyName: '', userName: '' })
   const [imap, setImap] = useState({ imap_host: 'mail.gandi.net', imap_port: '993', imap_user: '', imap_pass: '', smtp_host: 'mail.gandi.net', smtp_port: '587' })
   const [sig, setSig] = useState({ name: '', title: '', company: '', phone: '', email: '', website: '', html: '' })
-  const [themeId, setThemeId] = useState('dark')
-  const [accentColor, setAccentColor] = useState('#3b7ef6')
+  const [themeId, setThemeId] = useState(DEFAULT_THEME_ID)
+  const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT)
 
   // Famille
   const [org, setOrg] = useState<any>(null)
@@ -87,17 +80,6 @@ export default function SettingsPage() {
     }
     load()
   }, [])
-
-  const applyTheme = (id: string, accent: string) => {
-    const t = THEMES.find(th => th.id === id) ?? THEMES[0]
-    Object.entries(t.vars).forEach(([key, val]) => {
-      document.documentElement.style.setProperty(key, val)
-    })
-    document.documentElement.style.setProperty('--accent', accent)
-    document.documentElement.style.setProperty('--accent-soft', `${accent}20`)
-    document.documentElement.style.setProperty('--border', id === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)')
-    document.documentElement.style.setProperty('--border-hi', id === 'light' ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.12)')
-  }
 
   const handleSaveGeneral = () => {
     localStorage.setItem('operis_general', JSON.stringify(general))

@@ -193,7 +193,7 @@ export default function Sidebar() {
   const AccountPanel = () => (
     <div ref={panelRef} style={{
       position: 'absolute', bottom: 60, left: 10,
-      width: 280, background: '#1e2130',
+      width: 280, background: 'var(--bg-card)',
       border: '1px solid rgba(255,255,255,0.12)',
       borderRadius: 14, boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
       zIndex: 200, overflow: 'hidden',
@@ -278,7 +278,7 @@ export default function Sidebar() {
 
       {/* DESKTOP */}
       <nav className="desktop-sidebar" style={{
-        width: 60, background: '#0a0f1a',
+        width: 60, background: 'var(--bg-card)',
         borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column',
         alignItems: 'center', padding: '16px 0', flexShrink: 0, gap: 4, position: 'relative',
       }}>
@@ -308,7 +308,7 @@ export default function Sidebar() {
                   onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
                   {item.icon(active)}
                   {isMail && unreadCount > 0 && (
-                    <span style={{ position: 'absolute', top: 6, right: 6, minWidth: 16, height: 16, borderRadius: 8, background: '#ef4444', color: '#fff', fontSize: 9, fontWeight: 700, fontFamily: 'DM Mono, monospace', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '2px solid #0a0f1a', animation: 'pulse 1.5s ease infinite' }}>
+                    <span style={{ position: 'absolute', top: 6, right: 6, minWidth: 16, height: 16, borderRadius: 8, background: '#ef4444', color: '#fff', fontSize: 9, fontWeight: 700, fontFamily: 'DM Mono, monospace', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '2px solid var(--bg-card)', animation: 'pulse 1.5s ease infinite' }}>
                       {unreadCount > 99 ? '99+' : unreadCount}
                     </span>
                   )}
@@ -334,7 +334,7 @@ export default function Sidebar() {
       </nav>
 
       {/* MOBILE */}
-      <nav className="mobile-bottom-bar" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 64, background: 'rgba(15,22,36,0.92)', backdropFilter: 'blur(16px)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-around', zIndex: 50 }}>
+      <nav className="mobile-bottom-bar" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 64, background: 'var(--bg-card)', backdropFilter: 'blur(16px)', borderTop: '1px solid var(--border-hi)', display: 'flex', alignItems: 'center', justifyContent: 'space-around', zIndex: 50, boxShadow: 'var(--shadow-sm)' }}>
         {nav.map(item => {
           const active = pathname.startsWith(item.href)
           const isMail = item.href === '/mail'
