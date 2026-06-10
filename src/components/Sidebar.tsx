@@ -295,7 +295,7 @@ export default function Sidebar() {
             const isMail = item.href === '/mail'
             return (
               <div key={item.href} className="nav-item" style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-                <Link href={item.href} style={{
+                <Link href={item.href} data-tour={`nav-${item.href.slice(1)}`} style={{
                   width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   borderRadius: 11, textDecoration: 'none',
                   color: active ? '#6ba3f9' : 'var(--text-muted)',
@@ -325,6 +325,7 @@ export default function Sidebar() {
         <div style={{ position: 'relative', marginBottom: 8 }}>
           <button
             type="button"
+            data-tour="nav-notifications"
             onClick={() => setShowNotifPanel(v => !v)}
             title="Notifications"
             style={{
@@ -443,7 +444,7 @@ export default function Sidebar() {
           const active = pathname.startsWith(item.href)
           const isMail = item.href === '/mail'
           return (
-            <Link key={item.href} href={item.href} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, textDecoration: 'none', padding: '6px 10px', borderRadius: 10, color: active ? '#6ba3f9' : 'var(--text-muted)', background: active ? 'var(--accent-soft)' : 'transparent', minWidth: 48, position: 'relative' }}>
+            <Link key={item.href} href={item.href} data-tour={`nav-${item.href.slice(1)}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, textDecoration: 'none', padding: '6px 10px', borderRadius: 10, color: active ? '#6ba3f9' : 'var(--text-muted)', background: active ? 'var(--accent-soft)' : 'transparent', minWidth: 48, position: 'relative' }}>
               <div style={{ transform: 'scale(1.1)' }}>{item.icon(active)}</div>
               {active && <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--gradient-primary)' }} />}
               {isMail && unreadCount > 0 && (

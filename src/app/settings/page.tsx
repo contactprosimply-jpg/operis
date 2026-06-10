@@ -5,6 +5,7 @@ import { authFetch } from '@/lib/auth-client'
 import { Button, Field, useToast, Spinner } from '@/components/ui'
 import { buildFieldsSignatureHtml, saveSignatureToStorage } from '@/lib/email-signature'
 import { THEMES, applyTheme, DEFAULT_THEME_ID, DEFAULT_ACCENT } from '@/lib/theme'
+import { requestProductTour } from '@/lib/product-tour'
 
 const ACCENT_COLORS = ['#3b7ef6', '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316']
 
@@ -223,7 +224,7 @@ export default function SettingsPage() {
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
         {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
+          <button key={t.id} data-tour={t.id === 'messagerie' ? 'settings-messagerie' : undefined} onClick={() => setTab(t.id)} style={{
             padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer',
             fontSize: 13, fontWeight: tab === t.id ? 600 : 400,
             color: tab === t.id ? 'var(--accent)' : 'var(--text-muted)',
@@ -246,6 +247,22 @@ export default function SettingsPage() {
             <Field label="Nom de la societe" value={general.companyName} onChange={v => setGeneral(g => ({ ...g, companyName: v }))} placeholder="Ex: Nikodex" />
             <Field label="Votre nom" value={general.userName} onChange={v => setGeneral(g => ({ ...g, userName: v }))} placeholder="Ex: Uros Baralic" />
             <Button variant="primary" onClick={handleSaveGeneral}>Sauvegarder</Button>
+            <div style={{ marginTop: 20 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  requestProductTour()
+                  setTab('general')
+                }}
+                style={{
+                  background: 'var(--accent-soft)', border: '1px solid rgba(79,142,247,0.25)',
+                  borderRadius: 8, padding: '10px 14px', fontSize: 12, color: 'var(--accent)',
+                  cursor: 'pointer', fontFamily: 'DM Sans, system-ui', fontWeight: 600,
+                }}
+              >
+                Revoir le guide interactif Operis
+              </button>
+            </div>
             <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
               <div style={sTitle}>Réinitialiser les appels d&apos;offres</div>
               <div style={sSub}>

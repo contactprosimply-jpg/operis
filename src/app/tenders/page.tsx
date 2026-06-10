@@ -111,7 +111,9 @@ export default function TendersPage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {refreshing && <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>↻ sync</span>}
-          <Button variant="primary" onClick={() => setShowModal(true)}>+ Nouvel AO</Button>
+          <span data-tour="tenders-create" style={{ display: 'inline-flex' }}>
+            <Button variant="primary" onClick={() => setShowModal(true)}>+ Nouvel AO</Button>
+          </span>
         </div>
       </div>
 

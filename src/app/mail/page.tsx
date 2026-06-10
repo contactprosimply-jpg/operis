@@ -682,6 +682,7 @@ export default function MailPage() {
                 )}
                 <button
                   type="button"
+                  data-tour="mail-sync"
                   onClick={handleSync}
                   disabled={syncing}
                   title="Synchroniser la boîte mail"

@@ -74,7 +74,9 @@ export default function SuppliersPage() {
           <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>Fournisseurs</span>
           <span style={{ marginLeft: 10, fontSize: 12, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>({suppliers.length})</span>
         </div>
-        <Button variant="primary" onClick={() => setShowModal(true)}>+ Ajouter</Button>
+        <span data-tour="suppliers-add" style={{ display: 'inline-flex' }}>
+          <Button variant="primary" onClick={() => setShowModal(true)}>+ Ajouter</Button>
+        </span>
       </div>
 
       <input type="text" value={search} onChange={e => setSearch(e.target.value)}

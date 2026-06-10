@@ -152,7 +152,10 @@ export default function DashboardPage() {
       {ToastComponent}
 
       {onboardingChecked && showOnboarding && (
-        <Onboarding onComplete={() => setShowOnboarding(false)} />
+        <Onboarding onComplete={() => {
+          setShowOnboarding(false)
+          window.dispatchEvent(new Event('operis-start-tour'))
+        }} />
       )}
 
       <div style={{ marginBottom: 24 }}>
@@ -164,7 +167,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
+      <div className="kpi-grid" data-tour="dashboard-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
         <KpiCard label="AO actifs" value={actifs.length} icon={<IconDoc />} color="blue" delay={0}
           progress={actifs.length > 0 ? Math.min(100, actifs.length * 10) : 0}
           delta={urgents.length > 0 ? `${urgents.length} urgent(s)` : 'Aucune urgence'}
@@ -204,7 +207,7 @@ export default function DashboardPage() {
         <button onClick={() => router.push('/tenders')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Voir tous →</button>
       </div>
 
-      <Card hover={false} style={{ padding: 0, overflow: 'hidden', marginBottom: 24 }}>
+      <Card hover={false} data-tour="dashboard-ao-table" style={{ padding: 0, overflow: 'hidden', marginBottom: 24 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>

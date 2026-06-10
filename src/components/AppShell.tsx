@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import { AuthProvider } from '@/components/AuthProvider'
 import Sidebar from '@/components/Sidebar'
 import PwaInstaller from '@/components/PwaInstaller'
+import ProductTour from '@/components/ProductTour'
 
 const PUBLIC_ROUTES = ['/', '/login', '/register']
 
@@ -24,6 +25,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               {children}
             </div>
           </main>
+          <ProductTour />
         </div>
       )}
     </AuthProvider>
