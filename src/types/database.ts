@@ -42,6 +42,9 @@ export interface Supplier {
   name: string
   email: string
   phone: string | null
+  specialty: string | null
+  country: string | null
+  language: string | null
   notes: string | null
   created_at: string
   updated_at: string
@@ -166,6 +169,9 @@ export interface CreateSupplierPayload {
   name: string
   email: string
   phone?: string
+  specialty?: string
+  country?: string
+  language?: string
   notes?: string
 }
 
