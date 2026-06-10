@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { setAccessToken } from '@/lib/auth-client'
 import { Spinner } from '@/components/ui'
 
-const PUBLIC_ROUTES = ['/login', '/register']
+const PUBLIC_ROUTES = ['/', '/login', '/register']
 
 type AuthContextValue = {
   session: Session | null
