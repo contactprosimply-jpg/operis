@@ -26,7 +26,9 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   if (!body || typeof body !== 'object') return badRequest('Corps JSON requis')
 
-  const fieldErr = rejectUnexpectedFields(body as Record<string, unknown>, ['name', 'email', 'phone', 'notes'])
+  const fieldErr = rejectUnexpectedFields(body as Record<string, unknown>, [
+    'name', 'email', 'phone', 'specialty', 'country', 'language', 'notes',
+  ])
   if (fieldErr) return badRequest(fieldErr)
 
   if (!body.name || typeof body.name !== 'string' || !body.name.trim()) return badRequest('Nom requis')
