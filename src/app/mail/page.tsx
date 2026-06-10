@@ -669,17 +669,27 @@ export default function MailPage() {
           background: 'var(--bg-secondary)', flexShrink: 0,
         }}>
           <div style={{ padding: isMobile ? '12px 12px 10px' : '16px 14px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                <span style={{ fontSize: isMobile ? 15 : 14, fontWeight: 600, color: 'var(--text-primary)' }}>Messagerie</span>
-                {unreadTotal > 0 && (
-                  <span style={{ background: '#ef4444', color: '#fff', borderRadius: 10, fontSize: 10, fontWeight: 700, padding: '1px 6px', fontFamily: 'DM Mono, monospace' }}>{unreadTotal}</span>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 10 }}>
+              <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: isMobile ? 15 : 14, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>Messagerie</span>
+                  {unreadTotal > 0 && (
+                    <span style={{
+                      background: '#ef4444', color: '#fff', borderRadius: 10, fontSize: 10, fontWeight: 700,
+                      padding: '1px 6px', fontFamily: 'DM Mono, monospace', lineHeight: 1.4, flexShrink: 0,
+                    }}>{unreadTotal}</span>
+                  )}
+                </div>
+                {autoSyncStatus && (
+                  <div style={{
+                    fontSize: 9, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace',
+                    marginTop: 4, lineHeight: 1.3, whiteSpace: 'nowrap',
+                  }}>
+                    {autoSyncStatus}
+                  </div>
                 )}
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                {autoSyncStatus && !isMobile && (
-                  <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>{autoSyncStatus}</span>
-                )}
                 <button
                   type="button"
                   data-tour="mail-sync"
@@ -714,12 +724,6 @@ export default function MailPage() {
                 }}>+ Nouveau</button>
               </div>
             </div>
-
-            {isMobile && autoSyncStatus && (
-              <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginBottom: 8 }}>
-                Auto-sync · {autoSyncStatus}
-              </div>
-            )}
 
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
               {filterButtons.map(f => (
