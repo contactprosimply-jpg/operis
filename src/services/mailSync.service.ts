@@ -134,7 +134,24 @@ export async function createTenderFromEmail(
 
   if (error || !email) return null
 
-  if (email.tender_id) return { tender_id: email.tender_id }
+  const { data: existingFromSource } = await db
+    .from('tenders')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('source_email_id', emailId)
+    .maybeSingle()
+
+  if (existingFromSource) {
+    await db
+      .from('emails')
+      .update({ tender_id: existingFromSource.id, is_read: true })
+      .eq('id', emailId)
+    return { tender_id: existingFromSource.id }
+  }
+
+  if (email.tender_id) {
+    await db.from('emails').update({ tender_id: null }).eq('id', emailId)
+  }
 
   // Créer l'AO avec les infos extraites de l'email
   const title = extractTenderTitle(email.subject ?? '')

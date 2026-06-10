@@ -9,6 +9,7 @@ import {
 } from '@/lib/imap-client'
 import { parseMailAttachments, extractEmailAddress, type StoredEmailAttachment } from '@/lib/mail-attachments'
 import { isEmailIncompleteForEnrich } from '@/lib/mail-enrich'
+import { reconcileMislinkedAoEmails } from '@/lib/email-tender-link'
 import { tryCreateQuoteFromInboundEmail } from '@/lib/mail-quote-extract'
 import { attachmentMetaOnly, persistAttachmentsToStorage } from '@/lib/mail-storage'
 import { createAdminClient } from '@/lib/supabase'
@@ -399,6 +400,13 @@ export async function syncMailAccount(
         last_sync_uid: result.maxUid,
       })
       .eq('id', account.id)
+  }
+
+  try {
+    const cleared = await reconcileMislinkedAoEmails(db, userId)
+    if (cleared > 0) result.updated += cleared
+  } catch (err) {
+    console.error('[Mail sync] reconcile AO links:', err)
   }
 
   return result

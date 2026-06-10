@@ -175,7 +175,10 @@ export default function MailPage() {
             supplier_missing?: boolean
           }
         }
-        const tenderId = full.tender_id ?? full.quote_analysis?.tender_id ?? null
+        const isIncomingAo = full.is_ao && (full.ao_score ?? 0) >= 30
+        const tenderId = isIncomingAo
+          ? full.tender_id
+          : (full.tender_id ?? full.quote_analysis?.tender_id ?? null)
         const merged = { ...full, tender_id: tenderId }
         setSelected(merged)
         setEmails(prev => prev.map(e => e.id === full.id ? {
@@ -476,8 +479,14 @@ export default function MailPage() {
     const target = email ?? selected
     if (!target) return
     if (target.tender_id) {
-      router.push(`/tenders/${target.tender_id}`)
-      return
+      try {
+        const checkRes = await authFetch(`/api/tenders/${target.tender_id}`)
+        const checkData = await checkRes.json()
+        if (checkData.success && checkData.data?.source_email_id === target.id) {
+          router.push(`/tenders/${target.tender_id}`)
+          return
+        }
+      } catch { /* créer un nouvel AO si lien incorrect */ }
     }
     setCreatingAoId(target.id)
     if (!email) setCreating(true)

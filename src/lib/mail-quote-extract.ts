@@ -4,6 +4,12 @@ import { extractEmailAddress } from '@/lib/mail-attachments'
 import { extractPriceFromAttachments } from '@/lib/document-text-extract'
 import { isEmailIncompleteForEnrich, reEnrichEmailIfNeeded } from '@/lib/mail-enrich'
 import { extractFinalPriceFromText, extractPriceFromText } from '@/lib/quote-price-extract'
+import {
+  clearWrongTenderLinkForAoEmail,
+  looksLikeIncomingAoRequest,
+  looksLikeSupplierQuoteReply,
+  resolveTenderForSupplierReply,
+} from '@/lib/email-tender-link'
 
 export { extractFinalPriceFromText, extractPriceFromText } from '@/lib/quote-price-extract'
 
@@ -198,37 +204,38 @@ export async function tryCreateQuoteFromInboundEmail(
   tenderIdHint?: string | null,
   extraText?: string,
 ) {
+  const { data: emailMeta } = await db
+    .from('emails')
+    .select('is_ao, ao_score, subject')
+    .eq('id', emailId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  const subject = emailMeta?.subject ?? bodyText.split('\n')[0] ?? ''
+  const hasDevisFile = hasDevisAttachment(attachments)
+  const fullText = [extraText, bodyText].filter(Boolean).join('\n')
+
+  if (
+    emailMeta &&
+    looksLikeIncomingAoRequest(subject, fullText, emailMeta.is_ao, emailMeta.ao_score ?? 0)
+  ) {
+    return null
+  }
+
+  if (!looksLikeSupplierQuoteReply(subject, fullText, hasDevisFile)) return null
+
   const supplier = await findSupplierForReply(db, userId, fromAddress, tenderIdHint)
   if (!supplier) return null
 
-  let tenderId = tenderIdHint ?? null
-
-  if (!tenderId) {
-    const { data: consultations } = await db
-      .from('consultation_suppliers')
-      .select('tender_id')
-      .eq('supplier_id', supplier.id)
-      .in('status', ['envoye', 'relance', 'relance_2', 'repondu'])
-      .order('updated_at', { ascending: false })
-      .limit(10)
-
-    const tenderIds = (consultations ?? []).map(c => c.tender_id)
-    if (tenderIds.length > 0) {
-      const { data: tender } = await db
-        .from('tenders')
-        .select('id')
-        .eq('user_id', userId)
-        .in('id', tenderIds)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      tenderId = tender?.id ?? tenderIds[0]
-    }
-  }
+  const tenderId = await resolveTenderForSupplierReply(
+    db,
+    userId,
+    supplier.id,
+    subject,
+    tenderIdHint,
+  )
 
   if (!tenderId) return null
-
-  const fullText = [extraText, bodyText].filter(Boolean).join('\n')
   const quote = await upsertQuoteFromEmail(
     db, tenderId, supplier.id, emailId, fullText, attachments,
   )
@@ -477,6 +484,8 @@ export async function processInboundEmailQuotes(
 
   if (!email) return { enriched: false, quote: null, tenderId: null, supplierFound: false, supplierMissing: false }
 
+  await clearWrongTenderLinkForAoEmail(db, userId, emailId)
+
   const enriched = await reEnrichEmailIfNeeded(db, userId, emailId, { force: isEmailIncompleteForEnrich(email) })
 
   const { data: current } = await db
@@ -493,25 +502,45 @@ export async function processInboundEmailQuotes(
     row.body_html ? stripHtml(row.body_html) : '',
   ].filter(Boolean).join('\n')
 
-  const quote = await tryCreateQuoteFromInboundEmail(
-    db,
-    userId,
-    emailId,
-    row.from_address ?? '',
+  const { data: emailAfterClear } = await db
+    .from('emails')
+    .select('tender_id, is_ao, ao_score, subject')
+    .eq('id', emailId)
+    .single()
+
+  const rowAfter = emailAfterClear ?? row
+  const isIncomingAo = looksLikeIncomingAoRequest(
+    rowAfter.subject ?? '',
     bodyText,
-    attachments,
-    row.tender_id,
+    rowAfter.is_ao ?? false,
+    rowAfter.ao_score ?? 0,
   )
+
+  const quote = isIncomingAo
+    ? null
+    : await tryCreateQuoteFromInboundEmail(
+        db,
+        userId,
+        emailId,
+        row.from_address ?? '',
+        bodyText,
+        attachments,
+        rowAfter.tender_id,
+      )
 
   const { data: linked } = await db.from('emails').select('tender_id').eq('id', emailId).single()
 
-  const supplier = await findSupplierForReply(db, userId, row.from_address ?? '', row.tender_id)
+  const supplier = isIncomingAo
+    ? null
+    : await findSupplierForReply(db, userId, row.from_address ?? '', rowAfter.tender_id)
+
+  const tenderIdForUi = isIncomingAo ? linked?.tender_id ?? null : linked?.tender_id ?? rowAfter.tender_id ?? null
 
   return {
     enriched: !!enriched,
     quote: quote ? { price_ht: quote.price_ht } : null,
-    tenderId: linked?.tender_id ?? row.tender_id ?? null,
+    tenderId: tenderIdForUi,
     supplierFound: !!supplier,
-    supplierMissing: !supplier && !!row.from_address,
+    supplierMissing: !isIncomingAo && !supplier && !!row.from_address,
   }
 }
