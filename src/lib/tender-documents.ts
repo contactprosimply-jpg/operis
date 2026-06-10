@@ -6,6 +6,13 @@ import { looksLikeSupplierQuoteEmail } from '@/services/aoDetector.service'
 import { uploadTenderDocument, downloadDevisFile, DEVIS_BUCKET } from '@/lib/devis-storage'
 import { downloadAttachmentBuffer } from '@/lib/mail-storage'
 
+export type TenderDocumentCategory =
+  | 'ao_inbound'
+  | 'supplier_response'
+  | 'consultation_sent'
+  | 'relance_sent'
+  | 'document_sent'
+
 export interface TenderDocumentItem {
   id: string
   kind: 'received' | 'sent'
@@ -15,10 +22,45 @@ export interface TenderDocumentItem {
   date?: string | null
   label?: string
   supplier_name?: string
+  category: TenderDocumentCategory
+  display_title: string
   download_type: 'mail' | 'tender_doc'
   email_id?: string
   attachment_index?: number
   document_id?: string
+}
+
+function titleAoInbound(fromLabel: string) {
+  const who = fromLabel.trim()
+  return {
+    category: 'ao_inbound' as const,
+    display_title: who ? `Demande AO reçue · ${who}` : 'Demande AO reçue',
+  }
+}
+
+function titleSupplierResponse(supplierName: string) {
+  const name = supplierName.trim() || 'Fournisseur'
+  return {
+    category: 'supplier_response' as const,
+    display_title: `Réponse fournisseur (${name})`,
+  }
+}
+
+function titleSentToSupplier(supplierName: string | null | undefined, logType: string) {
+  const name = (supplierName ?? '').trim() || 'fournisseur'
+  const isRelance = logType === 'relance' || logType === 'relance_2'
+  return {
+    category: (isRelance ? 'relance_sent' : 'consultation_sent') as TenderDocumentCategory,
+    display_title: isRelance ? `Relance envoyée à ${name}` : `Envoyé à ${name}`,
+  }
+}
+
+function titleDocumentSent(supplierName?: string | null) {
+  const name = supplierName?.trim()
+  return {
+    category: 'document_sent' as const,
+    display_title: name ? `Document envoyé · ${name}` : 'Document envoyé',
+  }
 }
 
 type ConsultationRow = {
@@ -454,6 +496,7 @@ async function collectInboundMailDocuments(
     const att = attachments[i]
     if (!isNonImageAttachment(att.filename, att.contentType)) continue
 
+    const titles = titleAoInbound(clientLabel)
     const item: TenderDocumentItem = {
       id: `mail:${em.id}:${i}`,
       kind: 'received',
@@ -463,6 +506,8 @@ async function collectInboundMailDocuments(
       date: em.received_at,
       label: em.subject ?? label,
       supplier_name: clientLabel,
+      category: titles.category,
+      display_title: titles.display_title,
       download_type: 'mail',
       email_id: em.id,
       attachment_index: i,
@@ -505,6 +550,15 @@ async function collectLinkedInboundMailDocuments(
         : isInboundEmailDocument(em.subject ?? '', bodySnippet, att.filename, false)
       if (!include) continue
 
+      const isSupplierReply = !em.is_ao && isInboundEmailDocument(
+        em.subject ?? '', bodySnippet, att.filename, false,
+      ) && looksLikeSupplierQuoteEmail(em.subject ?? '', bodySnippet)
+      const titles = em.is_ao
+        ? titleAoInbound(fromLabel)
+        : isSupplierReply
+          ? titleSupplierResponse(fromLabel)
+          : titleAoInbound(fromLabel)
+
       const item: TenderDocumentItem = {
         id: `mail:${em.id}:${i}`,
         kind: 'received',
@@ -514,6 +568,8 @@ async function collectLinkedInboundMailDocuments(
         date: em.received_at,
         label: em.subject,
         supplier_name: fromLabel,
+        category: titles.category,
+        display_title: titles.display_title,
         download_type: 'mail',
         email_id: em.id,
         attachment_index: i,
@@ -615,6 +671,8 @@ export async function collectTenderDocuments(
     const attachments = normalizeAttachments(email.attachments)
     const origIndex = attachments.findIndex(a => a.filename === att.filename && a.size === att.size)
 
+    const supplierName = c.supplier?.name ?? clientLabelFromAddress(email.from_address)
+    const titles = titleSupplierResponse(supplierName ?? 'Fournisseur')
     pushReceived(received, seenFiles, {
       id: `mail:${email.id}:${origIndex >= 0 ? origIndex : 0}`,
       kind: 'received',
@@ -623,7 +681,9 @@ export async function collectTenderDocuments(
       size: att.size,
       date: email.received_at,
       label: email.subject,
-      supplier_name: c.supplier?.name ?? clientLabelFromAddress(email.from_address),
+      supplier_name: supplierName,
+      category: titles.category,
+      display_title: titles.display_title,
       download_type: 'mail',
       email_id: email.id,
       attachment_index: origIndex >= 0 ? origIndex : 0,
@@ -641,6 +701,12 @@ export async function collectTenderDocuments(
     const fp = fileFingerprint(doc.filename, doc.size)
     const inbound = isInboundTenderDocSource(doc.source, doc.filename, sourceInboundKeys)
 
+    const supplierName = (doc.supplier as { name?: string } | null)?.name
+    const inboundTitles = titleAoInbound(inboundClientLabel)
+    const outboundTitles = doc.source === 'consultation'
+      ? titleSentToSupplier(supplierName, 'consultation')
+      : titleDocumentSent(supplierName)
+
     const item: TenderDocumentItem = {
       id: doc.id,
       kind: inbound ? 'received' : 'sent',
@@ -649,9 +715,9 @@ export async function collectTenderDocuments(
       size: doc.size,
       date: doc.created_at,
       label: inbound ? 'Demande AO' : 'Document envoyé',
-      supplier_name: inbound
-        ? inboundClientLabel
-        : (doc.supplier as { name?: string } | null)?.name,
+      supplier_name: inbound ? inboundClientLabel : supplierName,
+      category: inbound ? inboundTitles.category : outboundTitles.category,
+      display_title: inbound ? inboundTitles.display_title : outboundTitles.display_title,
       download_type: 'tender_doc',
       document_id: doc.id,
     }
@@ -684,6 +750,7 @@ export async function collectTenderDocuments(
       if (seenSent.has(key)) continue
       seenSent.add(key)
 
+      const titles = titleSentToSupplier(supplierName, log.type ?? 'consultation')
       sent.push({
         id: `log:${log.id}:${i}`,
         kind: 'sent',
@@ -693,6 +760,8 @@ export async function collectTenderDocuments(
         date: log.sent_at,
         label: log.subject ?? log.type,
         supplier_name: supplierName,
+        category: titles.category,
+        display_title: titles.display_title,
         download_type: 'tender_doc',
         document_id: `log:${log.id}:${i}`,
       })

@@ -24,6 +24,72 @@ const PRIORITE_OPTIONS = [
   { value: 'urgente', label: '⚡ Urgente', color: '#f87171' },
 ]
 
+function documentCategoryStyle(category?: string) {
+  switch (category) {
+    case 'ao_inbound':
+      return { background: 'rgba(59,126,246,0.14)', color: '#60a5fa', border: '1px solid rgba(59,126,246,0.25)' }
+    case 'supplier_response':
+      return { background: 'rgba(74,222,128,0.14)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.25)' }
+    case 'consultation_sent':
+      return { background: 'rgba(251,191,36,0.14)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.25)' }
+    case 'relance_sent':
+      return { background: 'rgba(248,113,113,0.14)', color: '#f87171', border: '1px solid rgba(248,113,113,0.25)' }
+    default:
+      return { background: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px solid var(--border)' }
+  }
+}
+
+function TenderDocumentRow({
+  doc,
+  onDownload,
+}: {
+  doc: {
+    id: string
+    filename: string
+    date?: string | null
+    display_title?: string
+    category?: string
+    supplier_name?: string
+    label?: string
+  }
+  onDownload: () => void
+}) {
+  const title = doc.display_title
+    ?? (doc.supplier_name ? `${doc.supplier_name}` : doc.label ?? 'Document')
+  const badgeStyle = documentCategoryStyle(doc.category)
+
+  return (
+    <div style={{
+      padding: '10px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8,
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+    }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{
+          fontSize: 10, fontWeight: 600, fontFamily: 'DM Sans, system-ui',
+          padding: '2px 8px', borderRadius: 4, marginBottom: 6,
+          display: 'inline-block', maxWidth: '100%',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          ...badgeStyle,
+        }}>
+          {title}
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          📎 {doc.filename}
+        </div>
+        {doc.date && (
+          <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginTop: 2 }}>
+            {new Date(doc.date).toLocaleDateString('fr-FR')}
+          </div>
+        )}
+      </div>
+      <button type="button" onClick={onDownload}
+        style={{ fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', flexShrink: 0, fontFamily: 'DM Sans, system-ui' }}>
+        Télécharger
+      </button>
+    </div>
+  )
+}
+
 function DeadlineBadge({ deadline }: { deadline: string | null }) {
   if (!deadline) return <span style={{ color: 'var(--text-muted)' }}>—</span>
   const days = Math.ceil((new Date(deadline).getTime() - Date.now()) / 86400000)
@@ -855,24 +921,11 @@ export default function TenderDetailPage() {
                 {receivedDocs.length === 0 ? (
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucune PJ reçue</span>
                 ) : receivedDocs.map((doc: any) => (
-                  <div key={doc.id} style={{
-                    padding: '10px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8,
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                  }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        📎 {doc.filename}
-                      </div>
-                      <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
-                        {doc.supplier_name ?? doc.label ?? '—'}
-                        {doc.date ? ` · ${new Date(doc.date).toLocaleDateString('fr-FR')}` : ''}
-                      </div>
-                    </div>
-                    <button type="button" onClick={() => downloadTenderDocument(doc.id, doc.filename)}
-                      style={{ fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', flexShrink: 0, fontFamily: 'DM Sans, system-ui' }}>
-                      Télécharger
-                    </button>
-                  </div>
+                  <TenderDocumentRow
+                    key={doc.id}
+                    doc={doc}
+                    onDownload={() => downloadTenderDocument(doc.id, doc.filename)}
+                  />
                 ))}
               </div>
             </div>
@@ -887,24 +940,11 @@ export default function TenderDetailPage() {
                 {sentDocs.length === 0 ? (
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucune PJ envoyée</span>
                 ) : sentDocs.map((doc: any) => (
-                  <div key={doc.id} style={{
-                    padding: '10px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8,
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                  }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        📎 {doc.filename}
-                      </div>
-                      <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
-                        {doc.supplier_name ? `→ ${doc.supplier_name}` : doc.label ?? 'Document AO'}
-                        {doc.date ? ` · ${new Date(doc.date).toLocaleDateString('fr-FR')}` : ''}
-                      </div>
-                    </div>
-                    <button type="button" onClick={() => downloadTenderDocument(doc.id, doc.filename)}
-                      style={{ fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', flexShrink: 0, fontFamily: 'DM Sans, system-ui' }}>
-                      Télécharger
-                    </button>
-                  </div>
+                  <TenderDocumentRow
+                    key={doc.id}
+                    doc={doc}
+                    onDownload={() => downloadTenderDocument(doc.id, doc.filename)}
+                  />
                 ))}
               </div>
             </div>
