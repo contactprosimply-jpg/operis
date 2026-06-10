@@ -7,6 +7,7 @@ import { fetchUnreadEmails, fetchEmailsSince } from './imap.service'
 import { detectAo, extractTenderTitle, extractClientFromEmail } from './aoDetector.service'
 import { createAdminClient } from '@/lib/supabase'
 import { isEmailIncompleteForEnrich, reEnrichEmailIfNeeded } from '@/lib/mail-enrich'
+import { persistAoInboundDocuments } from '@/lib/tender-documents'
 import { Email } from '@/types/database'
 
 export interface SyncResult {
@@ -136,9 +137,7 @@ export async function createTenderFromEmail(
   if (error || !email) return null
 
   try {
-    await reEnrichEmailIfNeeded(db, userId, emailId, {
-      force: isEmailIncompleteForEnrich(email),
-    })
+    await reEnrichEmailIfNeeded(db, userId, emailId, { force: true })
     const { data: refreshed } = await db
       .from('emails')
       .select('*')
@@ -161,6 +160,11 @@ export async function createTenderFromEmail(
       .from('emails')
       .update({ tender_id: existingFromSource.id, is_read: true })
       .eq('id', emailId)
+    try {
+      await persistAoInboundDocuments(db, userId, existingFromSource.id, emailId)
+    } catch (err) {
+      console.error('[createTenderFromEmail] persist PJ existing:', err)
+    }
     return { tender_id: existingFromSource.id }
   }
 
@@ -192,6 +196,12 @@ export async function createTenderFromEmail(
     .from('emails')
     .update({ tender_id: tender.id, is_read: true, is_ao: true, ao_score: Math.max(email.ao_score ?? 0, 80) })
     .eq('id', emailId)
+
+  try {
+    await persistAoInboundDocuments(db, userId, tender.id, emailId)
+  } catch (err) {
+    console.error('[createTenderFromEmail] persist PJ:', err)
+  }
 
   return { tender_id: tender.id }
 }

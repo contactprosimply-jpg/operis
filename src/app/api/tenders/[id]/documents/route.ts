@@ -67,7 +67,7 @@ export async function POST(
     size: buffer.length,
     storage_path: storagePath,
     bucket: DEVIS_BUCKET,
-    source: source || 'upload',
+    source: source || 'outbound',
   }).select('id, filename, content_type, size, created_at').single()
 
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })

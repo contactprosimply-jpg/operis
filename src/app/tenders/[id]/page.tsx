@@ -314,7 +314,7 @@ export default function TenderDetailPage() {
         const data = await fileToBase64(f)
         const res = await authFetch(`/api/tenders/${id}/documents`, {
           method: 'POST',
-          body: JSON.stringify({ filename: f.name, contentType: f.type, data, source: 'upload' }),
+          body: JSON.stringify({ filename: f.name, contentType: f.type, data, source: 'outbound' }),
         })
         const json = await res.json()
         if (!json.success) show(`Erreur : ${json.error}`)
@@ -840,7 +840,7 @@ export default function TenderDetailPage() {
 
         {receivedDocs.length === 0 && sentDocs.length === 0 ? (
           <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 24 }}>
-            Aucun document — les devis fournisseurs et PJ envoyées apparaîtront ici
+            Aucun document — demande AO, devis fournisseurs et PJ de consultation apparaîtront ici
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
@@ -848,9 +848,12 @@ export default function TenderDetailPage() {
               <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
                 Reçus ({receivedDocs.length})
               </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                Demande AO (DCE, CCTP…) et devis fournisseurs
+              </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {receivedDocs.length === 0 ? (
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucun devis / PJ reçue</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucune PJ reçue</span>
                 ) : receivedDocs.map((doc: any) => (
                   <div key={doc.id} style={{
                     padding: '10px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8,
@@ -877,9 +880,12 @@ export default function TenderDetailPage() {
               <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
                 Envoyés ({sentDocs.length})
               </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                PJ transmises aux fournisseurs (consultation)
+              </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {sentDocs.length === 0 ? (
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucune PJ envoyée (consultation)</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucune PJ envoyée</span>
                 ) : sentDocs.map((doc: any) => (
                   <div key={doc.id} style={{
                     padding: '10px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8,

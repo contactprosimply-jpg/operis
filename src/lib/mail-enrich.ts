@@ -17,14 +17,18 @@ export function isEmailIncompleteForEnrich(email: {
   return attachmentsNeedReload(attachments, email.has_attachments)
 }
 
+const INLINE_IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i
+
 function attachmentsNeedReload(
   attachments: StoredEmailAttachment[],
   hasAttachments?: boolean,
 ): boolean {
   if (hasAttachments && attachments.length === 0) return true
-  const docs = attachments.filter(a => isQuoteDocument(a.filename, a.contentType))
-  if (!docs.length && hasAttachments) return true
-  return docs.some(a => !a.path && !a.data)
+  const relevant = attachments.filter(
+    a => !INLINE_IMAGE_EXT.test(a.filename) && !a.contentType?.startsWith('image/'),
+  )
+  if (!relevant.length && hasAttachments) return true
+  return relevant.some(a => !a.path && !a.data)
 }
 
 async function quoteAttachmentsMissingFromStorage(

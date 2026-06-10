@@ -5,7 +5,7 @@ import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import { collectTenderDocuments } from '@/lib/tender-documents'
 
-export const maxDuration = 30
+export const maxDuration = 60
 
 export async function GET(
   req: NextRequest,
