@@ -148,6 +148,108 @@ async function findQuoteEmailForSupplier(
   return null
 }
 
+/** Pièces jointes de l'email source (DCE, CCTP, DPGF…) lors de la création d'AO. */
+async function collectSourceEmailDocuments(
+  db: SupabaseClient,
+  userId: string,
+  tenderId: string,
+  seenFiles: Set<string>,
+): Promise<TenderDocumentItem[]> {
+  const { data: tender } = await db
+    .from('tenders')
+    .select('source_email_id')
+    .eq('id', tenderId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  const sourceEmailId = tender?.source_email_id
+  if (!sourceEmailId) return []
+
+  const { data: em } = await db
+    .from('emails')
+    .select('id, subject, from_address, received_at, attachments')
+    .eq('id', sourceEmailId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (!em) return []
+
+  const items: TenderDocumentItem[] = []
+  const attachments = toAttachmentMeta(em.attachments)
+  const clientLabel = em.from_address?.split('<')[0].trim() ?? em.from_address ?? 'Client'
+
+  for (let i = 0; i < attachments.length; i++) {
+    const att = attachments[i]
+    if (!isQuoteDocument(att.filename, att.contentType)) continue
+    const fp = fileFingerprint(att.filename, att.size)
+    if (seenFiles.has(fp)) continue
+    seenFiles.add(fp)
+
+    items.push({
+      id: `mail:${em.id}:${i}`,
+      kind: 'sent',
+      filename: att.filename,
+      contentType: att.contentType,
+      size: att.size,
+      date: em.received_at,
+      label: em.subject ?? 'Demande AO',
+      supplier_name: clientLabel,
+      download_type: 'mail',
+      email_id: em.id,
+      attachment_index: i,
+    })
+  }
+
+  return items
+}
+
+/** PJ des autres emails liés à cet AO (liaison manuelle). */
+async function collectLinkedEmailDocuments(
+  db: SupabaseClient,
+  userId: string,
+  tenderId: string,
+  sourceEmailId: string | null | undefined,
+  seenFiles: Set<string>,
+): Promise<TenderDocumentItem[]> {
+  const { data: emails } = await db
+    .from('emails')
+    .select('id, subject, from_address, received_at, attachments, is_ao')
+    .eq('user_id', userId)
+    .eq('tender_id', tenderId)
+
+  const items: TenderDocumentItem[] = []
+
+  for (const em of emails ?? []) {
+    if (em.id === sourceEmailId) continue
+    const attachments = toAttachmentMeta(em.attachments)
+    const fromLabel = em.from_address?.split('<')[0].trim() ?? em.from_address ?? '—'
+
+    for (let i = 0; i < attachments.length; i++) {
+      const att = attachments[i]
+      if (!isQuoteDocument(att.filename, att.contentType)) continue
+      const fp = fileFingerprint(att.filename, att.size)
+      if (seenFiles.has(fp)) continue
+      seenFiles.add(fp)
+
+      items.push({
+        id: `mail:${em.id}:${i}`,
+        kind: em.is_ao ? 'sent' : 'received',
+        filename: att.filename,
+        contentType: att.contentType,
+        size: att.size,
+        date: em.received_at,
+        label: em.subject,
+        supplier_name: fromLabel,
+        download_type: 'mail',
+        email_id: em.id,
+        attachment_index: i,
+      })
+    }
+  }
+
+  return items
+}
+
 export async function collectTenderDocuments(
   db: SupabaseClient,
   userId: string,
@@ -158,6 +260,34 @@ export async function collectTenderDocuments(
   const received: TenderDocumentItem[] = []
   const sent: TenderDocumentItem[] = []
   const seenFiles = new Set<string>()
+  const seenSent = new Set<string>()
+
+  const { data: tenderRow } = await db
+    .from('tenders')
+    .select('source_email_id')
+    .eq('id', tenderId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  const sourceDocs = await collectSourceEmailDocuments(db, userId, tenderId, seenFiles)
+  for (const doc of sourceDocs) {
+    const key = sentDedupKey(doc.filename, doc.size, doc.id)
+    if (!seenSent.has(key)) {
+      seenSent.add(key)
+      sent.push(doc)
+    }
+  }
+
+  const linkedDocs = await collectLinkedEmailDocuments(
+    db, userId, tenderId, tenderRow?.source_email_id, seenFiles,
+  )
+  for (const doc of linkedDocs) {
+    const key = sentDedupKey(doc.filename, doc.size, doc.id)
+    if (seenSent.has(key)) continue
+    seenSent.add(key)
+    if (doc.kind === 'received') received.push(doc)
+    else sent.push(doc)
+  }
 
   const quoteBySupplier = new Map(
     quotes.map(q => [q.supplier_id ?? q.supplier?.id, q]),
@@ -208,8 +338,6 @@ export async function collectTenderDocuments(
     .eq('tender_id', tenderId)
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
-
-  const seenSent = new Set<string>()
 
   for (const doc of tenderDocs ?? []) {
     if (doc.source === 'consultation') continue

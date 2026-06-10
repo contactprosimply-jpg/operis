@@ -6,6 +6,7 @@
 import { fetchUnreadEmails, fetchEmailsSince } from './imap.service'
 import { detectAo, extractTenderTitle, extractClientFromEmail } from './aoDetector.service'
 import { createAdminClient } from '@/lib/supabase'
+import { isEmailIncompleteForEnrich, reEnrichEmailIfNeeded } from '@/lib/mail-enrich'
 import { Email } from '@/types/database'
 
 export interface SyncResult {
@@ -133,6 +134,20 @@ export async function createTenderFromEmail(
     .single()
 
   if (error || !email) return null
+
+  try {
+    await reEnrichEmailIfNeeded(db, userId, emailId, {
+      force: isEmailIncompleteForEnrich(email),
+    })
+    const { data: refreshed } = await db
+      .from('emails')
+      .select('*')
+      .eq('id', emailId)
+      .single()
+    if (refreshed) Object.assign(email, refreshed)
+  } catch (err) {
+    console.error('[createTenderFromEmail] enrich:', err)
+  }
 
   const { data: existingFromSource } = await db
     .from('tenders')
