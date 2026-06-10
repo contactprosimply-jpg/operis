@@ -69,7 +69,7 @@ type ConsultationRow = {
   supplier?: { id?: string; email?: string; name?: string } | null
 }
 
-type QuoteRow = {
+export type QuoteRow = {
   id: string
   supplier_id?: string
   supplier?: { id?: string; name?: string } | null
@@ -680,8 +680,8 @@ export async function collectTenderDocuments(
       contentType: att.contentType,
       size: att.size,
       date: email.received_at,
-      label: email.subject,
-      supplier_name: supplierName,
+      label: email.subject ?? undefined,
+      supplier_name: supplierName ?? undefined,
       category: titles.category,
       display_title: titles.display_title,
       download_type: 'mail',

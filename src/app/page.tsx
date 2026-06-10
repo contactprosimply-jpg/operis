@@ -194,6 +194,39 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Problem */}
+      <section style={{ maxWidth: 1100, margin: '0 auto', padding: '56px 24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 32, alignItems: 'center' }}>
+          <div>
+            <h2 style={{ fontSize: 26, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 16px' }}>
+              Le chaos des AO vous coûte des marchés
+            </h2>
+            <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.7, margin: '0 0 12px' }}>
+              Emails éparpillés, deadlines oubliées, devis comparés à la main dans Excel…
+              Les entreprises BTP perdent du temps et ratent des opportunités chaque semaine.
+            </p>
+            <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0 }}>
+              Operis remplace les tableurs et les dossiers mail par un flux unique, traçable et actionnable.
+            </p>
+          </div>
+          <div style={{
+            background: 'var(--danger-soft)', border: '1px solid rgba(239,68,68,0.2)',
+            borderRadius: 14, padding: '24px 28px',
+          }}>
+            {[
+              'AO perdus dans la boîte mail',
+              'Relances fournisseurs oubliées',
+              'Comparatif devis manuel et lent',
+              'Aucune visibilité sur les échéances',
+            ].map(item => (
+              <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', fontSize: 14, color: 'var(--text-secondary)' }}>
+                <span style={{ color: '#f87171' }}>✕</span> {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Features */}
       <section id="fonctionnalites" style={{ background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '64px 24px' }}>
@@ -221,6 +254,37 @@ export default function LandingPage() {
                 <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>{f.desc}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Simply integration */}
+      <section style={{ maxWidth: 1100, margin: '0 auto', padding: '56px 24px' }}>
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 32,
+          alignItems: 'center', background: 'var(--bg-card)', border: '1px solid var(--border-hi)',
+          borderRadius: 16, padding: '36px 32px', boxShadow: 'var(--shadow-md)',
+        }}>
+          <div>
+            <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+              Intégration Simply
+            </div>
+            <h2 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 12px' }}>
+              De l&apos;AO gagné au chantier en un clic
+            </h2>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.65, margin: 0 }}>
+              Quand vous remportez un marché, transférez-le directement dans Simply pour piloter
+              le chantier, les équipes et la facturation sans ressaisie.
+            </p>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              width: 80, height: 80, borderRadius: 20, margin: '0 auto 16px',
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 28, boxShadow: '0 0 24px rgba(16,185,129,0.3)',
+            }}>S</div>
+            <BtnGhost href="https://simply.nikodex.fr">Découvrir Simply →</BtnGhost>
           </div>
         </div>
       </section>
@@ -283,6 +347,35 @@ export default function LandingPage() {
               </a>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Testimonials */}
+      <section style={{ background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '64px 24px' }}>
+          <div style={{ textAlign: 'center', marginBottom: 40 }}>
+            <h2 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 12px' }}>
+              Ils pilotent leurs AO avec Operis
+            </h2>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+            {[
+              { name: 'Marc D.', role: 'Dirigeant TCE — Lyon', quote: 'On a divisé par deux le temps passé sur les consultations. Les relances auto nous ont sauvé plusieurs marchés.' },
+              { name: 'Sophie L.', role: 'Responsable AO — Paris', quote: 'La messagerie synchronisée détecte les AO entrants avant qu\'on les rate. Indispensable au quotidien.' },
+              { name: 'Karim B.', role: 'Gérant BTP — Marseille', quote: 'Le comparatif de devis en un coup d\'œil, c\'est exactement ce qu\'on attendait. Simple et efficace.' },
+            ].map(t => (
+              <div key={t.name} style={{
+                background: 'var(--bg-card)', border: '1px solid var(--border-hi)', borderRadius: 14,
+                padding: '24px 22px', boxShadow: 'var(--shadow-sm)',
+              }}>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.65, margin: '0 0 16px', fontStyle: 'italic' }}>
+                  &ldquo;{t.quote}&rdquo;
+                </p>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{t.name}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 4 }}>{t.role}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 

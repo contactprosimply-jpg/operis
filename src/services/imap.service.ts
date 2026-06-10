@@ -34,8 +34,8 @@ async function parseMessages(messages: Array<{ uid: number; source: Buffer }>): 
       emails.push({
         messageId: parsed.messageId ?? `msg-${message.uid}`,
         subject: parsed.subject ?? '(sans objet)',
-        from: parsed.from?.text ?? '',
-        to: parsed.to?.text ?? '',
+        from: (Array.isArray(parsed.from) ? parsed.from[0]?.text : parsed.from?.text) ?? '',
+        to: (Array.isArray(parsed.to) ? parsed.to[0]?.text : parsed.to?.text) ?? '',
         bodyText: parsed.text ?? '',
         bodyHtml: parsed.html || '',
         receivedAt: parsed.date ?? new Date(),

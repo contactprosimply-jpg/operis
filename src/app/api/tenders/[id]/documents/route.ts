@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
-import { collectTenderDocuments } from '@/lib/tender-documents'
+import { collectTenderDocuments, type QuoteRow } from '@/lib/tender-documents'
 import { uploadTenderDocument, DEVIS_BUCKET } from '@/lib/devis-storage'
 
 export async function GET(
@@ -29,7 +29,9 @@ export async function GET(
     .select('id, supplier_id, source_email_id, supplier:suppliers(id, name)')
     .eq('tender_id', id)
 
-  const documents = await collectTenderDocuments(db, userId, id, consultations ?? [], quotes ?? [])
+  const documents = await collectTenderDocuments(
+    db, userId, id, consultations ?? [], (quotes ?? []) as QuoteRow[],
+  )
   return Response.json({ success: true, data: documents })
 }
 

@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import nodemailer from 'nodemailer'
+import { clampString, rejectUnexpectedFields } from '@/lib/api-validation'
 
 export const maxDuration = 30
 
@@ -11,12 +12,22 @@ export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
-  const { to, subject, body, cc, signature, attachments: rawAttachments } = await req.json()
+  const rawBody = await req.json()
+  const unexpected = rejectUnexpectedFields(rawBody as Record<string, unknown>, [
+    'to', 'subject', 'body', 'cc', 'signature', 'attachments',
+  ])
+  if (unexpected) {
+    return Response.json({ success: false, error: unexpected }, { status: 400 })
+  }
 
-  const bodyText = typeof body === 'string' ? body : ''
-  const signatureText = typeof signature === 'string' ? signature.trim() : ''
+  const { to, subject, body, cc, signature, attachments: rawAttachments } = rawBody
 
-  if (!to || !subject) {
+  const bodyText = clampString(body, 100000) ?? ''
+  const signatureText = (clampString(signature, 10000) ?? '').trim()
+  const subjectText = clampString(subject, 200) ?? ''
+  const toText = typeof to === 'string' ? to.slice(0, 500) : ''
+
+  if (!toText || !subjectText) {
     return Response.json({ success: false, error: 'Destinataire et sujet requis' }, { status: 400 })
   }
   if (!bodyText.trim() && !signatureText) {
@@ -83,9 +94,9 @@ export async function POST(req: NextRequest) {
   try {
     await transporter.sendMail({
       from: `"${account.smtp_user.split('@')[0]}" <${account.smtp_user}>`,
-      to,
-      cc: cc || undefined,
-      subject,
+      to: toText,
+      cc: typeof cc === 'string' ? cc.slice(0, 500) : undefined,
+      subject: subjectText,
       text: finalText,
       html: finalHtml,
       attachments: mailAttachments.length > 0 ? mailAttachments : undefined,
@@ -94,8 +105,8 @@ export async function POST(req: NextRequest) {
     // Logger l'envoi (ne pas bloquer si le log echoue)
     const { error: logError } = await db.from('email_logs').insert({
       type: 'consultation',
-      to_address: to,
-      subject,
+      to_address: toText,
+      subject: subjectText,
       body: finalText,
       sent_at: new Date().toISOString(),
       success: true,

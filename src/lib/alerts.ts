@@ -16,7 +16,7 @@ export async function checkAlertsForUser(userId: string): Promise<number> {
     // Récupérer les AO actifs de l'utilisateur
     const { data: tenders } = await db
       .from('tenders')
-      .select('*, consultation_suppliers(id, status, supplier_id)')
+      .select('*, consultation_suppliers(id, status, supplier_id, last_sent_at)')
       .eq('user_id', userId)
       .in('status', ['nouveau', 'en_cours', 'urgence'])
 
@@ -56,32 +56,33 @@ export async function checkAlertsForUser(userId: string): Promise<number> {
             })
             created++
 
-            // Envoyer email si urgent
-            if (isUrgent) {
-              try {
-                const { data: { user } } = await db.auth.admin.getUserById(userId)
-                if (user?.email) {
-                  await sendHtmlEmail({
-                    to: user.email,
-                    subject: `[URGENT] Operis — AO "${tender.title}" deadline dans ${daysLeft}j`,
-                    html: `
-                      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                        <div style="background: #ef4444; color: white; padding: 16px 24px; border-radius: 8px 8px 0 0;">
-                          <h2 style="margin: 0; font-size: 18px;">⚡ DEADLINE URGENTE</h2>
-                        </div>
-                        <div style="background: #1e2130; color: #f1f3f9; padding: 24px; border-radius: 0 0 8px 8px;">
-                          <p style="margin: 0 0 16px; font-size: 16px; font-weight: 600;">${tender.title}</p>
-                          <p style="margin: 0 0 8px; color: #8b92a5;">Client : ${tender.client}</p>
-                          <p style="margin: 0 0 16px; color: #f87171; font-weight: 600;">Deadline : ${new Date(tender.deadline).toLocaleDateString('fr-FR')} (dans ${daysLeft} jour${daysLeft > 1 ? 's' : ''})</p>
-                          <a href="https://operis-f26g78.vercel.app/tenders/${tender.id}" style="display: inline-block; background: #3b7ef6; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600;">Voir l'AO →</a>
-                        </div>
+            // Envoyer email (J-7 warning ou J-2 urgent)
+            try {
+              const { data: { user } } = await db.auth.admin.getUserById(userId)
+              if (user?.email) {
+                const headerBg = isUrgent ? '#ef4444' : '#f59e0b'
+                const headerLabel = isUrgent ? '⚡ DEADLINE URGENTE' : '⚠️ DEADLINE APPROCHANTE'
+                const prefix = isUrgent ? '[URGENT]' : '[RAPPEL]'
+                await sendHtmlEmail({
+                  to: user.email,
+                  subject: `${prefix} Operis — AO "${tender.title}" deadline dans ${daysLeft}j`,
+                  html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                      <div style="background: ${headerBg}; color: white; padding: 16px 24px; border-radius: 8px 8px 0 0;">
+                        <h2 style="margin: 0; font-size: 18px;">${headerLabel}</h2>
                       </div>
-                    `,
-                  })
-                }
-              } catch (e) {
-                console.error('[Alerts] Erreur envoi email urgent:', e)
+                      <div style="background: #1e2130; color: #f1f3f9; padding: 24px; border-radius: 0 0 8px 8px;">
+                        <p style="margin: 0 0 16px; font-size: 16px; font-weight: 600;">${tender.title}</p>
+                        <p style="margin: 0 0 8px; color: #8b92a5;">Client : ${tender.client}</p>
+                        <p style="margin: 0 0 16px; color: ${isUrgent ? '#f87171' : '#fbbf24'}; font-weight: 600;">Deadline : ${new Date(tender.deadline).toLocaleDateString('fr-FR')} (dans ${daysLeft} jour${daysLeft > 1 ? 's' : ''})</p>
+                        <a href="https://operis-f26g78.vercel.app/tenders/${tender.id}" style="display: inline-block; background: #3b7ef6; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600;">Voir l'AO →</a>
+                      </div>
+                    </div>
+                  `,
+                })
               }
+            } catch (e) {
+              console.error('[Alerts] Erreur envoi email deadline:', e)
             }
           }
         }
@@ -89,18 +90,22 @@ export async function checkAlertsForUser(userId: string): Promise<number> {
 
       // 2. Alerte fournisseurs sans réponse depuis 7 jours
       const consultations = tender.consultation_suppliers ?? []
-      const nonResponders = consultations.filter((c: any) =>
-        ['envoye', 'relance'].includes(c.status)
-      )
+      const sevenDaysAgo = Date.now() - 7 * 86400000
+      const nonResponders = consultations.filter((c: { status: string; last_sent_at?: string | null }) => {
+        if (!['envoye', 'relance', 'relance_2'].includes(c.status)) return false
+        const sentAt = c.last_sent_at ? new Date(c.last_sent_at).getTime() : 0
+        return sentAt > 0 && sentAt <= sevenDaysAgo
+      })
 
       if (nonResponders.length > 0) {
+        const today = now.toISOString().split('T')[0]
         const { data: existing } = await db
           .from('notifications')
           .select('id')
           .eq('user_id', userId)
           .eq('tender_id', tender.id)
           .eq('type', 'missing_quote')
-          .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
+          .gte('created_at', `${today}T00:00:00`)
           .single()
 
         if (!existing) {

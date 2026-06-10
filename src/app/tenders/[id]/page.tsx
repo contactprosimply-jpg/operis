@@ -7,6 +7,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast, Card } from '@/components/ui'
 import ConsultationComposeModal, { type ConsultationComposePayload } from '@/components/ConsultationComposeModal'
+import SpeechMicButton from '@/components/SpeechMicButton'
 
 const STATUS_OPTIONS = [
   { value: 'nouveau', label: 'Nouveau', color: '#60a5fa' },
@@ -130,7 +131,9 @@ export default function TenderDetailPage() {
   const [editingPriceSupplierId, setEditingPriceSupplierId] = useState<string | null>(null)
   const [priceInput, setPriceInput] = useState('')
   const [savingPrice, setSavingPrice] = useState(false)
-  const [activeTab, setActiveTab] = useState<'fournisseurs' | 'devis' | 'documents' | 'infos'>('fournisseurs')
+  const [activeTab, setActiveTab] = useState<'fournisseurs' | 'devis' | 'comparatif' | 'documents' | 'infos'>('fournisseurs')
+  const [exportingPdf, setExportingPdf] = useState(false)
+  const [retainingQuote, setRetainingQuote] = useState<string | null>(null)
   const [linkedEmails, setLinkedEmails] = useState<any[]>([])
   const [showLinkEmailModal, setShowLinkEmailModal] = useState(false)
   const [unlinkedEmails, setUnlinkedEmails] = useState<any[]>([])
@@ -458,6 +461,89 @@ export default function TenderDetailPage() {
     setValidatingQuote(false)
   }
 
+  const handleRetainQuote = async (supplierId: string) => {
+    setRetainingQuote(supplierId)
+    const res = await authFetch(`/api/tenders/${id}/validate-quote`, {
+      method: 'POST',
+      body: JSON.stringify({ winner_supplier_id: supplierId }),
+    })
+    const data = await res.json()
+    if (data.success) {
+      show('Devis retenu')
+      await refreshTender()
+    } else show(`Erreur : ${data.error}`)
+    setRetainingQuote(null)
+  }
+
+  const handleExportPdf = async () => {
+    if (!tender) return
+    setExportingPdf(true)
+    try {
+      const exportConsultations = tender.consultations ?? []
+      const exportQuotes = [...(tender.quotes ?? [])].sort(
+        (a: { price_ht?: string }, b: { price_ht?: string }) =>
+          (parseFloat(a.price_ht ?? '0') || 0) - (parseFloat(b.price_ht ?? '0') || 0),
+      )
+      const exportPrices = exportQuotes
+        .filter((q: { price_ht?: string }) => q.price_ht)
+        .map((q: { price_ht: string }) => parseFloat(q.price_ht))
+      const exportMin = exportPrices.length ? Math.min(...exportPrices) : null
+      const { jsPDF } = await import('jspdf')
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+      const margin = 14
+      let y = margin
+      const line = (text: string, size = 11, bold = false) => {
+        doc.setFontSize(size)
+        doc.setFont('helvetica', bold ? 'bold' : 'normal')
+        const lines = doc.splitTextToSize(text, 180)
+        doc.text(lines, margin, y)
+        y += lines.length * (size * 0.45) + 2
+      }
+
+      line('OPERIS — Synthèse appel d\'offres', 16, true)
+      line(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, 9)
+      y += 4
+      line(tender.title, 13, true)
+      line(`Client : ${tender.client}`)
+      if (tender.deadline) line(`Deadline : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}`)
+      if (tender.budget_ht) line(`Budget HT : ${parseFloat(tender.budget_ht).toLocaleString('fr-FR')} €`)
+      if (tender.zone_geo) line(`Zone : ${tender.zone_geo}`)
+      y += 4
+
+      line('Fournisseurs consultés', 12, true)
+      exportConsultations.forEach((c: { supplier?: { name?: string }; status: string }) => {
+        line(`${c.supplier?.name ?? '—'} — ${c.status}`)
+      })
+      y += 4
+
+      line('Comparatif devis', 12, true)
+      exportQuotes.forEach((q: { supplier?: { name?: string }; price_ht?: string; notes?: string }) => {
+        const price = q.price_ht ? `${parseFloat(q.price_ht).toLocaleString('fr-FR')} € HT` : '—'
+        const isBest = q.price_ht && exportMin && parseFloat(q.price_ht) === exportMin
+        line(`${isBest ? '★ ' : ''}${q.supplier?.name ?? '—'} : ${price}${q.notes ? ` — ${q.notes}` : ''}`)
+      })
+
+      if (tender.notes_internes) {
+        y += 4
+        line('CONFIDENTIEL — Notes internes', 11, true)
+        line(tender.notes_internes, 10)
+      }
+
+      doc.save(`Operis-AO-${tender.title.slice(0, 40).replace(/[^\w-]/g, '_')}.pdf`)
+      show('PDF exporté')
+    } catch {
+      show('Erreur export PDF')
+    }
+    setExportingPdf(false)
+  }
+
+  const openSimply = () => {
+    const url = tender?.simply_chantier_id
+      ? `https://simply.nikodex.fr/chantiers/${tender.simply_chantier_id}`
+      : 'https://simply.nikodex.fr'
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
   const downloadTenderDocument = async (docId: string, filename: string) => {
     try {
       const token = await getAccessToken()
@@ -503,7 +589,7 @@ export default function TenderDetailPage() {
   const headerBorder = tender.priorite === 'urgente' ? '#ef4444'
     : tender.priorite === 'haute' ? '#f59e0b' : 'var(--border-hi)'
 
-  const quoteBySupplier = new Map(quotes.map((q: any) => [q.supplier_id, q]))
+  const quoteBySupplier = new Map<string, any>(quotes.map((q: any) => [q.supplier_id, q]))
   const sortedQuotes = [...quotes].sort((a: any, b: any) => (parseFloat(a.price_ht) || 0) - (parseFloat(b.price_ht) || 0))
   const bestQuoteId = sortedQuotes.find((q: any) => q.price_ht)?.id
   const pricesWithValues = quotes.filter((q: any) => q.price_ht).map((q: any) => parseFloat(q.price_ht))
@@ -572,13 +658,27 @@ export default function TenderDetailPage() {
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+            <Button variant="ghost" onClick={handleExportPdf} loading={exportingPdf}>Exporter PDF</Button>
             <Button variant="ghost" onClick={() => refreshTender()} disabled={refreshing}>Actualiser</Button>
             <Button variant="ghost" onClick={() => setShowEdit(true)}>Modifier</Button>
             <Button variant="danger" onClick={handleDelete}>Supprimer</Button>
           </div>
         </div>
       </Card>
+
+      {tender.status === 'gagne' && (
+        <div style={{
+          marginBottom: 20, padding: '16px 20px', borderRadius: 12,
+          background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
+        }}>
+          <div style={{ fontSize: 14, color: '#34d399', fontWeight: 600 }}>
+            🎉 AO gagné ! Continuez avec Simply pour gérer le chantier.
+          </div>
+          <Button variant="success" onClick={openSimply}>Ouvrir dans Simply</Button>
+        </div>
+      )}
 
       {/* Onglets */}
       <div style={{
@@ -589,6 +689,7 @@ export default function TenderDetailPage() {
         {([
           { id: 'fournisseurs' as const, label: 'Fournisseurs', count: consultations.length },
           { id: 'devis' as const, label: 'Devis', count: quotes.length },
+          { id: 'comparatif' as const, label: 'Comparatif', count: quotes.length },
           { id: 'documents' as const, label: 'Documents', count: receivedDocs.length + sentDocs.length },
           { id: 'infos' as const, label: 'Informations', count: 0 },
         ]).map(tab => (
@@ -1058,6 +1159,100 @@ export default function TenderDetailPage() {
         </div>
       )}
 
+      {activeTab === 'comparatif' && quotes.length > 0 && (
+        <div style={card}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16 }}>
+            Comparatif des devis
+          </div>
+          <div style={{ marginBottom: 20 }}>
+            <svg viewBox="0 0 400 120" width="100%" height="120" style={{ maxWidth: 480 }}>
+              {sortedQuotes.map((q: { id: string; price_ht?: string; supplier?: { name?: string } }, i: number) => {
+                const price = q.price_ht ? parseFloat(q.price_ht) : 0
+                const barMax = maxPrice ?? price
+                const h = barMax > 0 ? (price / barMax) * 90 : 0
+                const isBest = q.id === bestQuoteId && pricesWithValues.length > 1
+                const isWorst = price === maxPrice && pricesWithValues.length > 1 && price !== minPrice
+                const x = 20 + i * (360 / sortedQuotes.length)
+                const w = Math.max(24, 360 / sortedQuotes.length - 8)
+                return (
+                  <g key={q.id}>
+                    <rect
+                      x={x} y={100 - h} width={w} height={h} rx={4}
+                      fill={isBest ? '#10b981' : isWorst ? '#ef4444' : 'url(#cmpGrad)'}
+                      opacity={isBest ? 1 : 0.85}
+                    />
+                    <text x={x + w / 2} y={112} textAnchor="middle" fill="#64748b" fontSize="8" fontFamily="DM Mono, monospace">
+                      {(q.supplier?.name ?? '').slice(0, 8)}
+                    </text>
+                  </g>
+                )
+              })}
+              <defs>
+                <linearGradient id="cmpGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#4f8ef7" />
+                  <stop offset="100%" stopColor="#818cf8" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 640 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  {['Fournisseur', 'Montant HT', 'Écart %', 'Notes', 'Score', ''].map(h => (
+                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedQuotes.map((q: { id: string; supplier_id: string; supplier?: { name?: string }; price_ht?: string; notes?: string; score?: number; is_selected?: boolean }) => {
+                  const price = q.price_ht ? parseFloat(q.price_ht) : null
+                  const isBest = q.id === bestQuoteId && price != null && pricesWithValues.length > 1
+                  const isWorst = price != null && price === maxPrice && pricesWithValues.length > 1 && price !== minPrice
+                  const gapPct = price && minPrice ? ((price - minPrice) / minPrice) * 100 : null
+                  return (
+                    <tr key={q.id} style={{
+                      borderBottom: '1px solid var(--border)',
+                      background: isBest ? 'rgba(16,185,129,0.1)' : isWorst ? 'rgba(239,68,68,0.08)' : 'transparent',
+                    }}>
+                      <td style={{ padding: '10px 12px', fontWeight: 500 }}>
+                        {isBest && <Badge color="green">★ Meilleur</Badge>}
+                        {isWorst && <Badge color="red">Plus cher</Badge>}
+                        {q.supplier?.name ?? '—'}
+                      </td>
+                      <td style={{ padding: '10px 12px', fontFamily: 'DM Mono, monospace', color: isBest ? '#34d399' : 'var(--text-primary)', fontWeight: isBest ? 700 : 400 }}>
+                        {price ? `${price.toLocaleString('fr-FR')} €` : '—'}
+                      </td>
+                      <td style={{ padding: '10px 12px', fontFamily: 'DM Mono, monospace', fontSize: 11, color: gapPct && gapPct > 0 ? '#f87171' : '#4ade80' }}>
+                        {gapPct != null ? `${gapPct > 0 ? '+' : ''}${gapPct.toFixed(1)}%` : '—'}
+                      </td>
+                      <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text-secondary)', maxWidth: 160 }}>{q.notes ?? '—'}</td>
+                      <td style={{ padding: '10px 12px', fontFamily: 'DM Mono, monospace' }}>{q.score ?? '—'}</td>
+                      <td style={{ padding: '10px 12px' }}>
+                        <Button
+                          variant={q.is_selected ? 'ghost' : 'success'}
+                          loading={retainingQuote === q.supplier_id}
+                          disabled={q.is_selected}
+                          onClick={() => handleRetainQuote(q.supplier_id)}
+                        >
+                          {q.is_selected ? 'Retenu' : 'Retenir ce devis'}
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'comparatif' && quotes.length === 0 && (
+        <div style={{ ...card, textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>
+          Aucun devis à comparer — consultez vos fournisseurs d'abord
+        </div>
+      )}
+
       {/* === MODAL MODIFIER AO === */}
       <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Modifier l'appel d'offres">
         <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 4 }}>
@@ -1110,7 +1305,10 @@ export default function TenderDetailPage() {
           </div>
 
           <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>Notes internes 🔒</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>Notes internes 🔒</div>
+              <SpeechMicButton onTranscript={t => setEditForm(f => ({ ...f, notes_internes: `${f.notes_internes}${f.notes_internes ? ' ' : ''}${t}` }))} />
+            </div>
             <textarea value={editForm.notes_internes} onChange={e => setEditForm(f => ({ ...f, notes_internes: e.target.value }))} placeholder="Notes privées — non visibles par les fournisseurs..."
               rows={3}
               style={{ width: '100%', background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, padding: '9px 13px', fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />

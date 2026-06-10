@@ -88,7 +88,8 @@ async function findSupplierForReply(
       .eq('tender_id', tenderIdHint)
 
     for (const c of consultations ?? []) {
-      const s = c.supplier as { id: string; email: string } | null
+      const sRaw = c.supplier as { id: string; email: string } | { id: string; email: string }[] | null
+      const s = Array.isArray(sRaw) ? sRaw[0] : sRaw
       if (!s?.id) continue
       const sDomain = emailDomain(s.email ?? '')
       if (sDomain === fromDomain) return { id: s.id, email: s.email }
@@ -265,7 +266,8 @@ export async function backfillQuotesForTender(
   let updated = 0
 
   for (const c of consultations) {
-    const supplier = c.supplier as { id: string; email: string; name: string } | null
+    const supplierRaw = c.supplier as { id: string; email: string; name: string } | { id: string; email: string; name: string }[] | null
+    const supplier = Array.isArray(supplierRaw) ? supplierRaw[0] : supplierRaw
     if (!supplier?.email) continue
     const supplierEmail = extractEmailAddress(supplier.email) ?? supplier.email.toLowerCase()
     const domain = emailDomain(supplier.email)
@@ -366,7 +368,8 @@ export async function analyzeQuotesForTender(
   const results: Array<{ supplier: string; price: number | null }> = []
 
   for (const c of consultations) {
-    const supplier = c.supplier as { id: string; email: string; name: string } | null
+    const supplierRaw = c.supplier as { id: string; email: string; name: string } | { id: string; email: string; name: string }[] | null
+    const supplier = Array.isArray(supplierRaw) ? supplierRaw[0] : supplierRaw
     if (!supplier?.email) continue
 
     const supplierEmail = extractEmailAddress(supplier.email) ?? supplier.email.toLowerCase()

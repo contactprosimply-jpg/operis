@@ -3,12 +3,21 @@
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { formatImapError, resolveMailAccount, syncMailAccount } from '@/lib/mail-sync'
+import { checkRateLimit } from '@/lib/rateLimit'
 
 export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
+
+  const rate = checkRateLimit(userId)
+  if (!rate.allowed) {
+    return Response.json({
+      success: false,
+      error: `Limite de synchronisation atteinte. Réessayez dans ${rate.retryAfterMinutes} minute${rate.retryAfterMinutes > 1 ? 's' : ''}.`,
+    }, { status: 429 })
+  }
 
   const account = await resolveMailAccount(userId)
   if (!account) {

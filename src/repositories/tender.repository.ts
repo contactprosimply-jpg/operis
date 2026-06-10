@@ -20,7 +20,7 @@ export const tenderRepository = {
     const { data, error } = await db
       .from('tender_stats')
       .select('*')
-      .eq('user_id' as any, userId)
+      .eq('user_id', userId)
 
     if (error) throw new Error(error.message)
     return data as TenderStats[]

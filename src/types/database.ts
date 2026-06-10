@@ -19,6 +19,7 @@ export interface Profile {
   full_name: string | null
   company: string | null
   role: string
+  onboarding_done?: boolean
   created_at: string
 }
 
@@ -115,6 +116,7 @@ export interface EmailLog {
 
 export interface TenderStats {
   tender_id: string
+  user_id?: string
   title: string
   client: string
   status: TenderStatus

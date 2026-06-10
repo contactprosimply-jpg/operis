@@ -10,6 +10,22 @@ import { Spinner } from '@/components/ui'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
 
+interface SpeechRecognitionEventLike {
+  resultIndex: number
+  results: { length: number; [index: number]: { [index: number]: { transcript: string } } }
+}
+
+interface SpeechRecognitionLike {
+  lang: string
+  continuous: boolean
+  interimResults: boolean
+  onresult: (e: SpeechRecognitionEventLike) => void
+  onend: () => void
+  onerror: () => void
+  start: () => void
+  stop: () => void
+}
+
 const inputStyle: React.CSSProperties = {
   flex: 1, background: 'transparent', border: 'none', outline: 'none',
   fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
@@ -108,6 +124,8 @@ export default function MailPage() {
   const [linkingTender, setLinkingTender] = useState(false)
   const [filter, setFilter] = useState<MailFilter>('all')
   const [toast, setToast] = useState<string | null>(null)
+  const [isListening, setIsListening] = useState(false)
+  const recognitionRef = useRef<{ stop: () => void } | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [mobileShowDetail, setMobileShowDetail] = useState(false)
   const bodyRef = useRef<HTMLTextAreaElement>(null)
@@ -124,6 +142,38 @@ export default function MailPage() {
   const userId = session?.user?.id
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
+
+  const toggleSpeech = () => {
+    const w = window as Window & {
+      SpeechRecognition?: new () => SpeechRecognitionLike
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike
+    }
+    const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition
+    if (!SR) { showToast('Reconnaissance vocale non supportée'); return }
+    if (isListening) {
+      recognitionRef.current?.stop()
+      setIsListening(false)
+      return
+    }
+    const rec = new SR()
+    rec.lang = 'fr-FR'
+    rec.continuous = true
+    rec.interimResults = false
+    rec.onresult = (e: SpeechRecognitionEventLike) => {
+      let transcript = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        transcript += e.results[i][0].transcript
+      }
+      if (transcript.trim()) {
+        setCompose(c => ({ ...c, body: c.body ? `${c.body} ${transcript}` : transcript }))
+      }
+    }
+    rec.onend = () => setIsListening(false)
+    rec.onerror = () => setIsListening(false)
+    recognitionRef.current = rec
+    rec.start()
+    setIsListening(true)
+  }
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -234,7 +284,7 @@ export default function MailPage() {
         } else if (!silent && quickStored > 0) {
           showToast(`${quickStored} nouveau(x) email(s)`)
         }
-        setAutoSyncStatus(`Sync ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
+        setAutoSyncStatus(`Synchro : ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
         if (stored > 0 || updated > 0 || quickStored > 0) {
           await loadEmails(true)
           const sid = selectedIdRef.current
@@ -280,12 +330,14 @@ export default function MailPage() {
     void runSync(true)
   }, [ready, userId, runSync])
 
-  // Sync en arrière-plan toutes les 25s si visible
+  // Sync automatique toutes les 5 minutes si visible
   useEffect(() => {
     if (!ready || !userId) return
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') runSync(true)
-    }, 25 * 1000)
+      if (document.visibilityState === 'visible' && !syncInProgressRef.current) {
+        void runSync(true)
+      }
+    }, 5 * 60 * 1000)
     return () => clearInterval(interval)
   }, [ready, userId, runSync])
 
@@ -301,6 +353,7 @@ export default function MailPage() {
         const lite: Email = {
           id: raw.id, user_id: raw.user_id, message_id: raw.message_id,
           subject: raw.subject, from_address: raw.from_address, to_address: raw.to_address,
+          body_text: raw.body_text ?? null, body_html: raw.body_html ?? null,
           received_at: raw.received_at, is_read: raw.is_read, is_ao: raw.is_ao,
           ao_score: raw.ao_score, tender_id: raw.tender_id, has_attachments: raw.has_attachments,
           created_at: raw.created_at,
@@ -831,13 +884,40 @@ export default function MailPage() {
                   flex: 1, minHeight: 140, display: 'flex', flexDirection: 'column',
                   background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden',
                 }}>
-                  <textarea ref={bodyRef} value={compose.body} onChange={e => setCompose(c => ({ ...c, body: e.target.value }))}
-                    placeholder="Écris ton message ici..."
-                    style={{
-                      flex: 1, minHeight: 100, background: 'transparent', border: 'none', outline: 'none',
-                      fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
-                      resize: 'none', padding: '14px 16px',
-                    }} />
+                  <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1 }}>
+                    <textarea ref={bodyRef} value={compose.body} onChange={e => setCompose(c => ({ ...c, body: e.target.value }))}
+                      placeholder="Écris ton message ici..."
+                      style={{
+                        flex: 1, minHeight: 100, background: 'transparent', border: 'none', outline: 'none',
+                        fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
+                        resize: 'none', padding: '14px 16px',
+                      }} />
+                    <button
+                      type="button"
+                      onClick={toggleSpeech}
+                      title="Dictée vocale (fr-FR)"
+                      style={{
+                        margin: '10px 10px 0 0', width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                        border: isListening ? '2px solid #ef4444' : '1px solid var(--border-hi)',
+                        background: isListening ? 'rgba(239,68,68,0.15)' : 'var(--bg-secondary)',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        position: 'relative',
+                      }}
+                    >
+                      {isListening && (
+                        <span style={{
+                          position: 'absolute', inset: -4, borderRadius: '50%',
+                          border: '2px solid #ef4444', animation: 'pulse 1s ease infinite',
+                        }} />
+                      )}
+                      <svg viewBox="0 0 24 24" fill="none" stroke={isListening ? '#ef4444' : 'currentColor'} strokeWidth="1.8" width="16" height="16">
+                        <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                        <path d="M19 10v2a7 7 0 01-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="23" />
+                        <line x1="8" y1="23" x2="16" y2="23" />
+                      </svg>
+                    </button>
+                  </div>
                   {signaturePreview.html && (
                     <div style={{ padding: '0 12px 12px', flexShrink: 0 }}>
                       <SignaturePreview html={signaturePreview.html} />

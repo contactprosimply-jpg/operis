@@ -11,6 +11,7 @@ import { tenderService } from '@/services/tender.service'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import { deleteAllTendersForUser } from '@/lib/tender-reset'
+import { rejectUnexpectedFields, validateTitle, badRequest } from '@/lib/api-validation'
 
 export async function GET(req: NextRequest) {
   const userId = await getUserFromRequest(req)
@@ -24,7 +25,19 @@ export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
-  const body = await req.json()
+  const body = await req.json().catch(() => null)
+  if (!body || typeof body !== 'object') return badRequest('Corps JSON requis')
+
+  const allowed = ['title', 'client', 'description', 'deadline', 'status', 'source_email_id']
+  const fieldErr = rejectUnexpectedFields(body as Record<string, unknown>, allowed)
+  if (fieldErr) return badRequest(fieldErr)
+
+  const titleErr = validateTitle(body.title)
+  if (titleErr) return badRequest(titleErr)
+  if (!body.client || typeof body.client !== 'string' || !body.client.trim()) {
+    return badRequest('Client requis')
+  }
+
   const result = await tenderService.create(userId, body)
   return Response.json(result, { status: result.success ? 201 : 400 })
 }

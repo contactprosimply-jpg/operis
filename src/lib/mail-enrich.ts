@@ -14,7 +14,7 @@ export function isEmailIncompleteForEnrich(email: {
 }): boolean {
   const attachments = (email.attachments as StoredEmailAttachment[]) ?? []
   if (!email.body_text?.trim() && !email.body_html?.trim()) return true
-  return attachmentsNeedReload(attachments, email.has_attachments)
+  return attachmentsNeedReload(attachments, email.has_attachments ?? undefined)
 }
 
 const INLINE_IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i

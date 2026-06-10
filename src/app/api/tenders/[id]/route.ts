@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import { collectTenderDocuments } from '@/lib/tender-documents'
+import { isValidUuid, rejectUnexpectedFields, validateTitle, badRequest } from '@/lib/api-validation'
 
 export const maxDuration = 60
 
@@ -15,6 +16,8 @@ export async function GET(
   if (!userId) return unauthorized()
 
   const { id } = await params
+  if (!isValidUuid(id)) return badRequest('ID AO invalide')
+
   const db = createAdminClient()
 
   const { data: tender, error } = await db
@@ -69,14 +72,24 @@ export async function PATCH(
   if (!userId) return unauthorized()
 
   const { id } = await params
-  const body = await req.json()
-  const db = createAdminClient()
+  if (!isValidUuid(id)) return badRequest('ID AO invalide')
+
+  const body = await req.json().catch(() => null)
+  if (!body || typeof body !== 'object') return badRequest('Corps JSON requis')
 
   const allowed = [
     'title', 'client', 'description', 'deadline', 'status',
     'budget_ht', 'zone_geo', 'maitre_ouvrage', 'notes_internes',
     'priorite', 'assigned_to',
   ]
+  const fieldErr = rejectUnexpectedFields(body as Record<string, unknown>, allowed)
+  if (fieldErr) return badRequest(fieldErr)
+  if ('title' in body) {
+    const titleErr = validateTitle(body.title)
+    if (titleErr) return badRequest(titleErr)
+  }
+
+  const db = createAdminClient()
 
   const payload: Record<string, any> = {}
   for (const key of allowed) {
@@ -103,6 +116,8 @@ export async function DELETE(
   if (!userId) return unauthorized()
 
   const { id } = await params
+  if (!isValidUuid(id)) return badRequest('ID AO invalide')
+
   const db = createAdminClient()
 
   const { error } = await db

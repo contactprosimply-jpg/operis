@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react'
 import { authFetch } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
 import { Email } from '@/types/database'
+import Onboarding from '@/components/Onboarding'
 
 const IconDoc = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
@@ -57,6 +58,31 @@ export default function DashboardPage() {
   const [emails, setEmails] = useState<Email[]>([])
   const [quoteEmails, setQuoteEmails] = useState<Email[]>([])
   const [creatingAo, setCreatingAo] = useState<string | null>(null)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [onboardingChecked, setOnboardingChecked] = useState(false)
+
+  useEffect(() => {
+    if (!ready || !accessToken) return
+    const checkOnboarding = async () => {
+      try {
+        const [profileRes, mailRes, suppliersRes] = await Promise.all([
+          authFetch('/api/profile'),
+          authFetch('/api/mail/accounts'),
+          authFetch('/api/suppliers'),
+        ])
+        const profileData = await profileRes.json()
+        const mailData = await mailRes.json()
+        const suppliersData = await suppliersRes.json()
+        const hasMail = mailData.success && mailData.data
+        const hasSupplier = suppliersData.success && (suppliersData.data?.length ?? 0) > 0
+        const hasTender = tenders.length > 0
+        const onboardingDone = profileData.data?.onboarding_done === true
+        setShowOnboarding(!onboardingDone && (!hasMail || !hasSupplier || !hasTender))
+      } catch { /* ignore */ }
+      setOnboardingChecked(true)
+    }
+    if (!loading) checkOnboarding()
+  }, [ready, accessToken, loading, tenders.length])
 
   useEffect(() => {
     if (!ready || !accessToken) return
@@ -124,6 +150,10 @@ export default function DashboardPage() {
   return (
     <div className="animate-fade">
       {ToastComponent}
+
+      {onboardingChecked && showOnboarding && (
+        <Onboarding onComplete={() => setShowOnboarding(false)} />
+      )}
 
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>

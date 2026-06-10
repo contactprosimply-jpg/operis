@@ -12,6 +12,15 @@ import { isEmailIncompleteForEnrich } from '@/lib/mail-enrich'
 import { attachmentMetaOnly, persistAttachmentsToStorage } from '@/lib/mail-storage'
 import { createAdminClient } from '@/lib/supabase'
 import { detectAo } from '@/services/aoDetector.service'
+import type { AddressObject } from 'mailparser'
+
+function addressObjectText(addr: AddressObject | AddressObject[] | undefined): string {
+  if (!addr) return ''
+  if (Array.isArray(addr)) {
+    return addr.map(a => a.text ?? a.value?.[0]?.address ?? '').filter(Boolean).join(', ')
+  }
+  return addr.text ?? addr.value?.[0]?.address ?? ''
+}
 
 export interface MailSyncResult {
   fetched: number
@@ -181,8 +190,8 @@ async function enrichEmailFromSource(
 
   const updates: Record<string, unknown> = {
     subject: parsed.subject ?? envelope.subject,
-    from_address: parsed.from?.text ?? envelope.from,
-    to_address: parsed.to?.text ?? envelope.to,
+    from_address: addressObjectText(parsed.from) || envelope.from,
+    to_address: addressObjectText(parsed.to) || envelope.to,
     body_text: parsed.text ?? '',
     body_html: parsed.html || '',
     received_at: (parsed.date ?? envelope.date).toISOString(),
@@ -258,7 +267,7 @@ export async function syncMailAccount(
       if (emailId) {
         newEmailMap.set(envelope.uid, emailId)
         result.stored++
-        result.quickStored++
+        result.quickStored = (result.quickStored ?? 0) + 1
         if (detectAo(envelope.subject, '').isAo) result.aoDetected++
       } else {
         result.errors++

@@ -335,6 +335,18 @@ export default function SettingsPage() {
               </div>
             </div>
             <Button variant="primary" onClick={handleSaveSig}>Sauvegarder la signature</Button>
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 10 }}>
+                Aperçu en direct
+              </div>
+              <div style={{ background: '#fff', borderRadius: 10, border: '1px solid var(--border-hi)', padding: 16, minHeight: 80 }}>
+                {sigMode === 'fields' ? (
+                  generatedHtml ? <div dangerouslySetInnerHTML={{ __html: generatedHtml }} /> : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Remplissez les champs pour voir l&apos;aperçu</span>
+                ) : (
+                  sig.html ? <div dangerouslySetInnerHTML={{ __html: sig.html }} /> : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Collez votre HTML signature</span>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

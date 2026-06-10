@@ -321,6 +321,110 @@ export default function Sidebar() {
 
         <div style={{ width: 32, height: 1, background: 'var(--border-hi)', margin: '8px 0 12px' }} />
 
+        {/* Notifications */}
+        <div style={{ position: 'relative', marginBottom: 8 }}>
+          <button
+            type="button"
+            onClick={() => setShowNotifPanel(v => !v)}
+            title="Notifications"
+            style={{
+              width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              borderRadius: 11, background: showNotifPanel ? 'var(--accent-soft)' : 'transparent',
+              border: showNotifPanel ? '1px solid rgba(79,142,247,0.25)' : '1px solid transparent',
+              cursor: 'pointer', color: showNotifPanel ? '#6ba3f9' : 'var(--text-muted)', position: 'relative',
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20">
+              <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 01-3.46 0" />
+            </svg>
+            {notifCount > 0 && (
+              <span style={{
+                position: 'absolute', top: 8, right: 8, minWidth: 16, height: 16, borderRadius: 8,
+                background: '#ef4444', color: '#fff', fontSize: 9, fontWeight: 700,
+                fontFamily: 'DM Mono, monospace', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '0 3px', border: '2px solid var(--bg-card)', animation: 'pulse 1.5s ease infinite',
+              }}>
+                {notifCount > 9 ? '9+' : notifCount}
+              </span>
+            )}
+          </button>
+
+          {showNotifPanel && (
+            <div ref={notifPanelRef} style={{
+              position: 'absolute', bottom: 52, left: 56, width: 320,
+              background: 'var(--bg-card)', border: '1px solid var(--border-hi)',
+              borderRadius: 14, boxShadow: 'var(--shadow-md)', zIndex: 300, overflow: 'hidden',
+            }}>
+              <div style={{
+                padding: '12px 16px', borderBottom: '1px solid var(--border)',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Notifications</span>
+                {notifCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const token = accessToken
+                      if (!token) return
+                      await fetch('/api/notifications', {
+                        method: 'PATCH',
+                        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ all: true }),
+                      })
+                      setNotifList([])
+                      setNotifCount(0)
+                    }}
+                    style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}
+                  >
+                    Tout marquer lu
+                  </button>
+                )}
+              </div>
+              <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                {notifList.length === 0 ? (
+                  <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
+                    Aucune notification
+                  </div>
+                ) : notifList.map((n: { id: string; type: string; title: string; message: string; created_at: string; tender_id?: string }) => (
+                  <button
+                    key={n.id}
+                    type="button"
+                    onClick={async () => {
+                      const token = accessToken
+                      if (token) {
+                        await fetch('/api/notifications', {
+                          method: 'PATCH',
+                          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ id: n.id }),
+                        })
+                      }
+                      setNotifList(prev => prev.filter(x => x.id !== n.id))
+                      setNotifCount(c => Math.max(0, c - 1))
+                      setShowNotifPanel(false)
+                      if (n.tender_id) router.push(`/tenders/${n.tender_id}`)
+                    }}
+                    style={{
+                      width: '100%', textAlign: 'left', padding: '12px 16px',
+                      background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)',
+                      cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <span style={{ fontSize: 14 }}>{NOTIF_ICONS[n.type] ?? '🔔'}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{n.title}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{n.message}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 4 }}>{timeAgo(n.created_at)}</div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Icône compte */}
         <div style={{ position: 'relative' }}>
           {showAccountPanel && <AccountPanel />}

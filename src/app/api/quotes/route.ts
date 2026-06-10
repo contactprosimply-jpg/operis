@@ -8,16 +8,16 @@
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
+import { isValidUuid, badRequest } from '@/lib/api-validation'
 
 export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
-  const { tender_id, supplier_id, price_ht, document_url, notes } = await req.json()
+  const { tender_id, supplier_id, price_ht, document_url, notes } = await req.json().catch(() => ({}))
 
-  if (!tender_id || !supplier_id) {
-    return Response.json({ success: false, error: 'tender_id et supplier_id requis' }, { status: 400 })
-  }
+  if (!isValidUuid(tender_id)) return badRequest('tender_id UUID invalide')
+  if (!isValidUuid(supplier_id)) return badRequest('supplier_id UUID invalide')
 
   const db = createAdminClient()
 

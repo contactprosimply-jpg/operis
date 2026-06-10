@@ -223,7 +223,8 @@ export async function resolveTenderForSupplierReply(
   let bestScore = 0
 
   for (const c of consultations) {
-    const tender = c.tender as { id: string; title?: string; client?: string } | null
+    const tenderRaw = c.tender as { id: string; title?: string; client?: string } | { id: string; title?: string; client?: string }[] | null
+    const tender = Array.isArray(tenderRaw) ? tenderRaw[0] : tenderRaw
     if (!tender?.id) continue
     const score = scoreSubjectAgainstTender(subject, tender.title ?? '', tender.client ?? '')
     if (score > bestScore) {

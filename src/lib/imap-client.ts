@@ -75,6 +75,17 @@ function formatAddressList(list?: { address?: string; name?: string }[] | null):
     .join(', ')
 }
 
+function normalizeDate(value?: Date | string): Date | undefined {
+  if (!value) return undefined
+  return value instanceof Date ? value : new Date(value)
+}
+
+function mailboxExists(client: ImapFlow): number {
+  const mb = client.mailbox
+  if (!mb || typeof mb === 'boolean') return 0
+  return mb.exists ?? 0
+}
+
 function envelopeToMeta(
   uid: number,
   envelope: {
@@ -84,18 +95,19 @@ function envelopeToMeta(
     to?: { address?: string; name?: string }[]
     date?: Date
   } | undefined,
-  internalDate?: Date,
+  internalDate?: Date | string,
   flags?: Set<string>,
   accountUser?: string,
 ): ImapEnvelopeMeta {
   const messageId = envelope?.messageId?.trim() || `uid-${accountUser ?? 'user'}-${uid}`
+  const internal = normalizeDate(internalDate)
   return {
     uid,
     messageId,
     subject: envelope?.subject?.trim() || '(sans objet)',
     from: formatAddressList(envelope?.from),
     to: formatAddressList(envelope?.to),
-    date: envelope?.date ?? internalDate ?? new Date(),
+    date: envelope?.date ?? internal ?? new Date(),
     isRead: flags?.has('\\Seen') ?? false,
   }
 }
@@ -137,10 +149,10 @@ async function fetchEnvelopeByUidRange(
 async function fetchEnvelopeBySequence(
   client: ImapFlow,
   limit: number,
-  since?: Date,
   accountUser: string,
+  since?: Date,
 ): Promise<ImapEnvelopeMeta[]> {
-  const exists = client.mailbox?.exists ?? 0
+  const exists = mailboxExists(client)
   if (exists === 0) return []
 
   const window = Math.max(limit, 60)
@@ -153,7 +165,8 @@ async function fetchEnvelopeBySequence(
     internalDate: true,
     flags: true,
   })) {
-    if (since && message.internalDate && message.internalDate < since) continue
+    const internal = normalizeDate(message.internalDate)
+    if (since && internal && internal < since) continue
     messages.push(envelopeToMeta(
       message.uid,
       message.envelope,
@@ -219,7 +232,7 @@ export async function fetchRecentEnvelopes(
       }
     }
 
-    batches.push(await fetchEnvelopeBySequence(client, limit, since, accountUser))
+    batches.push(await fetchEnvelopeBySequence(client, limit, accountUser, since))
 
     if (!fullScan && batches.some(b => b.length > 0)) {
       const merged = mergeEnvelopesByUid(batches)
@@ -257,7 +270,7 @@ export async function fetchMessageSourceByMessageId(
   try {
     let uid: number | undefined
     for (const mid of candidates) {
-      const uids = await client.search({ header: ['Message-ID', mid] }, { uid: true })
+      const uids = await client.search({ header: { 'message-id': mid } }, { uid: true })
       if (Array.isArray(uids) && uids.length) {
         uid = uids[uids.length - 1]
         break
@@ -320,7 +333,7 @@ export async function testImapConnection(config: MailAccountConfig): Promise<{ e
   await client.connect()
   const lock = await client.getMailboxLock('INBOX')
   try {
-    return { exists: client.mailbox?.exists ?? 0 }
+    return { exists: mailboxExists(client) }
   } finally {
     lock.release()
     try {
