@@ -103,25 +103,13 @@ function collectInboundFilenameKeys(attachments: ReturnType<typeof toAttachmentM
   return keys
 }
 
-/** AO créé depuis email → PJ consultation = dossier reçu, jamais Envoyés. */
-function isAoSourcedTender(sourceEmailId: string | null) {
-  return !!sourceEmailId
-}
-
 function isInboundTenderDocSource(
   source: string | null | undefined,
   filename: string,
   sourceInboundKeys: Set<string>,
-  sourceEmailId: string | null,
 ) {
   if (INBOUND_DOC_SOURCES.has(source ?? '')) return true
   if (OUTBOUND_DOC_SOURCES.has(source ?? '')) return false
-  if (sourceEmailId) {
-    if (source === 'upload') return true
-    if (sourceInboundKeys.size === 0) return true
-    if (sourceInboundKeys.has(inboundFilenameKey(filename))) return true
-    return true
-  }
   return sourceInboundKeys.has(inboundFilenameKey(filename))
 }
 
@@ -340,11 +328,7 @@ export async function repairTenderInboundSources(
   for (const doc of docs ?? []) {
     if (INBOUND_DOC_SOURCES.has(doc.source ?? '')) continue
     if (OUTBOUND_DOC_SOURCES.has(doc.source ?? '')) continue
-    const match =
-      inboundKeys.size === 0 ||
-      inboundKeys.has(inboundFilenameKey(doc.filename)) ||
-      doc.source === 'upload'
-    if (!match) continue
+    if (!inboundKeys.has(inboundFilenameKey(doc.filename))) continue
     await db.from('tender_documents').update({ source: 'ao_request' }).eq('id', doc.id)
   }
 }
@@ -549,7 +533,8 @@ async function collectLinkedInboundMailDocuments(
  * Agrège les documents d'un AO.
  *
  * Reçus  = email AO source, emails entrants liés, devis fournisseurs, PJ ao_request.
- * Envoyés = uniquement PJ explicitement sortantes (consultation hors dossier AO, upload outbound).
+ * Envoyés = PJ transmises aux fournisseurs (logs consultation/relance, upload outbound).
+ * Un même fichier peut figurer dans les deux colonnes (reçu du client + renvoyé au fournisseur).
  */
 export async function collectTenderDocuments(
   db: SupabaseClient,
@@ -654,7 +639,7 @@ export async function collectTenderDocuments(
 
   for (const doc of tenderDocs ?? []) {
     const fp = fileFingerprint(doc.filename, doc.size)
-    const inbound = isInboundTenderDocSource(doc.source, doc.filename, sourceInboundKeys, sourceEmailId)
+    const inbound = isInboundTenderDocSource(doc.source, doc.filename, sourceInboundKeys)
 
     const item: TenderDocumentItem = {
       id: doc.id,
@@ -673,7 +658,7 @@ export async function collectTenderDocuments(
 
     if (inbound) {
       pushReceived(received, seenFiles, item)
-    } else if (!seenFiles.has(fp)) {
+    } else {
       const key = `sent:doc:${doc.id}`
       if (!seenSent.has(key)) {
         seenSent.add(key)
@@ -691,31 +676,10 @@ export async function collectTenderDocuments(
   for (const log of emailLogs ?? []) {
     const attachments = toAttachmentMeta(log.attachments)
     const supplierName = (log.supplier as { name?: string } | null)?.name
-    const isConsultation = log.type === 'consultation'
-
     for (let i = 0; i < attachments.length; i++) {
       const att = attachments[i]
       if (!isNonImageAttachment(att.filename, att.contentType)) continue
 
-      const inbound = isConsultation && isAoSourcedTender(sourceEmailId)
-
-      if (inbound) {
-        pushReceived(received, seenFiles, {
-          id: `log:${log.id}:${i}`,
-          kind: 'received',
-          filename: att.filename,
-          contentType: att.contentType,
-          size: att.size,
-          date: sourceReceivedAt ?? log.sent_at,
-          label: 'Demande AO',
-          supplier_name: inboundClientLabel,
-          download_type: 'tender_doc',
-          document_id: `log:${log.id}:${i}`,
-        })
-        continue
-      }
-
-      if (seenFiles.has(fp)) continue
       const key = `sent:log:${log.id}:${i}`
       if (seenSent.has(key)) continue
       seenSent.add(key)
