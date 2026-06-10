@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { EMAIL_LIST_FIELDS, toListEmail } from '@/lib/mail-api'
+import { sanitizeEmailsTenderLinks } from '@/lib/email-tender-link'
 
 export async function GET(req: NextRequest) {
   const userId = await getUserFromRequest(req)
@@ -33,7 +34,10 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await query
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
-  return Response.json({ success: true, data: (data ?? []).map(toListEmail) })
+
+  const list = (data ?? []).map(toListEmail)
+  const sanitized = await sanitizeEmailsTenderLinks(db, userId, list)
+  return Response.json({ success: true, data: sanitized })
 }
 
 export async function PATCH(req: NextRequest) {

@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { toAttachmentMeta } from '@/lib/mail-attachments'
+import { sanitizeEmailsTenderLinks } from '@/lib/email-tender-link'
 import { processInboundEmailQuotes } from '@/lib/mail-quote-extract'
 
 export const maxDuration = 60
@@ -61,10 +62,13 @@ export async function GET(
   const attachments = toAttachmentMeta(row.attachments)
   const hasAttachments = !!row.has_attachments || attachments.length > 0
 
+  const [sanitized] = await sanitizeEmailsTenderLinks(db, userId, [row])
+  const safeRow = sanitized ?? row
+
   return Response.json({
     success: true,
     data: {
-      ...row,
+      ...safeRow,
       has_attachments: hasAttachments,
       attachments,
       attachments_pending: hasAttachments && attachments.length === 0,

@@ -717,8 +717,7 @@ export default function MailPage() {
                           disabled={creatingAoId === email.id}
                           onClick={(e) => {
                             e.stopPropagation()
-                            if (email.tender_id) router.push(`/tenders/${email.tender_id}`)
-                            else handleCreateAo(email)
+                            handleCreateAo(email)
                           }}
                           style={{
                             background: email.tender_id ? 'rgba(34,197,94,0.12)' : email.is_ao ? 'rgba(245,158,11,0.15)' : 'var(--bg-hover)',

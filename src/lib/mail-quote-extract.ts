@@ -201,7 +201,6 @@ export async function tryCreateQuoteFromInboundEmail(
   fromAddress: string,
   bodyText: string,
   attachments: StoredEmailAttachment[],
-  tenderIdHint?: string | null,
   extraText?: string,
 ) {
   const { data: emailMeta } = await db
@@ -224,7 +223,7 @@ export async function tryCreateQuoteFromInboundEmail(
 
   if (!looksLikeSupplierQuoteReply(subject, fullText, hasDevisFile)) return null
 
-  const supplier = await findSupplierForReply(db, userId, fromAddress, tenderIdHint)
+  const supplier = await findSupplierForReply(db, userId, fromAddress, null)
   if (!supplier) return null
 
   const tenderId = await resolveTenderForSupplierReply(
@@ -232,7 +231,7 @@ export async function tryCreateQuoteFromInboundEmail(
     userId,
     supplier.id,
     subject,
-    tenderIdHint,
+    null,
   )
 
   if (!tenderId) return null
@@ -525,7 +524,6 @@ export async function processInboundEmailQuotes(
         row.from_address ?? '',
         bodyText,
         attachments,
-        rowAfter.tender_id,
       )
 
   const { data: linked } = await db.from('emails').select('tender_id').eq('id', emailId).single()

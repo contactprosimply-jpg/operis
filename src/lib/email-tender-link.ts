@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-const INCOMING_AO_RE = /appel d['']offres?|\bdce\b|\bdossier de consultation\b|consultation entreprises|march[eé] public|invitation [àa] (soumissionner|consulter|proposer)|cctp|dpgf|remise des offres/i
+const INCOMING_AO_RE = /appel d['']offres?|\bdce\b|\bdossier de consultation\b|consultation entreprises|march[eé] public|invitation [àa] (soumissionner|consulter|proposer)|cctp|dpgf|remise des offres|demande d['']offre|demande d.offre|request for (proposal|offer|quote)|invitation to bid/i
 const SUPPLIER_REPLY_RE = /ponuda|notre (devis|offre)|ci-joint notre|offre de prix|proposition commerciale|devis n[°o]|facture|situation/i
+const DCE_FILE_RE = /cctp|dpgf|dce|dossier de consultation|bpu|dqe|acte d.engagement/i
 
 /** Demande AO entrante (client / maître d'ouvrage) — pas une réponse fournisseur. */
 export function looksLikeIncomingAoRequest(
@@ -10,11 +11,12 @@ export function looksLikeIncomingAoRequest(
   isAo: boolean,
   aoScore: number,
 ): boolean {
-  if (!isAo || aoScore < 30) return false
-  const blob = `${subject}\n${bodyText}`.slice(0, 8000)
+  if (!isAo) return false
+  const blob = `${subject}\n${bodyText}`.slice(0, 12000)
   if (SUPPLIER_REPLY_RE.test(blob)) return false
   if (INCOMING_AO_RE.test(blob)) return true
-  return aoScore >= 50
+  if (DCE_FILE_RE.test(blob)) return true
+  return true
 }
 
 export function looksLikeSupplierQuoteReply(
@@ -22,9 +24,13 @@ export function looksLikeSupplierQuoteReply(
   bodyText: string,
   hasDevisFile: boolean,
 ): boolean {
-  if (hasDevisFile) return true
-  const blob = `${subject}\n${bodyText}`.slice(0, 8000)
+  const blob = `${subject}\n${bodyText}`.slice(0, 12000)
+  if (looksLikeIncomingAoRequest(subject, bodyText, true, 50)) return false
+  if (INCOMING_AO_RE.test(blob) && !SUPPLIER_REPLY_RE.test(blob)) return false
+  if (DCE_FILE_RE.test(blob) && !SUPPLIER_REPLY_RE.test(blob)) return false
+  if (hasDevisFile && SUPPLIER_REPLY_RE.test(blob)) return true
   if (SUPPLIER_REPLY_RE.test(blob)) return true
+  if (hasDevisFile && /ponuda|devis|offre/i.test(blob)) return true
   return extractPriceFromTextQuick(blob) != null
 }
 
@@ -35,7 +41,86 @@ function extractPriceFromTextQuick(text: string): number | null {
   return Number.isFinite(n) && n > 100 ? n : null
 }
 
-/** Un email AO ne doit être lié qu'à l'AO créé depuis cet email (source_email_id). */
+export function isIncomingAoEmailRow(
+  row: { is_ao?: boolean; ao_score?: number; subject?: string | null },
+  bodySnippet = '',
+): boolean {
+  return looksLikeIncomingAoRequest(
+    row.subject ?? '',
+    bodySnippet,
+    row.is_ao ?? false,
+    row.ao_score ?? 0,
+  )
+}
+
+/** Lien légitime : AO créé depuis cet email, ou réponse fournisseur (devis) — pas une demande AO entrante. */
+export function isLegitimateTenderLink(
+  emailId: string,
+  tenderId: string,
+  tenderSourceEmailId: string | null | undefined,
+  quotePairs: Set<string>,
+  incomingAo: boolean,
+): boolean {
+  if (tenderSourceEmailId === emailId) return true
+  if (incomingAo) return false
+  return quotePairs.has(`${emailId}:${tenderId}`)
+}
+
+/** Corrige tender_id en liste / détail et nettoie la base. */
+export async function sanitizeEmailsTenderLinks<
+  T extends { id: string; tender_id?: string | null; is_ao?: boolean; ao_score?: number; subject?: string | null },
+>(
+  db: SupabaseClient,
+  userId: string,
+  emails: T[],
+): Promise<T[]> {
+  const linked = emails.filter(e => e.tender_id)
+  if (!linked.length) return emails
+
+  const tenderIds = [...new Set(linked.map(e => e.tender_id!))]
+  const emailIds = linked.map(e => e.id)
+
+  const { data: tenders } = await db
+    .from('tenders')
+    .select('id, source_email_id')
+    .eq('user_id', userId)
+    .in('id', tenderIds)
+
+  const { data: quotes } = await db
+    .from('quotes')
+    .select('source_email_id, tender_id')
+    .in('source_email_id', emailIds)
+
+  const tenderSource = new Map((tenders ?? []).map(t => [t.id, t.source_email_id as string | null]))
+  const quotePairs = new Set(
+    (quotes ?? []).map(q => `${q.source_email_id}:${q.tender_id}`),
+  )
+
+  const toClear: string[] = []
+  const sanitized = emails.map(e => {
+    if (!e.tender_id) return e
+    const incomingAo = isIncomingAoEmailRow(e)
+    const ok = isLegitimateTenderLink(
+      e.id,
+      e.tender_id,
+      tenderSource.get(e.tender_id),
+      quotePairs,
+      incomingAo,
+    )
+    if (!ok) {
+      toClear.push(e.id)
+      return { ...e, tender_id: null }
+    }
+    return e
+  })
+
+  if (toClear.length) {
+    await db.from('emails').update({ tender_id: null }).in('id', toClear).eq('user_id', userId)
+  }
+
+  return sanitized
+}
+
 export async function clearWrongTenderLinkForAoEmail(
   db: SupabaseClient,
   userId: string,
@@ -43,38 +128,42 @@ export async function clearWrongTenderLinkForAoEmail(
 ): Promise<boolean> {
   const { data: email } = await db
     .from('emails')
-    .select('id, tender_id, is_ao, ao_score')
+    .select('id, tender_id, is_ao, ao_score, subject, body_text')
     .eq('id', emailId)
     .eq('user_id', userId)
     .maybeSingle()
 
   if (!email?.tender_id) return false
 
-  const { data: tender } = await db
+  const { data: tenders } = await db
     .from('tenders')
     .select('id, source_email_id')
     .eq('id', email.tender_id)
     .eq('user_id', userId)
-    .maybeSingle()
 
-  const { data: quoteSource } = await db
+  const { data: quotes } = await db
     .from('quotes')
-    .select('id')
+    .select('source_email_id, tender_id')
     .eq('source_email_id', emailId)
-    .maybeSingle()
 
-  const isLegitimateLink =
-    tender?.source_email_id === emailId ||
-    quoteSource != null
+  const tenderSource = new Map((tenders ?? []).map(t => [t.id, t.source_email_id as string | null]))
+  const quotePairs = new Set(
+    (quotes ?? []).map(q => `${q.source_email_id}:${q.tender_id}`),
+  )
 
-  if (isLegitimateLink) return false
+  const incomingAo = isIncomingAoEmailRow(email, (email.body_text ?? '').slice(0, 2000))
+  const ok = isLegitimateTenderLink(
+    email.id,
+    email.tender_id,
+    tenderSource.get(email.tender_id),
+    quotePairs,
+    incomingAo,
+  )
 
-  if (email.is_ao || email.ao_score >= 30) {
-    await db.from('emails').update({ tender_id: null }).eq('id', emailId)
-    return true
-  }
+  if (ok) return false
 
-  return false
+  await db.from('emails').update({ tender_id: null }).eq('id', emailId)
+  return true
 }
 
 function tokenOverlap(a: string, b: string): number {
@@ -88,7 +177,17 @@ function tokenOverlap(a: string, b: string): number {
   return hits
 }
 
-/** Choisit l'AO consulté qui correspond le mieux au sujet — sinon pas de lien automatique. */
+function scoreSubjectAgainstTender(subject: string, title: string, client: string): number {
+  const subj = subject.toLowerCase()
+  let score = 0
+  if (title.length > 4 && subj.includes(title.toLowerCase().slice(0, 24))) score += 60
+  if (client.length > 2 && subj.includes(client.toLowerCase())) score += 40
+  score += tokenOverlap(title, subject) * 8
+  score += tokenOverlap(client, subject) * 6
+  return score
+}
+
+/** Choisit l'AO consulté qui correspond au sujet — ignore un tender_id erroné sur l'email. */
 export async function resolveTenderForSupplierReply(
   db: SupabaseClient,
   userId: string,
@@ -96,16 +195,6 @@ export async function resolveTenderForSupplierReply(
   subject: string,
   tenderIdHint?: string | null,
 ): Promise<string | null> {
-  if (tenderIdHint) {
-    const { data: cs } = await db
-      .from('consultation_suppliers')
-      .select('tender_id')
-      .eq('tender_id', tenderIdHint)
-      .eq('supplier_id', supplierId)
-      .maybeSingle()
-    if (cs) return tenderIdHint
-  }
-
   const { data: consultations } = await db
     .from('consultation_suppliers')
     .select('tender_id, tender:tenders(id, title, client)')
@@ -113,22 +202,30 @@ export async function resolveTenderForSupplierReply(
     .in('status', ['envoye', 'relance', 'relance_2', 'repondu'])
 
   if (!consultations?.length) return null
-  if (consultations.length === 1) return consultations[0].tender_id
 
-  const subj = subject.toLowerCase()
+  if (tenderIdHint) {
+    const match = consultations.find(c => c.tender_id === tenderIdHint)
+    const tender = match?.tender as { title?: string; client?: string } | null
+    if (match && tender) {
+      const score = scoreSubjectAgainstTender(subject, tender.title ?? '', tender.client ?? '')
+      if (score >= 20) return tenderIdHint
+    }
+  }
+
+  if (consultations.length === 1) {
+    const tender = consultations[0].tender as { title?: string; client?: string } | null
+    const score = scoreSubjectAgainstTender(subject, tender?.title ?? '', tender?.client ?? '')
+    if (score >= 15) return consultations[0].tender_id
+    return null
+  }
+
   let bestId: string | null = null
   let bestScore = 0
 
   for (const c of consultations) {
     const tender = c.tender as { id: string; title?: string; client?: string } | null
     if (!tender?.id) continue
-    let score = 0
-    const title = tender.title ?? ''
-    const client = tender.client ?? ''
-    if (title.length > 4 && subj.includes(title.toLowerCase().slice(0, 24))) score += 60
-    if (client.length > 2 && subj.includes(client.toLowerCase())) score += 40
-    score += tokenOverlap(title, subject) * 8
-    score += tokenOverlap(client, subject) * 6
+    const score = scoreSubjectAgainstTender(subject, tender.title ?? '', tender.client ?? '')
     if (score > bestScore) {
       bestScore = score
       bestId = tender.id
@@ -139,22 +236,21 @@ export async function resolveTenderForSupplierReply(
   return null
 }
 
-/** Délie les demandes AO rattachées par erreur à un autre AO. */
 export async function reconcileMislinkedAoEmails(
   db: SupabaseClient,
   userId: string,
 ): Promise<number> {
   const { data: emails } = await db
     .from('emails')
-    .select('id')
+    .select('id, tender_id, is_ao, ao_score, subject')
     .eq('user_id', userId)
-    .eq('is_ao', true)
     .not('tender_id', 'is', null)
-    .limit(300)
+    .limit(500)
 
-  let cleared = 0
-  for (const em of emails ?? []) {
-    if (await clearWrongTenderLinkForAoEmail(db, userId, em.id)) cleared++
-  }
-  return cleared
+  if (!emails?.length) return 0
+
+  const before = emails.filter(e => e.tender_id).length
+  const sanitized = await sanitizeEmailsTenderLinks(db, userId, emails)
+  const afterCount = sanitized.filter(e => e.tender_id).length
+  return before - afterCount
 }
