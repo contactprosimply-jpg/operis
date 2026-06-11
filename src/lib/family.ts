@@ -24,11 +24,26 @@ export async function getFamilyContext(userId: string): Promise<FamilyContext> {
 
   const db = createAdminClient()
 
-  const { data: org } = await db
+  let org: { id: string; owner_id: string } | null = null
+
+  const { data: owned } = await db
     .from('organizations')
     .select('id, owner_id')
     .eq('owner_id', userId)
     .maybeSingle()
+
+  if (owned) {
+    org = owned
+  } else {
+    const { data: membership } = await db
+      .from('organization_members')
+      .select('organizations(id, owner_id)')
+      .eq('user_id', userId)
+      .maybeSingle()
+    const raw = membership?.organizations as { id: string; owner_id: string } | { id: string; owner_id: string }[] | null
+    const linked = Array.isArray(raw) ? raw[0] : raw
+    if (linked) org = linked
+  }
 
   if (!org) return empty
 
@@ -57,7 +72,7 @@ export async function getFamilyContext(userId: string): Promise<FamilyContext> {
     .filter(id => id !== userId)
 
   return {
-    isOwner: true,
+    isOwner: org.owner_id === userId,
     organizationId: org.id,
     members,
     memberUserIds,

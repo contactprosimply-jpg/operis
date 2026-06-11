@@ -31,7 +31,9 @@ function LoginForm() {
       return
     }
 
-    window.location.href = '/dashboard'
+    const redirect = searchParams.get('redirect')
+    const safeRedirect = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : '/dashboard'
+    window.location.href = safeRedirect
   }
 
   return (
@@ -106,7 +108,7 @@ function LoginForm() {
           </form>
           <div style={{ marginTop: 20, textAlign: 'center' }}>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Pas encore de compte ? </span>
-            <a href="/register" style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Créer un compte</a>
+            <a href={`/register${searchParams.get('redirect') ? `?redirect=${encodeURIComponent(searchParams.get('redirect')!)}` : ''}`} style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Créer un compte</a>
           </div>
         </div>
       </div>

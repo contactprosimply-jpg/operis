@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
+import type { OrganizationPayload } from '@/lib/organization'
 import { authFetch } from '@/lib/auth-client'
 import { Button, Field, useToast, Spinner } from '@/components/ui'
 import { buildFieldsSignatureHtml, saveSignatureToStorage } from '@/lib/email-signature'
@@ -20,10 +22,12 @@ const TABS = [
   { id: 'general',    label: 'General',    icon: '⚙' },
   { id: 'messagerie', label: 'Messagerie', icon: '✉' },
   { id: 'signature',  label: 'Signature',  icon: '✍' },
+  { id: 'famille',    label: 'Famille',    icon: '👥' },
   { id: 'apparence',  label: 'Apparence',  icon: '🎨' },
 ]
 
-export default function SettingsPage() {
+function SettingsPageContent() {
+  const searchParams = useSearchParams()
   const { session } = useAuth()
   const { show, ToastComponent } = useToast()
   const [tab, setTab] = useState('general')
@@ -44,6 +48,22 @@ export default function SettingsPage() {
   const [resettingTenders, setResettingTenders] = useState(false)
   const [mailAccounts, setMailAccounts] = useState<MailAccountRow[]>([])
   const [deletingMailId, setDeletingMailId] = useState<string | null>(null)
+
+  const [org, setOrg] = useState<OrganizationPayload | null>(null)
+  const [orgName, setOrgName] = useState('')
+  const [creatingOrg, setCreatingOrg] = useState(false)
+  const [regeneratingInvite, setRegeneratingInvite] = useState(false)
+
+  const loadOrganization = async () => {
+    const res = await authFetch('/api/organization')
+    const data = await res.json()
+    if (data.success) setOrg(data.data ?? null)
+  }
+
+  useEffect(() => {
+    const urlTab = searchParams.get('tab')
+    if (urlTab && TABS.some(t => t.id === urlTab)) setTab(urlTab)
+  }, [searchParams])
 
   const loadMailAccounts = async () => {
     const res = await authFetch('/api/mail/accounts')
@@ -83,11 +103,16 @@ export default function SettingsPage() {
         if (savedAccent) setAccentColor(savedAccent)
         if (savedGeneral) setGeneral(JSON.parse(savedGeneral))
         if (savedAttachment) setAttachmentName(savedAttachment)
+        await loadOrganization()
       } catch (e) { console.error(e) }
       setLoading(false)
     }
     load()
   }, [session?.user?.email])
+
+  useEffect(() => {
+    if (tab === 'famille') void loadOrganization()
+  }, [tab])
 
   const handleSaveGeneral = () => {
     localStorage.setItem('operis_general', JSON.stringify(general))
@@ -200,6 +225,57 @@ export default function SettingsPage() {
     localStorage.setItem('operis_accent', accentColor)
     applyTheme(themeId, accentColor)
     show('Theme applique')
+  }
+
+  const handleCreateOrg = async () => {
+    if (!orgName.trim()) return
+    setCreatingOrg(true)
+    try {
+      const res = await authFetch('/api/organization', { method: 'POST', body: JSON.stringify({ name: orgName.trim() }) })
+      const data = await res.json()
+      if (data.success) {
+        setOrg(data.data)
+        show('Groupe cree — lien d\'invitation pret')
+        setOrgName('')
+      } else show(`Erreur : ${data.error}`)
+    } catch (e: unknown) {
+      const err = e as { message?: string }
+      show(`Erreur : ${err.message ?? 'reseau'}`)
+    }
+    setCreatingOrg(false)
+  }
+
+  const handleCopyInviteLink = async () => {
+    if (!org?.invite_link) return
+    try {
+      await navigator.clipboard.writeText(org.invite_link)
+      show('Lien copie dans le presse-papiers')
+    } catch {
+      show('Copiez le lien manuellement')
+    }
+  }
+
+  const handleRegenerateInvite = async () => {
+    setRegeneratingInvite(true)
+    try {
+      const res = await authFetch('/api/organization', { method: 'PUT', body: JSON.stringify({ action: 'regenerate_invite' }) })
+      const data = await res.json()
+      if (data.success) {
+        setOrg(o => o ? { ...o, invite_link: data.data.invite_link } : o)
+        show('Nouveau lien genere')
+      } else show(`Erreur : ${data.error}`)
+    } catch (e: unknown) {
+      const err = e as { message?: string }
+      show(`Erreur : ${err.message ?? 'reseau'}`)
+    }
+    setRegeneratingInvite(false)
+  }
+
+  const handleRemoveMember = async (memberId: string, name: string) => {
+    if (!confirm(`Retirer ${name} du groupe ?`)) return
+    await authFetch('/api/organization', { method: 'PUT', body: JSON.stringify({ action: 'remove', member_id: memberId }) })
+    await loadOrganization()
+    show(`${name} retire du groupe`)
   }
 
   const generatedHtml = buildFieldsSignatureHtml(sig, accentColor)
@@ -412,6 +488,96 @@ export default function SettingsPage() {
           </div>
         )}
 
+        {/* FAMILLE */}
+        {tab === 'famille' && (
+          <>
+            {!org ? (
+              <div style={card}>
+                <div style={sTitle}>Creer votre groupe Famille</div>
+                <div style={sSub}>
+                  Le createur est le membre n°1. Un lien d&apos;invitation sera genere pour ajouter les autres comptes Operis.
+                </div>
+                <Field label="Nom du groupe" value={orgName} onChange={setOrgName} placeholder="Ex: Nikodex Group" />
+                <Button variant="primary" loading={creatingOrg} onClick={handleCreateOrg}>Creer le groupe</Button>
+              </div>
+            ) : (
+              <>
+                <div style={card}>
+                  <div style={sTitle}>{org.name}</div>
+                  <div style={sSub}>
+                    {org.is_owner
+                      ? 'Vous etes le createur (membre n°1). Partagez le lien pour inviter les autres.'
+                      : `Vous etes membre n°${org.my_number ?? '?'}`}
+                  </div>
+                  {org.members.map(member => {
+                    const isCreator = member.number === 1
+                    const label = member.display_name?.trim() || member.email || 'Membre'
+                    return (
+                      <div
+                        key={member.id}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+                          marginBottom: 8, borderRadius: 10,
+                          border: `1px solid ${isCreator ? 'rgba(59,126,246,0.35)' : 'var(--border)'}`,
+                          background: isCreator ? 'var(--accent-soft)' : 'var(--bg-secondary)',
+                        }}
+                      >
+                        <div style={{
+                          width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                          background: member.color ?? '#3b7ef6', color: '#fff',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 11, fontWeight: 700, fontFamily: 'DM Mono, monospace',
+                        }}>
+                          {member.number}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>
+                            {member.email}
+                            {isCreator ? ' — Createur' : ' — Membre'}
+                          </div>
+                        </div>
+                        {org.is_owner && !isCreator && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(member.id, label)}
+                            style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: 18 }}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {org.is_owner && org.invite_link && (
+                  <div style={card}>
+                    <div style={sTitle}>Lien d&apos;invitation</div>
+                    <div style={sSub}>
+                      Envoyez ce lien au compte Operis a inviter. Il se connecte, confirme, et devient membre n°{org.members.length + 1}.
+                    </div>
+                    <div style={{
+                      padding: '10px 12px', borderRadius: 8, marginBottom: 14,
+                      background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+                      fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-secondary)',
+                      wordBreak: 'break-all',
+                    }}>
+                      {org.invite_link}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <Button variant="primary" onClick={handleCopyInviteLink}>Copier le lien</Button>
+                      <Button variant="ghost" loading={regeneratingInvite} onClick={handleRegenerateInvite}>
+                        Nouveau lien
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
+
         {/* APPARENCE */}
         {tab === 'apparence' && (
           <>
@@ -449,5 +615,13 @@ export default function SettingsPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><Spinner size={28} /></div>}>
+      <SettingsPageContent />
+    </Suspense>
   )
 }

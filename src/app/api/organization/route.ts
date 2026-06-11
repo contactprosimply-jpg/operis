@@ -3,13 +3,19 @@
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
+import {
+  buildInviteLink,
+  createOrganizationInvite,
+  getOrganizationPayloadForUser,
+  userBelongsToOrganization,
+} from '@/lib/organization'
 
 export async function GET(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
-  // Famille désactivée — pas d'organisation / admin affiché pour l'instant
-  return Response.json({ success: true, data: null })
+  const data = await getOrganizationPayloadForUser(userId)
+  return Response.json({ success: true, data })
 }
 
 export async function POST(req: NextRequest) {
@@ -17,59 +23,68 @@ export async function POST(req: NextRequest) {
   if (!userId) return unauthorized()
 
   const { name } = await req.json()
-  const db = createAdminClient()
+  if (!name?.trim()) {
+    return Response.json({ success: false, error: 'Nom du groupe requis' }, { status: 400 })
+  }
 
-  // Create organization
+  const db = createAdminClient()
+  const existing = await userBelongsToOrganization(db, userId)
+  if (existing) {
+    return Response.json({ success: false, error: 'Vous appartenez deja a un groupe' }, { status: 400 })
+  }
+
   const { data: org, error } = await db
     .from('organizations')
-    .insert({ name, owner_id: userId })
+    .insert({ name: name.trim(), owner_id: userId })
     .select()
     .single()
 
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
 
-  // Add owner as admin member
+  const { data: { user } } = await db.auth.admin.getUserById(userId)
+  const { data: profile } = await db.from('profiles').select('full_name').eq('id', userId).maybeSingle()
+
   await db.from('organization_members').insert({
     organization_id: org.id,
     user_id: userId,
-    role: 'admin',
+    role: 'owner',
+    display_name: profile?.full_name ?? user?.user_metadata?.full_name ?? user?.email,
+    email: user?.email ?? null,
+    color: '#3b7ef6',
   })
 
-  return Response.json({ success: true, data: org }, { status: 201 })
+  const token = await createOrganizationInvite(db, org.id, userId)
+  const payload = await getOrganizationPayloadForUser(userId)
+
+  return Response.json({
+    success: true,
+    data: {
+      ...payload,
+      invite_link: buildInviteLink(token),
+    },
+  }, { status: 201 })
 }
 
 export async function PUT(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
-  const { action, email, display_name, color, member_id, tender_id, assigned_to } = await req.json()
+  const { action, member_id, tender_id, assigned_to } = await req.json()
   const db = createAdminClient()
 
-if (action === 'invite') {
-  // Chercher dans auth.users via admin
-  const { data: { users }, error: usersError } = await db.auth.admin.listUsers()
-  
-  const targetUser = users?.find(u => u.email === email)
-  if (!targetUser) return Response.json({ success: false, error: 'Utilisateur non trouve. Il doit dabord creer un compte Operis.' }, { status: 404 })
+  if (action === 'regenerate_invite') {
+    const { data: org } = await db.from('organizations').select('id').eq('owner_id', userId).maybeSingle()
+    if (!org) return Response.json({ success: false, error: 'Groupe introuvable' }, { status: 404 })
 
-  const { data: org } = await db.from('organizations').select('id').eq('owner_id', userId).single()
-  if (!org) return Response.json({ success: false, error: 'Organisation introuvable' }, { status: 404 })
-
-  const { error } = await db.from('organization_members').insert({
-    organization_id: org.id,
-    user_id: targetUser.id,
-    role: 'member',
-    display_name: display_name || email,
-    email,
-    color: color || '#3b7ef6',
-  })
-
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
-  return Response.json({ success: true, data: { invited: true } })
-}
+    const token = await createOrganizationInvite(db, org.id, userId)
+    return Response.json({ success: true, data: { invite_link: buildInviteLink(token) } })
+  }
 
   if (action === 'remove') {
-    await db.from('organization_members').delete().eq('id', member_id)
+    const { data: org } = await db.from('organizations').select('id').eq('owner_id', userId).maybeSingle()
+    if (!org) return Response.json({ success: false, error: 'Action reservee au createur' }, { status: 403 })
+
+    await db.from('organization_members').delete().eq('id', member_id).eq('organization_id', org.id)
     return Response.json({ success: true, data: { removed: true } })
   }
 
@@ -80,4 +95,3 @@ if (action === 'invite') {
 
   return Response.json({ success: false, error: 'Action inconnue' }, { status: 400 })
 }
-
