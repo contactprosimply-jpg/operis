@@ -18,6 +18,7 @@ export interface OrganizationPayload {
   id: string
   name: string
   owner_id: string
+  owner_email: string | null
   is_owner: boolean
   my_number: number | null
   members: OrgMemberRow[]
@@ -181,6 +182,9 @@ export async function getOrganizationPayloadForUser(userId: string): Promise<Org
   const members = orderMembersWithNumbers(org.owner_id, withEmails)
   const myMember = members.find(m => m.user_id === userId)
 
+  const { data: { user: ownerAuth } } = await db.auth.admin.getUserById(org.owner_id)
+  const ownerEmail = ownerAuth?.email ?? members.find(m => m.user_id === org.owner_id)?.email ?? null
+
   let inviteLink: string | null = null
   if (isOwner) {
     let token = await getActiveInviteToken(db, org.id)
@@ -192,11 +196,47 @@ export async function getOrganizationPayloadForUser(userId: string): Promise<Org
     id: org.id,
     name: org.name,
     owner_id: org.owner_id,
+    owner_email: ownerEmail,
     is_owner: isOwner,
     my_number: myMember?.number ?? null,
     members,
     invite_link: inviteLink,
   }
+}
+
+export async function deleteOrganizationForOwner(userId: string) {
+  const db = createAdminClient()
+  const { data: org } = await db.from('organizations').select('id, name').eq('owner_id', userId).maybeSingle()
+  if (!org) return { ok: false as const, error: 'Aucun groupe a supprimer' }
+
+  await db.from('organization_invites').delete().eq('organization_id', org.id)
+  await db.from('organization_members').delete().eq('organization_id', org.id)
+  const { error } = await db.from('organizations').delete().eq('id', org.id).eq('owner_id', userId)
+  if (error) return { ok: false as const, error: error.message }
+
+  return { ok: true as const, name: org.name }
+}
+
+export async function leaveOrganizationAsMember(userId: string) {
+  const db = createAdminClient()
+  const { data: membership } = await db
+    .from('organization_members')
+    .select('id, organization_id, organizations(owner_id)')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (!membership) return { ok: false as const, error: 'Vous ne participez a aucun groupe' }
+
+  const rawOrg = membership.organizations as { owner_id: string } | { owner_id: string }[] | null
+  const linked = Array.isArray(rawOrg) ? rawOrg[0] : rawOrg
+  if (linked?.owner_id === userId) {
+    return { ok: false as const, error: 'Le createur doit supprimer le groupe, pas quitter' }
+  }
+
+  const { error } = await db.from('organization_members').delete().eq('id', membership.id)
+  if (error) return { ok: false as const, error: error.message }
+
+  return { ok: true as const }
 }
 
 export async function getInvitePreview(token: string) {
@@ -254,6 +294,18 @@ export async function acceptOrganizationInvite(token: string, userId: string) {
   }
 
   if (existing) {
+    if (existing.type === 'owner') {
+      const { data: ownedOrg } = await db
+        .from('organizations')
+        .select('name')
+        .eq('id', existing.organizationId)
+        .maybeSingle()
+      const label = ownedOrg?.name ? `"${ownedOrg.name}"` : 'un groupe'
+      return {
+        ok: false as const,
+        error: `Vous avez deja cree ${label}. Supprimez-le dans Parametres > Famille avant de rejoindre celui-ci.`,
+      }
+    }
     return { ok: false as const, error: 'Vous appartenez deja a un autre groupe' }
   }
 

@@ -6,7 +6,9 @@ import { createAdminClient } from '@/lib/supabase'
 import {
   buildInviteLink,
   createOrganizationInvite,
+  deleteOrganizationForOwner,
   getOrganizationPayloadForUser,
+  leaveOrganizationAsMember,
   userBelongsToOrganization,
 } from '@/lib/organization'
 
@@ -30,6 +32,13 @@ export async function POST(req: NextRequest) {
   const db = createAdminClient()
   const existing = await userBelongsToOrganization(db, userId)
   if (existing) {
+    if (existing.type === 'owner') {
+      const { data: ownedOrg } = await db.from('organizations').select('name').eq('id', existing.organizationId).maybeSingle()
+      return Response.json({
+        success: false,
+        error: `Vous avez deja le groupe "${ownedOrg?.name ?? 'existant'}". Supprimez-le avant de creer un nouveau.`,
+      }, { status: 400 })
+    }
     return Response.json({ success: false, error: 'Vous appartenez deja a un groupe' }, { status: 400 })
   }
 
@@ -93,5 +102,21 @@ export async function PUT(req: NextRequest) {
     return Response.json({ success: true, data: { assigned: true } })
   }
 
+  if (action === 'leave') {
+    const result = await leaveOrganizationAsMember(userId)
+    if (!result.ok) return Response.json({ success: false, error: result.error }, { status: 400 })
+    return Response.json({ success: true, data: { left: true } })
+  }
+
   return Response.json({ success: false, error: 'Action inconnue' }, { status: 400 })
+}
+
+export async function DELETE(req: NextRequest) {
+  const userId = await getUserFromRequest(req)
+  if (!userId) return unauthorized()
+
+  const result = await deleteOrganizationForOwner(userId)
+  if (!result.ok) return Response.json({ success: false, error: result.error }, { status: 400 })
+
+  return Response.json({ success: true, data: { deleted: true, name: result.name } })
 }

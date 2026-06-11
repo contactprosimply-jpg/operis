@@ -53,6 +53,8 @@ function SettingsPageContent() {
   const [orgName, setOrgName] = useState('')
   const [creatingOrg, setCreatingOrg] = useState(false)
   const [regeneratingInvite, setRegeneratingInvite] = useState(false)
+  const [leavingOrg, setLeavingOrg] = useState(false)
+  const [deletingOrg, setDeletingOrg] = useState(false)
 
   const loadOrganization = async () => {
     const res = await authFetch('/api/organization')
@@ -276,6 +278,41 @@ function SettingsPageContent() {
     await authFetch('/api/organization', { method: 'PUT', body: JSON.stringify({ action: 'remove', member_id: memberId }) })
     await loadOrganization()
     show(`${name} retire du groupe`)
+  }
+
+  const handleLeaveOrg = async () => {
+    if (!confirm('Quitter ce groupe ?')) return
+    setLeavingOrg(true)
+    try {
+      const res = await authFetch('/api/organization', { method: 'PUT', body: JSON.stringify({ action: 'leave' }) })
+      const data = await res.json()
+      if (data.success) {
+        setOrg(null)
+        show('Groupe quitte')
+      } else show(`Erreur : ${data.error}`)
+    } catch (e: unknown) {
+      const err = e as { message?: string }
+      show(`Erreur : ${err.message ?? 'reseau'}`)
+    }
+    setLeavingOrg(false)
+  }
+
+  const handleDeleteOrg = async () => {
+    const ok = confirm(`Supprimer le groupe "${org?.name}" ? Tous les membres seront retires.`)
+    if (!ok) return
+    setDeletingOrg(true)
+    try {
+      const res = await authFetch('/api/organization', { method: 'DELETE' })
+      const data = await res.json()
+      if (data.success) {
+        setOrg(null)
+        show(`Groupe "${data.data?.name ?? org?.name}" supprime`)
+      } else show(`Erreur : ${data.error}`)
+    } catch (e: unknown) {
+      const err = e as { message?: string }
+      show(`Erreur : ${err.message ?? 'reseau'}`)
+    }
+    setDeletingOrg(false)
   }
 
   const generatedHtml = buildFieldsSignatureHtml(sig, accentColor)
@@ -507,10 +544,20 @@ function SettingsPageContent() {
                   <div style={sSub}>
                     {org.is_owner
                       ? 'Vous etes le createur (membre n°1). Partagez le lien pour inviter les autres.'
-                      : `Vous etes membre n°${org.my_number ?? '?'}`}
+                      : `Vous etes membre n°${org.my_number ?? '?'} — createur : ${org.owner_email ?? 'inconnu'}`}
                   </div>
+                  {org.is_owner && session?.user?.email && org.owner_email
+                    && session.user.email.toLowerCase() !== org.owner_email.toLowerCase() && (
+                    <div style={{
+                      padding: '10px 12px', borderRadius: 8, marginBottom: 12,
+                      background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
+                      fontSize: 12, color: '#fbbf24',
+                    }}>
+                      Ce groupe semble lie a un autre compte ({org.owner_email}). Supprimez-le si vous voulez rejoindre le groupe de contact@ via le lien d&apos;invitation.
+                    </div>
+                  )}
                   {org.members.map(member => {
-                    const isCreator = member.number === 1
+                    const isCreator = member.user_id === org.owner_id
                     const label = member.display_name?.trim() || member.email || 'Membre'
                     return (
                       <div
@@ -549,6 +596,28 @@ function SettingsPageContent() {
                       </div>
                     )
                   })}
+                </div>
+
+                <div style={card}>
+                  {org.is_owner ? (
+                    <Button
+                      variant="ghost"
+                      loading={deletingOrg}
+                      onClick={handleDeleteOrg}
+                      style={{ color: '#f87171', borderColor: 'rgba(248,113,113,0.35)' }}
+                    >
+                      Supprimer ce groupe
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      loading={leavingOrg}
+                      onClick={handleLeaveOrg}
+                      style={{ color: '#f87171', borderColor: 'rgba(248,113,113,0.35)' }}
+                    >
+                      Quitter ce groupe
+                    </Button>
+                  )}
                 </div>
 
                 {org.is_owner && org.invite_link && (
