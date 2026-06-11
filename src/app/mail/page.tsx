@@ -392,11 +392,9 @@ export default function MailPage() {
         if (!myReport || myReport.status !== 'skipped') {
           setAutoSyncStatus(`Synchro : ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
         }
-        if (stored > 0 || updated > 0 || quickStored > 0) {
-          await loadEmails(true)
-          const sid = selectedIdRef.current
-          if (sid && updated > 0) await loadEmailDetail(sid, true)
-        }
+        await loadEmails(true)
+        const sid = selectedIdRef.current
+        if (sid && (updated > 0 || stored > 0)) await loadEmailDetail(sid, true)
       } else {
         const err = data.error ?? 'Synchronisation impossible'
         const accounts = data.data?.accounts as Array<{ status: string; reason?: string; email?: string }> | undefined
@@ -409,6 +407,8 @@ export default function MailPage() {
           } else {
             showToast(`Erreur : ${err}`)
           }
+        } else if (err.includes('Limite de synchronisation')) {
+          setAutoSyncStatus(`Sync limitée — ${err.replace('Limite de synchronisation atteinte. ', '')}`)
         } else if (err.includes('compte mail') || err.includes('Messagerie')) {
           setAutoSyncStatus('Messagerie non configurée')
         } else if (failed?.reason) {

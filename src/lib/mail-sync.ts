@@ -264,10 +264,10 @@ export async function syncMailAccount(
   const quick = options.quick === true || !backfill
 
   const fetchOpts = quick && !backfill
-    ? { sinceDays: 90, limit: 60, minUid: account.last_sync_uid ?? 0, fullScan: false }
+    ? { sinceDays: 45, limit: 150, minUid: account.last_sync_uid ?? 0, fullScan: false }
     : backfill
-      ? { sinceDays: 180, limit: 120, minUid: 0, fullScan: true }
-      : { sinceDays: 90, limit: 80, minUid: account.last_sync_uid ?? 0, fullScan: false }
+      ? { sinceDays: 180, limit: 250, minUid: 0, fullScan: true }
+      : { sinceDays: 60, limit: 120, minUid: account.last_sync_uid ?? 0, fullScan: false }
 
   const db = createAdminClient()
   const result: MailSyncResult = {

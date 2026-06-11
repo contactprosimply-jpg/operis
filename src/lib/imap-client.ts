@@ -65,6 +65,12 @@ function sinceDate(sinceDays: number): Date {
   return since
 }
 
+function startOfToday(): Date {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
 function formatAddressList(list?: { address?: string; name?: string }[] | null): string {
   if (!list?.length) return ''
   return list
@@ -224,29 +230,36 @@ export async function fetchRecentEnvelopes(
 
   try {
     const batches: ImapEnvelopeMeta[][] = []
+    const today = startOfToday()
+    const mergeCap = Math.max(limit, 100)
+
+    // Toujours inclure les mails du jour (évite une boîte figée sur « hier »)
+    if (!fullScan) {
+      batches.push(await fetchEnvelopeBySinceStream(client, today, mergeCap, accountUser))
+    }
 
     if (minUid > 0) {
       const newUids = await client.search({ uid: `${minUid + 1}:*` }, { uid: true })
       if (Array.isArray(newUids) && newUids.length) {
-        batches.push(await fetchEnvelopeByUidRange(client, newUids, limit, accountUser))
+        batches.push(await fetchEnvelopeByUidRange(client, newUids, mergeCap, accountUser))
       }
     }
 
-    batches.push(await fetchEnvelopeBySequence(client, limit, accountUser, since))
+    batches.push(await fetchEnvelopeBySequence(client, mergeCap, accountUser, since))
 
     if (!fullScan && batches.some(b => b.length > 0)) {
       const merged = mergeEnvelopesByUid(batches)
-      if (merged.length) return merged.slice(-limit)
+      if (merged.length) return merged.slice(-mergeCap)
     }
 
     const uids = await client.search({ since }, { uid: true })
     if (Array.isArray(uids) && uids.length) {
-      batches.push(await fetchEnvelopeByUidRange(client, uids, limit, accountUser))
+      batches.push(await fetchEnvelopeByUidRange(client, uids, mergeCap, accountUser))
     }
 
-    batches.push(await fetchEnvelopeBySinceStream(client, since, limit, accountUser))
+    batches.push(await fetchEnvelopeBySinceStream(client, since, mergeCap, accountUser))
 
-    return mergeEnvelopesByUid(batches).slice(-limit)
+    return mergeEnvelopesByUid(batches).slice(-mergeCap)
   } finally {
     lock.release()
     try {

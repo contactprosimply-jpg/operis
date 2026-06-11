@@ -8,7 +8,7 @@ interface RateEntry {
 const store = new Map<string, RateEntry>()
 
 const WINDOW_MS = 60 * 60 * 1000 // 1 hour
-const MAX_REQUESTS = 10
+const MAX_REQUESTS = 45 // sync auto ~12/h + clics manuels
 
 export function checkRateLimit(userId: string): { allowed: boolean; retryAfterMinutes: number } {
   const now = Date.now()
