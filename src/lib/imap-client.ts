@@ -51,9 +51,9 @@ export function createImapClient(config: MailAccountConfig): ImapFlow {
       pass: config.imap_pass,
     },
     logger: false,
-    connectionTimeout: 12000,
-    greetingTimeout: 12000,
-    socketTimeout: 45000,
+    connectionTimeout: 25000,
+    greetingTimeout: 25000,
+    socketTimeout: 90000,
     tls: { minVersion: 'TLSv1.2' },
   })
 }
@@ -68,6 +68,12 @@ function sinceDate(sinceDays: number): Date {
 function startOfToday(): Date {
   const d = new Date()
   d.setHours(0, 0, 0, 0)
+  return d
+}
+
+function sinceHoursAgo(hours: number): Date {
+  const d = new Date()
+  d.setHours(d.getHours() - hours)
   return d
 }
 
@@ -230,15 +236,34 @@ export async function fetchRecentEnvelopes(
 
   try {
     const batches: ImapEnvelopeMeta[][] = []
-    const today = startOfToday()
     const mergeCap = Math.max(limit, 100)
 
-    // Toujours inclure les mails du jour (évite une boîte figée sur « hier »)
     if (!fullScan) {
-      batches.push(await fetchEnvelopeBySinceStream(client, today, mergeCap, accountUser))
+      // Fraîcheur : 48 h + non-lus (indépendant du last_sync_uid)
+      batches.push(await fetchEnvelopeBySinceStream(client, sinceHoursAgo(48), mergeCap, accountUser))
+      batches.push(await fetchEnvelopeBySinceStream(client, startOfToday(), mergeCap, accountUser))
+
+      try {
+        const unseenUids = await client.search({ seen: false }, { uid: true })
+        if (Array.isArray(unseenUids) && unseenUids.length) {
+          batches.push(await fetchEnvelopeByUidRange(client, unseenUids, mergeCap, accountUser))
+        }
+      } catch {
+        /* certains serveurs IMAP ne supportent pas seen:false */
+      }
+
+      const recentSince = sinceDate(3)
+      try {
+        const recentUids = await client.search({ since: recentSince }, { uid: true })
+        if (Array.isArray(recentUids) && recentUids.length) {
+          batches.push(await fetchEnvelopeByUidRange(client, recentUids, mergeCap, accountUser))
+        }
+      } catch {
+        /* fallback sur le flux since */
+      }
     }
 
-    if (minUid > 0) {
+    if (minUid > 0 && fullScan) {
       const newUids = await client.search({ uid: `${minUid + 1}:*` }, { uid: true })
       if (Array.isArray(newUids) && newUids.length) {
         batches.push(await fetchEnvelopeByUidRange(client, newUids, mergeCap, accountUser))

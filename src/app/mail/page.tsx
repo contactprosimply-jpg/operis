@@ -375,21 +375,34 @@ export default function MailPage() {
       })
       const data = await res.json()
       if (data.success) {
-        const { stored = 0, updated = 0, quickStored = 0, accounts } = data.data ?? {}
+        const {
+          stored = 0,
+          updated = 0,
+          quickStored = 0,
+          fetched = 0,
+          errors = 0,
+          duplicates = 0,
+          accounts,
+        } = data.data ?? {}
         const total = stored + updated
         const myReport = accounts?.find((a: { user_id: string }) => a.user_id === userId)
         if (myReport?.status === 'skipped' && myReport.reason === 'compte_mail_non_configure') {
           const msg = 'Paramètres → Messagerie : configurez IMAP pour ce compte'
           if (!silent) showToast(msg)
           setAutoSyncStatus('Messagerie non configurée')
-        } else if (!silent && total === 0) {
-          showToast('Boîte à jour')
-        } else if (total > 0) {
-          showToast(`${total} email(s) synchronisé(s)`)
-        } else if (!silent && quickStored > 0) {
-          showToast(`${quickStored} nouveau(x) email(s)`)
-        }
-        if (!myReport || myReport.status !== 'skipped') {
+        } else {
+          const summary = `${fetched} lus · ${stored} nouveaux · ${updated} maj · ${errors} err`
+          if (!silent && errors > 0) {
+            showToast(`Sync : ${summary}`)
+          } else if (!silent && total === 0 && fetched === 0) {
+            showToast('IMAP : aucun mail récupéré — vérifiez Paramètres → Messagerie')
+          } else if (!silent && total === 0) {
+            showToast(`Boîte à jour (${fetched} vérifiés, ${duplicates} déjà en base)`)
+          } else if (!silent && total > 0) {
+            showToast(`${total} email(s) synchronisé(s) · ${summary}`)
+          } else if (!silent && quickStored > 0) {
+            showToast(`${quickStored} nouveau(x) email(s)`)
+          }
           setAutoSyncStatus(`Synchro : ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
         }
         await loadEmails(true)

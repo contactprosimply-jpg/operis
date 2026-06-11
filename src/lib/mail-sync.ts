@@ -41,6 +41,7 @@ export interface MailSyncResult {
   errors: number
   maxUid: number
   quickStored?: number
+  skippedOutbound?: number
   accounts?: MailSyncAccountReport[]
 }
 
@@ -263,11 +264,12 @@ export async function syncMailAccount(
   const backfill = options.backfill === true
   const quick = options.quick === true || !backfill
 
+  // Quick : pas de minUid (dédup par message_id) — évite les boîtes figées si last_sync_uid est faux
   const fetchOpts = quick && !backfill
-    ? { sinceDays: 45, limit: 150, minUid: account.last_sync_uid ?? 0, fullScan: false }
+    ? { sinceDays: 21, limit: 200, minUid: 0, fullScan: false }
     : backfill
-      ? { sinceDays: 180, limit: 250, minUid: 0, fullScan: true }
-      : { sinceDays: 60, limit: 120, minUid: account.last_sync_uid ?? 0, fullScan: false }
+      ? { sinceDays: 180, limit: 300, minUid: 0, fullScan: true }
+      : { sinceDays: 45, limit: 150, minUid: 0, fullScan: false }
 
   const db = createAdminClient()
   const result: MailSyncResult = {
@@ -288,6 +290,7 @@ export async function syncMailAccount(
   }
 
   const inbound = envelopes.filter(e => !isOwnOutbound(e.from, account.imap_user))
+  result.skippedOutbound = envelopes.length - inbound.length
   const existingIds = await loadExistingMessageIds(db, userId, inbound.map(e => e.messageId))
 
   const newEnvelopes: ImapEnvelopeMeta[] = []
@@ -322,17 +325,20 @@ export async function syncMailAccount(
     }
   }
 
-  // Mise à jour AO sur emails existants (sujet seul — rapide)
+  // Mise à jour emails déjà en base (lu/non-lu + AO)
   for (const envelope of existingEnvelopes) {
     const d = detectAo(envelope.subject, '')
+    const patch: Record<string, unknown> = { is_read: envelope.isRead }
     if (d.isAo || d.score > 0) {
-      await db.from('emails')
-        .update({ is_ao: d.isAo, ao_score: d.score, is_read: envelope.isRead })
-        .eq('user_id', userId)
-        .eq('message_id', envelope.messageId)
-      result.updated++
+      patch.is_ao = d.isAo
+      patch.ao_score = d.score
       if (d.isAo) result.aoDetected++
     }
+    await db.from('emails')
+      .update(patch)
+      .eq('user_id', userId)
+      .eq('message_id', envelope.messageId)
+    result.updated++
   }
 
   // Phase 2 — corps + PJ uniquement pour les nouveaux (limité pour rester < 60s)

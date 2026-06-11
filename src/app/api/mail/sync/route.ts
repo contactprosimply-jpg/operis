@@ -12,17 +12,18 @@ export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
-  const rate = checkRateLimit(userId)
+  const body = await req.json().catch(() => ({}))
+  const backfill = body?.backfill === true
+  const quick = body?.quick === true
+
+  // Sync manuelle (backfill) : pas de rate limit — l'utilisateur force la mise à jour
+  const rate = backfill ? { allowed: true, retryAfterMinutes: 0 } : checkRateLimit(userId)
   if (!rate.allowed) {
     return Response.json({
       success: false,
       error: `Limite de synchronisation atteinte. Réessayez dans ${rate.retryAfterMinutes} minute${rate.retryAfterMinutes > 1 ? 's' : ''}.`,
     }, { status: 429 })
   }
-
-  const body = await req.json().catch(() => ({}))
-  const backfill = body?.backfill === true
-  const quick = body?.quick === true
 
   const ctx = await getFamilyContext(userId)
 
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
   try {
     if (ctx.isOwner) {
       const result = await syncFamilyMailAccounts(userId, { backfill, quick })
+      console.log(`[mail/sync] family owner=${userId} fetched=${result.fetched} stored=${result.stored} errors=${result.errors}`)
       return Response.json({ success: true, data: result })
     }
 
@@ -66,6 +68,7 @@ export async function POST(req: NextRequest) {
         stored: result.stored,
         fetched: result.fetched,
       }]
+      console.log(`[mail/sync] user=${userId} imap=${account.imap_user} fetched=${result.fetched} stored=${result.stored} errors=${result.errors} outbound=${result.skippedOutbound ?? 0}`)
       return Response.json({ success: true, data: result })
     } catch (syncErr) {
       return Response.json({
