@@ -157,6 +157,51 @@ function isOwnOutbound(fromAddress: string, toAddress: string, accountEmail: str
   return true
 }
 
+function isLikelyInbound(fromAddress: string, accountEmail: string): boolean {
+  const from = extractEmailAddress(fromAddress)
+  const own = extractEmailAddress(accountEmail) || accountEmail.toLowerCase().trim()
+  return !!from && from !== own
+}
+
+/** Corrige les mails reçus classés en Envoyés (ou envoyés bloqués en Inbox). */
+async function reconcileMailFolders(
+  db: SupabaseClient,
+  userId: string,
+  accountEmail: string,
+): Promise<number> {
+  const own = extractEmailAddress(accountEmail) || accountEmail.toLowerCase().trim()
+  if (!own) return 0
+
+  let fixed = 0
+  const { data: misSent } = await db
+    .from('emails')
+    .select('id, from_address')
+    .eq('user_id', userId)
+    .eq('mail_folder', 'sent')
+
+  for (const row of misSent ?? []) {
+    if (isLikelyInbound(row.from_address ?? '', accountEmail)) {
+      await db.from('emails').update({ mail_folder: 'inbox' }).eq('id', row.id)
+      fixed++
+    }
+  }
+
+  const { data: misInbox } = await db
+    .from('emails')
+    .select('id, from_address')
+    .eq('user_id', userId)
+    .or('mail_folder.eq.inbox,mail_folder.is.null')
+
+  for (const row of misInbox ?? []) {
+    if (isOwnOutbound(row.from_address ?? '', '', accountEmail)) {
+      await db.from('emails').update({ mail_folder: 'sent' }).eq('id', row.id)
+      fixed++
+    }
+  }
+
+  return fixed
+}
+
 type DbMailFolder = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam'
 
 function envelopeMessageId(
@@ -314,9 +359,12 @@ async function syncOneMailboxFolder(
     result.maxUid = Math.max(result.maxUid, ...envelopes.map(m => m.uid))
   }
 
-  const candidates = job.skipOutbound
+  let candidates = job.skipOutbound
     ? envelopes.filter(e => !isOwnOutbound(e.from, e.to, account.imap_user))
     : envelopes
+  if (job.folder === 'sent') {
+    candidates = candidates.filter(e => isOwnOutbound(e.from, e.to, account.imap_user))
+  }
   if (job.skipOutbound) {
     result.skippedOutbound = (result.skippedOutbound ?? 0) + (envelopes.length - candidates.length)
   }
@@ -359,6 +407,12 @@ async function syncOneMailboxFolder(
   }
 
   for (const envelope of existingEnvelopes) {
+    if (job.folder === 'sent' && !isOwnOutbound(envelope.from, envelope.to, account.imap_user)) {
+      continue
+    }
+    if (job.folder === 'inbox' && isOwnOutbound(envelope.from, envelope.to, account.imap_user)) {
+      continue
+    }
     const patch: Record<string, unknown> = {
       is_read: envelope.isRead,
       mail_folder: job.folder,
@@ -493,12 +547,15 @@ export async function syncMailAccount(
     skippedOutbound: 0,
   }
 
+  const reconciled = await reconcileMailFolders(db, userId, account.imap_user)
+  if (reconciled > 0) result.updated += reconciled
+
   const mailboxes = await resolveSpecialMailboxes(account)
   result.mailboxes = mailboxes
   if (!mailboxes.sent) {
     console.warn(`[Mail sync] dossier Envoyés introuvable pour ${account.imap_user}`)
   }
-  const inboxSince = fullScan ? 180 : quick ? 21 : 45
+  const inboxSince = fullScan ? 180 : quick ? 35 : 45
   const inboxLimit = fullScan ? 300 : quick ? 200 : 150
 
   const jobs: Array<{

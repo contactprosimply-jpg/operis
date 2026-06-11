@@ -1,4 +1,5 @@
 import { ImapFlow } from 'imapflow'
+import { extractEmailAddress } from '@/lib/mail-attachments'
 
 export interface MailAccountConfig {
   imap_host: string
@@ -239,7 +240,7 @@ export interface ResolvedMailboxes {
 const MAILBOX_NAME_HINTS: Record<Exclude<keyof ResolvedMailboxes, 'inbox'>, string[]> = {
   sent: [
     'sent', 'envoyés', 'envoyes', 'éléments envoyés', 'elements envoyes',
-    'sent items', 'sent messages', 'sent mail', 'outbox', 'mail sent',
+    'sent items', 'sent messages',
   ],
   drafts: ['drafts', 'draft', 'brouillons', 'brouillon'],
   trash: ['trash', 'deleted', 'corbeille', 'supprimés', 'supprimes'],
@@ -259,7 +260,30 @@ const PROBE_MAILBOX_PATHS: Record<Exclude<keyof ResolvedMailboxes, 'inbox'>, str
 function pathMatchesHint(path: string, hint: string): boolean {
   const lower = path.toLowerCase()
   const leaf = lower.split(/[./]/).pop() ?? lower
-  return leaf === hint || lower.endsWith(`/${hint}`) || lower.endsWith(`.${hint}`) || lower.includes(hint)
+  const h = hint.toLowerCase()
+  return leaf === h || lower.endsWith(`/${h}`) || lower.endsWith(`.${h}`)
+}
+
+/** Vérifie que le dossier contient bien des envois (pas du courrier entrant). */
+async function validateSentMailboxOnClient(
+  client: ImapFlow,
+  mailboxPath: string,
+  accountUser: string,
+): Promise<boolean> {
+  try {
+    const lock = await client.getMailboxLock(mailboxPath)
+    try {
+      const envelopes = await fetchEnvelopeBySequence(client, 10, accountUser, sinceDate(365))
+      if (!envelopes.length) return true
+      const own = extractEmailAddress(accountUser) || accountUser.toLowerCase().trim()
+      const outbound = envelopes.filter(e => extractEmailAddress(e.from) === own).length
+      return outbound >= Math.ceil(envelopes.length / 2)
+    } finally {
+      lock.release()
+    }
+  } catch {
+    return false
+  }
 }
 
 async function probeMailboxPath(client: ImapFlow, path: string): Promise<boolean> {
@@ -305,6 +329,14 @@ export async function resolveSpecialMailboxes(config: MailAccountConfig): Promis
           result[kind] = path
           break
         }
+      }
+    }
+    if (result.sent) {
+      const accountUser = config.imap_user.trim()
+      const valid = await validateSentMailboxOnClient(client, result.sent, accountUser)
+      if (!valid) {
+        console.warn(`[IMAP] dossier "${result.sent}" ignoré — contient du courrier reçu, pas des envoyés`)
+        delete result.sent
       }
     }
     return result

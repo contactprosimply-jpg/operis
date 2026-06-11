@@ -14,8 +14,6 @@ import {
 import type { Email, EmailLabel } from '@/types/database'
 import { getMailUserScope } from '@/lib/mail-access'
 import { resolveMailAccount } from '@/lib/mail-sync'
-import { extractEmailAddress } from '@/lib/mail-attachments'
-
 function sentListKey(subject: string | null | undefined, to: string | null | undefined, at: string | null | undefined): string {
   return `${subject ?? ''}|${to ?? ''}|${(at ?? '').slice(0, 16)}`
 }
@@ -68,9 +66,6 @@ export async function GET(req: NextRequest) {
   const folder = searchParams.get('folder')
   const sentFolder = folder === 'sent'
   const mailAccount = sentFolder ? await resolveMailAccount(userId) : null
-  const ownEmail = mailAccount?.imap_user
-    ? (extractEmailAddress(mailAccount.imap_user) || mailAccount.imap_user.toLowerCase().trim())
-    : null
 
   const applyFilters = (
     query: ReturnType<typeof db.from>,
@@ -88,14 +83,8 @@ export async function GET(req: NextRequest) {
     if (folder && ['inbox', 'sent', 'drafts', 'trash', 'spam'].includes(folder)) {
       if (folder === 'inbox' && useFolderColumn) {
         q = q.or('mail_folder.eq.inbox,mail_folder.is.null')
-      } else if (folder === 'sent') {
-        if (useFolderColumn && ownEmail) {
-          q = q.or(`mail_folder.eq.sent,from_address.ilike.%${ownEmail}%`)
-        } else if (useFolderColumn) {
-          q = q.eq('mail_folder', 'sent')
-        } else if (ownEmail) {
-          q = q.ilike('from_address', `%${ownEmail}%`)
-        }
+      } else if (folder === 'sent' && useFolderColumn) {
+        q = q.eq('mail_folder', 'sent')
       } else if (useFolderColumn) {
         q = q.eq('mail_folder', folder)
       }
