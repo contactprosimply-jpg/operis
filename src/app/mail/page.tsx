@@ -375,16 +375,23 @@ export default function MailPage() {
       })
       const data = await res.json()
       if (data.success) {
-        const { stored = 0, updated = 0, quickStored = 0 } = data.data ?? {}
+        const { stored = 0, updated = 0, quickStored = 0, accounts } = data.data ?? {}
         const total = stored + updated
-        if (!silent && total === 0) {
+        const myReport = accounts?.find((a: { user_id: string }) => a.user_id === userId)
+        if (myReport?.status === 'skipped' && myReport.reason === 'compte_mail_non_configure') {
+          const msg = 'Paramètres → Messagerie : configurez IMAP pour ce compte'
+          if (!silent) showToast(msg)
+          setAutoSyncStatus('Messagerie non configurée')
+        } else if (!silent && total === 0) {
           showToast('Boîte à jour')
         } else if (total > 0) {
           showToast(`${total} email(s) synchronisé(s)`)
         } else if (!silent && quickStored > 0) {
           showToast(`${quickStored} nouveau(x) email(s)`)
         }
-        setAutoSyncStatus(`Synchro : ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
+        if (!myReport || myReport.status !== 'skipped') {
+          setAutoSyncStatus(`Synchro : ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
+        }
         if (stored > 0 || updated > 0 || quickStored > 0) {
           await loadEmails(true)
           const sid = selectedIdRef.current
@@ -392,12 +399,20 @@ export default function MailPage() {
         }
       } else {
         const err = data.error ?? 'Synchronisation impossible'
+        const accounts = data.data?.accounts as Array<{ status: string; reason?: string; email?: string }> | undefined
+        const failed = accounts?.find(a => a.status === 'error')
         if (!silent) {
-          if (err.includes('compte mail')) {
-            showToast('Configurez votre messagerie dans Paramètres')
+          if (err.includes('compte mail') || err.includes('Messagerie')) {
+            showToast('Paramètres → Messagerie : configurez IMAP et mot de passe')
+          } else if (failed?.reason) {
+            showToast(`Erreur IMAP : ${failed.reason}`)
           } else {
             showToast(`Erreur : ${err}`)
           }
+        } else if (err.includes('compte mail') || err.includes('Messagerie')) {
+          setAutoSyncStatus('Messagerie non configurée')
+        } else if (failed?.reason) {
+          setAutoSyncStatus(`Erreur sync : ${failed.reason.slice(0, 40)}`)
         }
       }
     } catch (e: unknown) {

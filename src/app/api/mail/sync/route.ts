@@ -43,12 +43,45 @@ export async function POST(req: NextRequest) {
     if (!account) {
       return Response.json({
         success: false,
-        error: 'Aucun compte mail configure. Va dans Parametres > Messagerie.',
+        error: 'Aucun compte mail configuré. Paramètres → Messagerie : enregistrez votre email IMAP et mot de passe, puis testez la connexion.',
+        data: {
+          accounts: [{
+            user_id: userId,
+            email: null,
+            display_name: null,
+            status: 'skipped',
+            reason: 'compte_mail_non_configure',
+          }],
+        },
       }, { status: 400 })
     }
 
-    const result = await syncMailAccount(userId, account, { backfill, quick })
-    return Response.json({ success: true, data: result })
+    try {
+      const result = await syncMailAccount(userId, account, { backfill, quick })
+      result.accounts = [{
+        user_id: userId,
+        email: account.imap_user,
+        display_name: null,
+        status: 'ok',
+        stored: result.stored,
+        fetched: result.fetched,
+      }]
+      return Response.json({ success: true, data: result })
+    } catch (syncErr) {
+      return Response.json({
+        success: false,
+        error: `Erreur IMAP: ${formatImapError(syncErr)}`,
+        data: {
+          accounts: [{
+            user_id: userId,
+            email: account.imap_user,
+            display_name: null,
+            status: 'error',
+            reason: formatImapError(syncErr),
+          }],
+        },
+      }, { status: 500 })
+    }
   } catch (e) {
     return Response.json({
       success: false,

@@ -3,8 +3,15 @@
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
-import { EMAIL_LIST_FIELDS, mergeLabels, tenderAutoLabel, toListEmail } from '@/lib/mail-api'
-import type { EmailLabel } from '@/types/database'
+import {
+  EMAIL_LIST_FIELDS,
+  EMAIL_LIST_FIELDS_LEGACY,
+  isMissingDbColumnError,
+  mergeLabels,
+  tenderAutoLabel,
+  toListEmail,
+} from '@/lib/mail-api'
+import type { Email, EmailLabel } from '@/types/database'
 import { getMailUserScope } from '@/lib/mail-access'
 
 export async function GET(req: NextRequest) {
@@ -30,45 +37,60 @@ export async function GET(req: NextRequest) {
 
   const scope = await getMailUserScope(userId)
   const db = createAdminClient()
+  const limit = Math.min(Number(searchParams.get('limit') || 250), 500)
 
-  let query = db
-    .from('emails')
-    .select(EMAIL_LIST_FIELDS)
-    .order('received_at', { ascending: false })
-    .limit(Math.min(Number(searchParams.get('limit') || 250), 500))
+  const applyFilters = (
+    query: ReturnType<typeof db.from>,
+    fields: string,
+    useV8Filters: boolean,
+  ) => {
+    let q = query
+      .select(fields)
+      .order('received_at', { ascending: false })
+      .limit(limit)
 
-  if (view === 'team' && scope.isOwner) {
-    query = query.in('user_id', scope.allowedUserIds)
-  } else if (memberId && scope.isOwner && scope.allowedUserIds.includes(memberId)) {
-    query = query.eq('user_id', memberId)
-  } else {
-    query = query.eq('user_id', userId)
-  }
-
-  if (isAo !== undefined) query = query.eq('is_ao', isAo)
-  if (isRead !== undefined) query = query.eq('is_read', isRead)
-  if (hasAttachments) query = query.eq('has_attachments', true)
-  if (unlinked) query = query.is('tender_id', null)
-  if (tenderId) query = query.eq('tender_id', tenderId)
-  if (priority && ['urgent', 'normal', 'info'].includes(priority)) {
-    query = query.eq('priority', priority)
-  }
-  if (fromQuery) query = query.ilike('from_address', `%${fromQuery}%`)
-  if (since) query = query.gte('received_at', since)
-  if (until) query = query.lte('received_at', until)
-  if (labelFilter) query = query.contains('labels', [{ name: labelFilter }] as EmailLabel[])
-  if (sourceMemberId && scope.isOwner) {
-    if (sourceMemberId === 'owner') {
-      query = query.eq('user_id', userId).is('source_member_id', null)
-    } else if (scope.allowedUserIds.includes(sourceMemberId)) {
-      query = query.eq('source_member_id', sourceMemberId)
+    if (view === 'team' && scope.isOwner) {
+      q = q.in('user_id', scope.allowedUserIds)
+    } else if (memberId && scope.isOwner && scope.allowedUserIds.includes(memberId)) {
+      q = q.eq('user_id', memberId)
+    } else {
+      q = q.eq('user_id', userId)
     }
+
+    if (isAo !== undefined) q = q.eq('is_ao', isAo)
+    if (isRead !== undefined) q = q.eq('is_read', isRead)
+    if (hasAttachments) q = q.eq('has_attachments', true)
+    if (unlinked) q = q.is('tender_id', null)
+    if (tenderId) q = q.eq('tender_id', tenderId)
+    if (useV8Filters && priority && ['urgent', 'normal', 'info'].includes(priority)) {
+      q = q.eq('priority', priority)
+    }
+    if (fromQuery) q = q.ilike('from_address', `%${fromQuery}%`)
+    if (since) q = q.gte('received_at', since)
+    if (until) q = q.lte('received_at', until)
+    if (useV8Filters && labelFilter) {
+      q = q.contains('labels', [{ name: labelFilter }] as EmailLabel[])
+    }
+    if (useV8Filters && sourceMemberId && scope.isOwner) {
+      if (sourceMemberId === 'owner') {
+        q = q.eq('user_id', userId).is('source_member_id', null)
+      } else if (scope.allowedUserIds.includes(sourceMemberId)) {
+        q = q.eq('source_member_id', sourceMemberId)
+      }
+    }
+    return q
   }
 
-  const { data, error } = await query
+  let { data, error } = await applyFilters(db.from('emails'), EMAIL_LIST_FIELDS, true)
+  if (error && isMissingDbColumnError(error.message)) {
+    const legacy = await applyFilters(db.from('emails'), EMAIL_LIST_FIELDS_LEGACY, false)
+    data = legacy.data
+    error = legacy.error
+  }
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
 
-  return Response.json({ success: true, data: (data ?? []).map(toListEmail) })
+  const rows = (data ?? []) as unknown as Email[]
+  return Response.json({ success: true, data: rows.map(toListEmail) })
 }
 
 export async function PATCH(req: NextRequest) {

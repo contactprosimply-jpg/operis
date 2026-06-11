@@ -22,6 +22,16 @@ function addressObjectText(addr: AddressObject | AddressObject[] | undefined): s
   return addr.text ?? addr.value?.[0]?.address ?? ''
 }
 
+export interface MailSyncAccountReport {
+  user_id: string
+  email: string | null
+  display_name: string | null
+  status: 'ok' | 'skipped' | 'error'
+  reason?: string
+  stored?: number
+  fetched?: number
+}
+
 export interface MailSyncResult {
   fetched: number
   stored: number
@@ -31,7 +41,10 @@ export interface MailSyncResult {
   errors: number
   maxUid: number
   quickStored?: number
+  accounts?: MailSyncAccountReport[]
 }
+
+const ENV_MAIL_FALLBACK_USER_ID = '46dc77c8-f312-4714-b59c-a7d9c693372f'
 
 export type MailAccountWithId = MailAccountConfig & {
   id?: string
@@ -74,19 +87,23 @@ export async function resolveMailAccount(userId: string): Promise<MailAccountWit
     .eq('is_active', true)
     .maybeSingle()
 
-  if (account?.imap_user && account?.imap_pass) {
-    return {
-      id: account.id,
-      imap_host: account.imap_host || 'mail.gandi.net',
-      imap_port: Number(account.imap_port) || 993,
-      imap_user: account.imap_user,
-      imap_pass: account.imap_pass,
-      last_sync_uid: account.last_sync_uid ?? 0,
+  if (account) {
+    if (account.imap_user && account.imap_pass) {
+      return {
+        id: account.id,
+        imap_host: account.imap_host || 'mail.gandi.net',
+        imap_port: Number(account.imap_port) || 993,
+        imap_user: account.imap_user,
+        imap_pass: account.imap_pass,
+        last_sync_uid: account.last_sync_uid ?? 0,
+      }
     }
+    // Ligne existante sans mot de passe — ne pas retomber sur les variables d'env
+    return null
   }
 
   const envAccount = getEnvMailAccount()
-  if (envAccount) return envAccount
+  if (envAccount && userId === ENV_MAIL_FALLBACK_USER_ID) return envAccount
 
   return null
 }
@@ -181,10 +198,15 @@ async function quickInsertFromEnvelope(
 
   let { data: inserted, error } = await db.from('emails').insert(insertPayload).select('id').single()
 
-  if (error && (error.message.includes('attachments') || error.message.includes('has_attachments'))) {
-    delete insertPayload.attachments
-    delete insertPayload.has_attachments
-    const retry = await db.from('emails').insert(insertPayload).select('id').single()
+  if (error) {
+    const fallback: Record<string, unknown> = { ...insertPayload }
+    delete fallback.attachments
+    delete fallback.has_attachments
+    delete fallback.source_member_id
+    delete fallback.source_member_name
+    delete fallback.priority
+    delete fallback.labels
+    const retry = await db.from('emails').insert(fallback).select('id').single()
     inserted = retry.data
     error = retry.error
   }
@@ -417,6 +439,54 @@ export async function syncMailAccount(
   return result
 }
 
+async function syncOneAccount(
+  userId: string,
+  email: string | null,
+  displayName: string | null,
+  options: { backfill?: boolean; quick?: boolean },
+  source?: MailSourceMeta,
+): Promise<{ report: MailSyncAccountReport; result: MailSyncResult | null }> {
+  const account = await resolveMailAccount(userId)
+  if (!account) {
+    return {
+      report: {
+        user_id: userId,
+        email,
+        display_name: displayName,
+        status: 'skipped',
+        reason: 'compte_mail_non_configure',
+      },
+      result: null,
+    }
+  }
+
+  try {
+    const result = await syncMailAccount(userId, account, options, source)
+    return {
+      report: {
+        user_id: userId,
+        email: email ?? account.imap_user,
+        display_name: displayName,
+        status: 'ok',
+        stored: result.stored,
+        fetched: result.fetched,
+      },
+      result,
+    }
+  } catch (e) {
+    return {
+      report: {
+        user_id: userId,
+        email: email ?? account.imap_user,
+        display_name: displayName,
+        status: 'error',
+        reason: formatImapError(e),
+      },
+      result: null,
+    }
+  }
+}
+
 export async function syncFamilyMailAccounts(
   ownerId: string,
   options: { backfill?: boolean; quick?: boolean } = {},
@@ -432,26 +502,37 @@ export async function syncFamilyMailAccounts(
     errors: 0,
     maxUid: 0,
     quickStored: 0,
+    accounts: [],
   }
 
-  const ownerAccount = await resolveMailAccount(ownerId)
-  if (ownerAccount) {
-    mergeSyncResults(aggregated, await syncMailAccount(ownerId, ownerAccount, options))
-  }
+  const ownerMember = ctx.members.find(m => m.user_id === ownerId)
+  const ownerSync = await syncOneAccount(
+    ownerId,
+    ownerMember?.email ?? null,
+    ownerMember?.display_name ?? null,
+    options,
+  )
+  aggregated.accounts!.push(ownerSync.report)
+  if (ownerSync.result) mergeSyncResults(aggregated, ownerSync.result)
+  else if (ownerSync.report.status === 'error') aggregated.errors++
 
   if (!ctx.isOwner) return aggregated
 
   for (const member of ctx.members) {
     if (member.user_id === ownerId) continue
-    const account = await resolveMailAccount(member.user_id)
-    if (!account) continue
-    mergeSyncResults(
-      aggregated,
-      await syncMailAccount(member.user_id, account, options, {
+    const memberSync = await syncOneAccount(
+      member.user_id,
+      member.email,
+      member.display_name,
+      options,
+      {
         sourceMemberId: member.user_id,
         sourceMemberName: memberDisplayName(member),
-      }),
+      },
     )
+    aggregated.accounts!.push(memberSync.report)
+    if (memberSync.result) mergeSyncResults(aggregated, memberSync.result)
+    else if (memberSync.report.status === 'error') aggregated.errors++
   }
 
   return aggregated
