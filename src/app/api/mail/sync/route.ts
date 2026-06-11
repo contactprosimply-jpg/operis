@@ -1,7 +1,7 @@
 ﻿export const dynamic = 'force-dynamic'
 
 import { NextRequest } from 'next/server'
-import { getUserFromRequest, unauthorized } from '@/lib/auth'
+import { getUserEmailFromRequest, getUserFromRequest, unauthorized } from '@/lib/auth'
 import { formatImapError, resolveMailAccount, syncUserMailAccounts } from '@/lib/mail-sync'
 import { checkRateLimit } from '@/lib/rateLimit'
 
@@ -10,6 +10,7 @@ export const maxDuration = 60
 export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
+  const loginEmail = await getUserEmailFromRequest(req)
 
   const body = await req.json().catch(() => ({}))
   const backfill = body?.backfill === true
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
   } catch { /* ignore */ }
   console.log(`[mail/sync] APP_ENV=${appEnv} supabase=${supabaseHost} user=${userId} personal`)
 
-  const account = await resolveMailAccount(userId)
+  const account = await resolveMailAccount(userId, { loginEmail })
   if (!account) {
     return Response.json({
       success: false,
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await syncUserMailAccounts(userId, { backfill, quick })
+    const result = await syncUserMailAccounts(userId, { backfill, quick, loginEmail })
     console.log(`[mail/sync] user=${userId} fetched=${result.fetched} stored=${result.stored} errors=${result.errors}`)
     return Response.json({ success: true, data: result })
   } catch (e) {

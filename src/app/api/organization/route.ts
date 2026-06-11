@@ -8,30 +8,8 @@ export async function GET(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
-  const db = createAdminClient()
-
-  // Get organization where user is owner or member
-  const { data: org } = await db
-    .from('organizations')
-    .select('*, organization_members(*)')
-    .eq('owner_id', userId)
-    .single()
-
-  if (!org) {
-    // Check if member of another org
-    const { data: membership } = await db
-      .from('organization_members')
-      .select('*, organizations(*)')
-      .eq('user_id', userId)
-      .single()
-
-    if (membership) {
-      return Response.json({ success: true, data: { ...membership.organizations, members: [] } })
-    }
-    return Response.json({ success: true, data: null })
-  }
-
-  return Response.json({ success: true, data: org })
+  // Famille désactivée — pas d'organisation / admin affiché pour l'instant
+  return Response.json({ success: true, data: null })
 }
 
 export async function POST(req: NextRequest) {

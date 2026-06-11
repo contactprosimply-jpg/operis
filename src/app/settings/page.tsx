@@ -6,6 +6,13 @@ import { Button, Field, useToast, Spinner } from '@/components/ui'
 import { buildFieldsSignatureHtml, saveSignatureToStorage } from '@/lib/email-signature'
 import { THEMES, applyTheme, DEFAULT_THEME_ID, DEFAULT_ACCENT } from '@/lib/theme'
 import { requestProductTour } from '@/lib/product-tour'
+import { useAuth } from '@/components/AuthProvider'
+
+type MailAccountRow = {
+  id: string
+  imap_user: string
+  last_sync?: string | null
+}
 
 const ACCENT_COLORS = ['#3b7ef6', '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316']
 
@@ -17,6 +24,7 @@ const TABS = [
 ]
 
 export default function SettingsPage() {
+  const { session } = useAuth()
   const { show, ToastComponent } = useToast()
   const [tab, setTab] = useState('general')
   const [loading, setLoading] = useState(true)
@@ -34,17 +42,35 @@ export default function SettingsPage() {
   const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT)
 
   const [resettingTenders, setResettingTenders] = useState(false)
+  const [mailAccounts, setMailAccounts] = useState<MailAccountRow[]>([])
+  const [deletingMailId, setDeletingMailId] = useState<string | null>(null)
+
+  const loadMailAccounts = async () => {
+    const res = await authFetch('/api/mail/accounts')
+    const data = await res.json()
+    if (!data.success) return
+    const list: MailAccountRow[] = Array.isArray(data.accounts)
+      ? data.accounts
+      : data.data ? [data.data] : []
+    setMailAccounts(list)
+    const primary = data.data ?? list[0]
+    if (primary) {
+      setImap(i => ({
+        ...i,
+        imap_host: primary.imap_host ?? 'mail.gandi.net',
+        imap_port: String(primary.imap_port ?? 993),
+        imap_user: primary.imap_user ?? '',
+      }))
+    } else if (session?.user?.email) {
+      setImap(i => ({ ...i, imap_user: session.user.email ?? '' }))
+    }
+  }
 
   useEffect(() => {
     const load = async () => {
       setLoading(true)
       try {
-        const res = await authFetch('/api/mail/accounts')
-        const data = await res.json()
-        if (data.success && data.data) {
-          const a = data.data
-          setImap(i => ({ ...i, imap_host: a.imap_host ?? 'mail.gandi.net', imap_port: String(a.imap_port ?? 993), imap_user: a.imap_user ?? '' }))
-        }
+        await loadMailAccounts()
         const savedSig = localStorage.getItem('operis_signature')
         const savedSigMode = localStorage.getItem('operis_signature_mode')
         const savedTheme = localStorage.getItem('operis_theme')
@@ -61,7 +87,7 @@ export default function SettingsPage() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [session?.user?.email])
 
   const handleSaveGeneral = () => {
     localStorage.setItem('operis_general', JSON.stringify(general))
@@ -107,10 +133,33 @@ export default function SettingsPage() {
     try {
       const res = await authFetch('/api/mail/accounts', { method: 'POST', body: JSON.stringify({ imap_host: imap.imap_host, imap_port: parseInt(imap.imap_port), imap_user: imap.imap_user, imap_pass: imap.imap_pass, smtp_host: imap.smtp_host, smtp_port: parseInt(imap.smtp_port), smtp_user: imap.imap_user, smtp_pass: imap.imap_pass }) })
       const data = await res.json()
-      if (data.success) show('Configuration sauvegardee')
-      else show(`Erreur : ${data.error}`)
+      if (data.success) {
+        show('Configuration sauvegardee')
+        await loadMailAccounts()
+      } else show(`Erreur : ${data.error}`)
     } catch (e: any) { show(`Erreur : ${e.message}`) }
     setSaving(false)
+  }
+
+  const handleDeleteMailAccount = async (account: MailAccountRow) => {
+    const ok = confirm(`Supprimer la boite ${account.imap_user} de ce compte Operis ?`)
+    if (!ok) return
+    setDeletingMailId(account.id)
+    try {
+      const res = await authFetch('/api/mail/accounts', {
+        method: 'DELETE',
+        body: JSON.stringify({ id: account.id }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        show(`${account.imap_user} supprimee`)
+        await loadMailAccounts()
+      } else show(`Erreur : ${data.error}`)
+    } catch (e: unknown) {
+      const err = e as { message?: string }
+      show(`Erreur : ${err.message ?? 'reseau'}`)
+    }
+    setDeletingMailId(null)
   }
 
   const handleSaveSig = () => {
@@ -227,6 +276,54 @@ export default function SettingsPage() {
         {/* MESSAGERIE */}
         {tab === 'messagerie' && (
           <>
+            {mailAccounts.length > 0 && (
+              <div style={card}>
+                <div style={sTitle}>Boites connectees</div>
+                <div style={sSub}>
+                  Un seul IMAP = votre email Operis ({session?.user?.email ?? 'login'}). Supprimez les boites en trop avant de tester.
+                </div>
+                {mailAccounts.map(account => {
+                  const isOwn = account.imap_user?.toLowerCase() === session?.user?.email?.toLowerCase()
+                  return (
+                    <div
+                      key={account.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
+                        marginBottom: 8, borderRadius: 8,
+                        border: `1px solid ${isOwn ? 'rgba(59,126,246,0.35)' : 'var(--border)'}`,
+                        background: isOwn ? 'var(--accent-soft)' : 'var(--bg-secondary)',
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, fontFamily: 'DM Mono, monospace' }}>{account.imap_user}</div>
+                        {account.last_sync && (
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>
+                            Sync : {new Date(account.last_sync).toLocaleString('fr-FR')}
+                          </div>
+                        )}
+                      </div>
+                      {isOwn && (
+                        <span style={{ fontSize: 9, background: 'var(--accent)', color: '#fff', padding: '2px 8px', borderRadius: 10, fontFamily: 'DM Mono, monospace' }}>
+                          ACTIF
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMailAccount(account)}
+                        disabled={deletingMailId === account.id}
+                        style={{
+                          background: 'none', border: '1px solid rgba(248,113,113,0.35)',
+                          color: '#f87171', borderRadius: 6, padding: '5px 10px', fontSize: 11,
+                          cursor: deletingMailId === account.id ? 'wait' : 'pointer', fontFamily: 'DM Sans, system-ui',
+                        }}
+                      >
+                        {deletingMailId === account.id ? '...' : 'Supprimer'}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
             <div style={card}>
               <div style={sTitle}>Serveur IMAP</div>
               <div style={sSub}>Connexion pour lire et importer tes emails</div>

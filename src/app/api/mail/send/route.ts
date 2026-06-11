@@ -1,7 +1,7 @@
 ﻿export const dynamic = 'force-dynamic'
 
 import { NextRequest } from 'next/server'
-import { getUserFromRequest, unauthorized } from '@/lib/auth'
+import { getUserEmailFromRequest, getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import nodemailer from 'nodemailer'
 import { clampString, rejectUnexpectedFields } from '@/lib/api-validation'
@@ -11,6 +11,7 @@ export const maxDuration = 30
 export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
+  const loginEmail = await getUserEmailFromRequest(req)
 
   const rawBody = await req.json()
   const unexpected = rejectUnexpectedFields(rawBody as Record<string, unknown>, [
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ success: false, error: 'Message ou signature requis' }, { status: 400 })
   }
 
-  const mailCfg = await resolveMailAccount(userId)
+  const mailCfg = await resolveMailAccount(userId, { loginEmail })
   if (!mailCfg?.id) {
     return Response.json({ success: false, error: 'Aucun compte mail configure' }, { status: 400 })
   }

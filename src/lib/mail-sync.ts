@@ -46,8 +46,6 @@ export interface MailSyncResult {
   accounts?: MailSyncAccountReport[]
 }
 
-const ENV_MAIL_FALLBACK_USER_ID = '46dc77c8-f312-4714-b59c-a7d9c693372f'
-
 export type MailAccountWithId = MailAccountConfig & {
   id?: string
   last_sync_uid?: number | null
@@ -69,16 +67,6 @@ function mergeSyncResults(target: MailSyncResult, part: MailSyncResult) {
   target.quickStored = (target.quickStored ?? 0) + (part.quickStored ?? 0)
 }
 
-function getEnvMailAccount(): MailAccountConfig | null {
-  if (!process.env.IMAP_USER || !process.env.IMAP_PASS) return null
-  return {
-    imap_host: process.env.IMAP_HOST || 'mail.gandi.net',
-    imap_port: Number(process.env.IMAP_PORT) || 993,
-    imap_user: process.env.IMAP_USER,
-    imap_pass: process.env.IMAP_PASS,
-  }
-}
-
 function mapMailAccountRow(account: {
   id: string
   imap_host?: string | null
@@ -98,7 +86,10 @@ function mapMailAccountRow(account: {
   }
 }
 
-export async function resolveMailAccounts(userId: string): Promise<MailAccountWithId[]> {
+export async function resolveMailAccounts(
+  userId: string,
+  options?: { loginEmail?: string | null },
+): Promise<MailAccountWithId[]> {
   const db = createAdminClient()
   const { data: rows } = await db
     .from('mail_accounts')
@@ -112,20 +103,20 @@ export async function resolveMailAccounts(userId: string): Promise<MailAccountWi
     if (mapped) accounts.push(mapped)
   }
 
-  if (accounts.length) return accounts
-
-  if (!rows?.length) {
-    const envAccount = getEnvMailAccount()
-    if (envAccount && userId === ENV_MAIL_FALLBACK_USER_ID) {
-      return [{ ...envAccount }]
-    }
+  const loginEmail = options?.loginEmail?.toLowerCase().trim()
+  if (loginEmail) {
+    const own = accounts.filter(a => a.imap_user?.toLowerCase().trim() === loginEmail)
+    if (own.length) return own
   }
 
-  return []
+  return accounts
 }
 
-export async function resolveMailAccount(userId: string): Promise<MailAccountWithId | null> {
-  const accounts = await resolveMailAccounts(userId)
+export async function resolveMailAccount(
+  userId: string,
+  options?: { loginEmail?: string | null },
+): Promise<MailAccountWithId | null> {
+  const accounts = await resolveMailAccounts(userId, options)
   return accounts[0] ?? null
 }
 
@@ -133,19 +124,7 @@ async function fetchEnvelopesWithFallback(
   account: MailAccountWithId,
   opts: { sinceDays: number; limit: number; minUid?: number; fullScan?: boolean },
 ) {
-  try {
-    return await fetchRecentEnvelopes(account, opts)
-  } catch (primaryError) {
-    const envAccount = getEnvMailAccount()
-    if (!envAccount) throw primaryError
-    const sameConfig =
-      envAccount.imap_host === account.imap_host &&
-      envAccount.imap_port === account.imap_port &&
-      envAccount.imap_user === account.imap_user &&
-      envAccount.imap_pass === account.imap_pass
-    if (sameConfig) throw primaryError
-    return fetchRecentEnvelopes(envAccount, opts)
-  }
+  return fetchRecentEnvelopes(account, opts)
 }
 
 async function saveEmailAttachments(
@@ -523,9 +502,9 @@ async function syncOneAccount(
 /** Sync tous les comptes IMAP du user connecté (messagerie personnelle). */
 export async function syncUserMailAccounts(
   userId: string,
-  options: { backfill?: boolean; quick?: boolean } = {},
+  options: { backfill?: boolean; quick?: boolean; loginEmail?: string | null } = {},
 ): Promise<MailSyncResult> {
-  const accounts = await resolveMailAccounts(userId)
+  const accounts = await resolveMailAccounts(userId, { loginEmail: options.loginEmail })
   const aggregated: MailSyncResult = {
     fetched: 0,
     stored: 0,
