@@ -7,12 +7,11 @@ import { tenderRepository } from '@/repositories/tender.repository'
 import { consultationRepository } from '@/repositories/consultation.repository'
 import { supplierRepository } from '@/repositories/supplier.repository'
 import { emailLogRepository } from '@/repositories/emailLog.repository'
-import { sendEmail } from '@/lib/mailer'
+import { sendUserEmail } from '@/lib/user-mailer'
 import { createAdminClient } from '@/lib/supabase'
 import { downloadDevisFile } from '@/lib/devis-storage'
 import { attachmentMetaOnly } from '@/lib/mail-storage'
 import { personalizeConsultationBody, buildConsultationDefaultBodyWithExtra } from '@/lib/email-compose'
-import { sendUserEmail } from '@/lib/user-mailer'
 import {
   CreateTenderPayload,
   UpdateTenderPayload,
@@ -273,12 +272,14 @@ export const tenderService = {
 
       const newCount = (current.relaunch_count ?? 0) + 1
       const newStatus = newCount >= 2 ? 'relance_2' : 'relance'
+      const bodyPlain = buildRelaunchEmail(tender, supplier.name, newCount)
+      const db = createAdminClient()
 
-      // 1. Envoyer l'email
-      await sendEmail({
+      // 1. Envoyer l'email depuis la messagerie du propriétaire de l'AO
+      const { text: sentText } = await sendUserEmail(db, userId, {
         to: supplier.email,
         subject: `Relance — ${tender.title}`,
-        body: buildRelaunchEmail(tender, supplier.name, newCount),
+        body: bodyPlain,
       })
 
       // 2. Update statut + date + compteur (atomique)
@@ -294,7 +295,7 @@ export const tenderService = {
         type: newCount >= 2 ? 'relance_2' : 'relance',
         to_address: supplier.email,
         subject: `Relance ${newCount} — ${tender.title}`,
-        body: buildRelaunchEmail(tender, supplier.name, newCount),
+        body: sentText,
         sent_at: new Date().toISOString(),
         success: true,
         error_message: null,
