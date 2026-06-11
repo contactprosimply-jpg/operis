@@ -2,8 +2,9 @@
 
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
-import { formatImapError, resolveMailAccount, syncMailAccount } from '@/lib/mail-sync'
+import { formatImapError, resolveMailAccount, syncFamilyMailAccounts, syncMailAccount } from '@/lib/mail-sync'
 import { checkRateLimit } from '@/lib/rateLimit'
+import { getFamilyContext } from '@/lib/family'
 
 export const maxDuration = 60
 
@@ -19,19 +20,33 @@ export async function POST(req: NextRequest) {
     }, { status: 429 })
   }
 
-  const account = await resolveMailAccount(userId)
-  if (!account) {
-    return Response.json({
-      success: false,
-      error: 'Aucun compte mail configure. Va dans Parametres > Messagerie.',
-    }, { status: 400 })
-  }
-
   const body = await req.json().catch(() => ({}))
   const backfill = body?.backfill === true
   const quick = body?.quick === true
 
+  const ctx = await getFamilyContext(userId)
+
+  const appEnv = process.env.APP_ENV || process.env.VERCEL_ENV || 'development'
+  let supabaseHost = 'unknown'
   try {
+    supabaseHost = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL || '').host
+  } catch { /* ignore */ }
+  console.log(`[mail/sync] APP_ENV=${appEnv} supabase=${supabaseHost} owner=${ctx.isOwner}`)
+
+  try {
+    if (ctx.isOwner) {
+      const result = await syncFamilyMailAccounts(userId, { backfill, quick })
+      return Response.json({ success: true, data: result })
+    }
+
+    const account = await resolveMailAccount(userId)
+    if (!account) {
+      return Response.json({
+        success: false,
+        error: 'Aucun compte mail configure. Va dans Parametres > Messagerie.',
+      }, { status: 400 })
+    }
+
     const result = await syncMailAccount(userId, account, { backfill, quick })
     return Response.json({ success: true, data: result })
   } catch (e) {

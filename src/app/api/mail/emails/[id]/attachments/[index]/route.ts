@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { normalizeAttachments } from '@/lib/mail-attachments'
 import { downloadAttachmentBuffer } from '@/lib/mail-storage'
+import { getMailUserScope } from '@/lib/mail-access'
 
 export async function GET(
   req: NextRequest,
@@ -19,12 +20,13 @@ export async function GET(
     return Response.json({ success: false, error: 'Index invalide' }, { status: 400 })
   }
 
+  const scope = await getMailUserScope(userId)
   const db = createAdminClient()
   const { data: email, error } = await db
     .from('emails')
     .select('attachments')
     .eq('id', id)
-    .eq('user_id', userId)
+    .in('user_id', scope.allowedUserIds)
     .single()
 
   if (error || !email) {

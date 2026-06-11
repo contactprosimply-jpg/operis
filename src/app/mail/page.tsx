@@ -5,7 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
-import { Email, EmailAttachment } from '@/types/database'
+import { Email, EmailAttachment, EmailLabel, EmailPriority } from '@/types/database'
+import type { FamilyMember } from '@/lib/family'
+import { PRESET_EMAIL_LABELS } from '@/lib/mail-api'
 import { Spinner } from '@/components/ui'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
@@ -32,6 +34,32 @@ const inputStyle: React.CSSProperties = {
 }
 
 type MailFilter = 'all' | 'unread' | 'ao' | 'attachments'
+type MailboxView = 'mine' | 'team' | 'member'
+
+function getSourceLabel(email: Email, userId: string | undefined, members: FamilyMember[]): string | null {
+  if (email.source_member_name) return email.source_member_name
+  if (email.source_member_id) {
+    const m = members.find(f => f.user_id === email.source_member_id)
+    return m?.display_name?.trim() || m?.email?.split('@')[0] || 'Membre'
+  }
+  if (email.user_id && userId && email.user_id !== userId) {
+    const m = members.find(f => f.user_id === email.user_id)
+    return m?.display_name?.trim() || m?.email?.split('@')[0] || 'Membre'
+  }
+  return null
+}
+
+function getMemberColor(email: Email, userId: string | undefined, members: FamilyMember[]): string {
+  const memberId = email.source_member_id || (email.user_id !== userId ? email.user_id : null)
+  const m = members.find(f => f.user_id === memberId)
+  return m?.color || '#3b7ef6'
+}
+
+const PRIORITY_STYLES: Record<EmailPriority, { label: string; color: string; bg: string }> = {
+  urgent: { label: 'Urgent', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+  normal: { label: 'Normal', color: 'var(--text-muted)', bg: 'transparent' },
+  info: { label: 'Info', color: '#60a5fa', bg: 'rgba(96,165,250,0.12)' },
+}
 
 function formatMailTime(dateStr: string | null) {
   if (!dateStr) return ''
@@ -123,6 +151,21 @@ export default function MailPage() {
   const [tendersForLink, setTendersForLink] = useState<Array<{ id: string; title: string; client: string }>>([])
   const [linkingTender, setLinkingTender] = useState(false)
   const [filter, setFilter] = useState<MailFilter>('all')
+  const [mailboxView, setMailboxView] = useState<MailboxView>('mine')
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
+  const [isFamilyOwner, setIsFamilyOwner] = useState(false)
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([])
+  const [sendAsUserId, setSendAsUserId] = useState<string>('')
+  const [priorityFilter, setPriorityFilter] = useState<EmailPriority | ''>('')
+  const [fromFilter, setFromFilter] = useState('')
+  const [tenderFilter, setTenderFilter] = useState('')
+  const [labelFilter, setLabelFilter] = useState('')
+  const [sourceMemberFilter, setSourceMemberFilter] = useState('')
+  const [sinceFilter, setSinceFilter] = useState('')
+  const [untilFilter, setUntilFilter] = useState('')
+  const [tendersForFilter, setTendersForFilter] = useState<Array<{ id: string; title: string; client: string }>>([])
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [contextMenuEmailId, setContextMenuEmailId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [isListening, setIsListening] = useState(false)
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
@@ -182,6 +225,54 @@ export default function MailPage() {
     return () => window.removeEventListener('resize', check)
   }, [])
 
+  useEffect(() => {
+    if (!contextMenuEmailId) return
+    const close = () => setContextMenuEmailId(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [contextMenuEmailId])
+
+  useEffect(() => {
+    if (!ready || !userId) return
+    setSendAsUserId(userId)
+    authFetch('/api/organization')
+      .then(r => r.json())
+      .then(data => {
+        if (!data.success || !data.data) return
+        const org = data.data as {
+          owner_id?: string
+          organization_members?: Array<{
+            user_id: string
+            display_name: string | null
+            email: string | null
+            color: string | null
+          }>
+        }
+        if (org.owner_id !== userId) return
+        setIsFamilyOwner(true)
+        const members: FamilyMember[] = (org.organization_members ?? []).map(m => ({
+          user_id: m.user_id,
+          display_name: m.display_name,
+          email: m.email,
+          color: m.color,
+        }))
+        setFamilyMembers(members)
+      })
+      .catch(() => {})
+    authFetch('/api/tenders')
+      .then(r => r.json())
+      .then(data => {
+        if (!data.success) return
+        const list = (data.data ?? []).map((t: { id?: string; tender_id?: string; title: string; client: string }) => ({
+          id: t.id ?? t.tender_id ?? '',
+          title: t.title,
+          client: t.client,
+        })).filter((t: { id: string }) => t.id)
+        setTendersForFilter(list)
+      })
+      .catch(() => {})
+  }, [ready, userId])
+
   const loadEmails = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     const safetyTimer = setTimeout(() => { if (!silent) setLoading(false) }, 12000)
@@ -190,6 +281,15 @@ export default function MailPage() {
       if (filter === 'ao') params.set('ao', 'true')
       if (filter === 'unread') params.set('unread', 'true')
       if (filter === 'attachments') params.set('attachments', 'true')
+      if (mailboxView === 'team') params.set('view', 'team')
+      if (mailboxView === 'member' && selectedMemberId) params.set('member_id', selectedMemberId)
+      if (priorityFilter) params.set('priority', priorityFilter)
+      if (fromFilter.trim()) params.set('from', fromFilter.trim())
+      if (tenderFilter) params.set('tender_id', tenderFilter)
+      if (labelFilter) params.set('label', labelFilter)
+      if (sourceMemberFilter) params.set('source_member_id', sourceMemberFilter)
+      if (sinceFilter) params.set('since', `${sinceFilter}T00:00:00.000Z`)
+      if (untilFilter) params.set('until', `${untilFilter}T23:59:59.999Z`)
       const res = await authFetch(`/api/mail/emails?${params}`)
       const data = await res.json()
       if (data.success) {
@@ -211,7 +311,7 @@ export default function MailPage() {
       clearTimeout(safetyTimer)
       if (!silent) setLoading(false)
     }
-  }, [filter])
+  }, [filter, mailboxView, selectedMemberId, priorityFilter, fromFilter, tenderFilter, labelFilter, sourceMemberFilter, sinceFilter, untilFilter])
 
   const loadEmailDetail = useCallback(async (emailId: string, silent = false) => {
     if (!silent) setLoadingDetail(true)
@@ -322,7 +422,7 @@ export default function MailPage() {
       return
     }
     void loadEmails(false)
-  }, [filter, ready, userId, loadEmails])
+  }, [filter, mailboxView, selectedMemberId, priorityFilter, fromFilter, tenderFilter, labelFilter, sourceMemberFilter, sinceFilter, untilFilter, ready, userId, loadEmails])
 
   useEffect(() => {
     if (!ready || !userId || initialSyncDoneRef.current) return
@@ -409,6 +509,7 @@ export default function MailPage() {
   const openCompose = (prefill: Partial<typeof compose> = {}) => {
     setCompose({ to: '', cc: '', subject: '', body: '', ...prefill })
     setAttachments([])
+    setSendAsUserId(userId ?? '')
     setComposing(true)
     setSendError(null)
     if (isMobile) setMobileShowDetail(true)
@@ -469,6 +570,7 @@ export default function MailPage() {
           body: bodyWithoutSig,
           signature: signatureHtml,
           attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined,
+          send_as_user_id: sendAsUserId && sendAsUserId !== userId ? sendAsUserId : undefined,
         }),
       })
       const data = await res.json()
@@ -604,13 +706,57 @@ export default function MailPage() {
       })
       const data = await res.json()
       if (data.success) {
-        setEmails(prev => prev.map(e => e.id === target.id ? { ...e, tender_id: tenderId } : e))
-        if (selected?.id === target.id) setSelected(prev => prev ? { ...prev, tender_id: tenderId } : prev)
+        const updated = data.data as Email
+        const patch = {
+          tender_id: tenderId,
+          labels: updated.labels ?? target.labels,
+        }
+        setEmails(prev => prev.map(e => e.id === target.id ? { ...e, ...patch } : e))
+        if (selected?.id === target.id) setSelected(prev => prev ? { ...prev, ...patch } : prev)
         setLinkModalOpen(false)
         showToast('Email lié à l\'AO')
       } else showToast(`Erreur : ${data.error}`)
     } catch { showToast('Erreur liaison') }
     setLinkingTender(false)
+  }
+
+  const patchEmail = async (emailId: string, patch: Record<string, unknown>) => {
+    const res = await authFetch('/api/mail/emails', {
+      method: 'PATCH',
+      body: JSON.stringify({ id: emailId, ...patch }),
+    })
+    const data = await res.json()
+    if (!data.success) throw new Error(data.error ?? 'Erreur')
+    return data.data as Email
+  }
+
+  const applyEmailPatch = (emailId: string, patch: Partial<Email>) => {
+    setEmails(prev => prev.map(e => e.id === emailId ? { ...e, ...patch } : e))
+    setSelected(prev => prev?.id === emailId ? { ...prev, ...patch } : prev)
+  }
+
+  const handleSetPriority = async (email: Email, priority: EmailPriority) => {
+    try {
+      await patchEmail(email.id, { priority })
+      applyEmailPatch(email.id, { priority })
+      setContextMenuEmailId(null)
+      showToast(`Priorité : ${PRIORITY_STYLES[priority].label}`)
+    } catch {
+      showToast('Erreur priorité')
+    }
+  }
+
+  const handleToggleLabel = async (email: Email, label: EmailLabel) => {
+    const current = email.labels ?? []
+    const has = current.some(l => l.id === label.id)
+    const next = has ? current.filter(l => l.id !== label.id) : [...current, label]
+    try {
+      await patchEmail(email.id, { labels: next })
+      applyEmailPatch(email.id, { labels: next })
+      showToast(has ? `Étiquette retirée` : `Étiquette « ${label.name} »`)
+    } catch {
+      showToast('Erreur étiquette')
+    }
   }
 
   const handleMarkAsAo = async (email: Email) => {
@@ -725,7 +871,59 @@ export default function MailPage() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {isFamilyOwner && familyMembers.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{
+                  display: 'flex', gap: 2, padding: 3, borderRadius: 8,
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                }}>
+                  {([
+                    { key: 'mine' as MailboxView, label: 'Ma boîte' },
+                    { key: 'team' as MailboxView, label: 'Toute l\'équipe' },
+                  ]).map(opt => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => { setMailboxView(opt.key); setSelectedMemberId(null) }}
+                      style={{
+                        flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: 'none',
+                        background: mailboxView === opt.key ? 'var(--accent)' : 'transparent',
+                        color: mailboxView === opt.key ? '#fff' : 'var(--text-muted)',
+                        fontFamily: 'DM Sans, system-ui', fontWeight: mailboxView === opt.key ? 600 : 400,
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+                  {familyMembers.filter(m => m.user_id !== userId).map(m => (
+                    <button
+                      key={m.user_id}
+                      type="button"
+                      onClick={() => { setMailboxView('member'); setSelectedMemberId(m.user_id) }}
+                      style={{
+                        padding: '3px 8px', borderRadius: 12, fontSize: 10, cursor: 'pointer',
+                        border: mailboxView === 'member' && selectedMemberId === m.user_id
+                          ? `1px solid ${m.color || '#3b7ef6'}`
+                          : '1px solid var(--border)',
+                        background: mailboxView === 'member' && selectedMemberId === m.user_id
+                          ? `${m.color || '#3b7ef6'}22`
+                          : 'transparent',
+                        color: mailboxView === 'member' && selectedMemberId === m.user_id
+                          ? (m.color || '#3b7ef6')
+                          : 'var(--text-muted)',
+                        fontFamily: 'DM Sans, system-ui',
+                      }}
+                    >
+                      {m.display_name?.trim() || m.email?.split('@')[0] || 'Membre'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
               {filterButtons.map(f => (
                 <button key={f.key} onClick={() => setFilter(f.key)} style={{
                   padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: 'none',
@@ -734,6 +932,119 @@ export default function MailPage() {
                 }}>{f.label}</button>
               ))}
             </div>
+
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select
+                value={priorityFilter}
+                onChange={e => setPriorityFilter(e.target.value as EmailPriority | '')}
+                style={{
+                  fontSize: 11, padding: '4px 8px', borderRadius: 6,
+                  border: '1px solid var(--border)', background: 'var(--bg-card)',
+                  color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui',
+                }}
+              >
+                <option value="">Priorité</option>
+                <option value="urgent">Urgent</option>
+                <option value="normal">Normal</option>
+                <option value="info">Info</option>
+              </select>
+              <input
+                type="text"
+                value={fromFilter}
+                onChange={e => setFromFilter(e.target.value)}
+                placeholder="Expéditeur…"
+                style={{
+                  flex: 1, minWidth: 100, fontSize: 11, padding: '4px 8px', borderRadius: 6,
+                  border: '1px solid var(--border)', background: 'var(--bg-card)',
+                  color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowAdvancedFilters(v => !v)}
+                style={{
+                  fontSize: 11, padding: '4px 8px', borderRadius: 6, cursor: 'pointer',
+                  border: '1px solid var(--border)', background: showAdvancedFilters ? 'var(--accent-soft)' : 'var(--bg-card)',
+                  color: showAdvancedFilters ? 'var(--accent)' : 'var(--text-muted)',
+                  fontFamily: 'DM Sans, system-ui',
+                }}
+              >
+                Filtres {showAdvancedFilters ? '▾' : '▸'}
+              </button>
+            </div>
+            {showAdvancedFilters && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
+                <select
+                  value={tenderFilter}
+                  onChange={e => setTenderFilter(e.target.value)}
+                  style={{
+                    flex: 1, minWidth: 120, fontSize: 11, padding: '4px 8px', borderRadius: 6,
+                    border: '1px solid var(--border)', background: 'var(--bg-card)',
+                    color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui',
+                  }}
+                >
+                  <option value="">AO (tous)</option>
+                  {tendersForFilter.map(t => (
+                    <option key={t.id} value={t.id}>{t.title}</option>
+                  ))}
+                </select>
+                <select
+                  value={labelFilter}
+                  onChange={e => setLabelFilter(e.target.value)}
+                  style={{
+                    fontSize: 11, padding: '4px 8px', borderRadius: 6,
+                    border: '1px solid var(--border)', background: 'var(--bg-card)',
+                    color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui',
+                  }}
+                >
+                  <option value="">Étiquette</option>
+                  {PRESET_EMAIL_LABELS.map(l => (
+                    <option key={l.id} value={l.name}>{l.name}</option>
+                  ))}
+                </select>
+                {isFamilyOwner && (
+                  <select
+                    value={sourceMemberFilter}
+                    onChange={e => setSourceMemberFilter(e.target.value)}
+                    style={{
+                      fontSize: 11, padding: '4px 8px', borderRadius: 6,
+                      border: '1px solid var(--border)', background: 'var(--bg-card)',
+                      color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui',
+                    }}
+                  >
+                    <option value="">Source</option>
+                    <option value="owner">Moi (chef)</option>
+                    {familyMembers.filter(m => m.user_id !== userId).map(m => (
+                      <option key={m.user_id} value={m.user_id}>
+                        {m.display_name?.trim() || m.email?.split('@')[0]}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <input
+                  type="date"
+                  value={sinceFilter}
+                  onChange={e => setSinceFilter(e.target.value)}
+                  title="Depuis"
+                  style={{
+                    fontSize: 11, padding: '4px 8px', borderRadius: 6,
+                    border: '1px solid var(--border)', background: 'var(--bg-card)',
+                    color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui',
+                  }}
+                />
+                <input
+                  type="date"
+                  value={untilFilter}
+                  onChange={e => setUntilFilter(e.target.value)}
+                  title="Jusqu'au"
+                  style={{
+                    fontSize: 11, padding: '4px 8px', borderRadius: 6,
+                    border: '1px solid var(--border)', background: 'var(--bg-card)',
+                    color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui',
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
@@ -780,10 +1091,15 @@ export default function MailPage() {
                 </div>
                 {group.emails.map(email => (
                   <div key={email.id} onClick={() => selectEmail(email)}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setContextMenuEmailId(email.id)
+                    }}
                     style={{
                       padding: isMobile ? '14px 12px' : '12px 14px',
                       borderBottom: '1px solid var(--border)', cursor: 'pointer',
                       background: selected?.id === email.id ? 'var(--bg-hover)' : 'transparent',
+                      position: 'relative',
                     }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -803,7 +1119,30 @@ export default function MailPage() {
                         }}>
                           {email.subject}
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          {(() => {
+                            const sourceLabel = getSourceLabel(email, userId, familyMembers)
+                            if (!sourceLabel) return null
+                            const color = getMemberColor(email, userId, familyMembers)
+                            return (
+                              <span style={{
+                                fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 6px', borderRadius: 4,
+                                background: `${color}18`, color, border: `1px solid ${color}40`,
+                              }}>
+                                Via : {sourceLabel}
+                              </span>
+                            )
+                          })()}
+                          {email.priority && email.priority !== 'normal' && (
+                            <span style={{
+                              fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 5px', borderRadius: 4,
+                              background: PRIORITY_STYLES[email.priority].bg,
+                              color: PRIORITY_STYLES[email.priority].color,
+                              border: `1px solid ${PRIORITY_STYLES[email.priority].color}33`,
+                            }}>
+                              {PRIORITY_STYLES[email.priority].label}
+                            </span>
+                          )}
                           {email.is_ao && (
                             <span style={{ fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 5px', borderRadius: 4, background: 'rgba(245,158,11,0.1)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.2)' }}>AO</span>
                           )}
@@ -813,12 +1152,37 @@ export default function MailPage() {
                           {email.has_attachments && (
                             <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>📎</span>
                           )}
+                          {(email.labels ?? []).map(label => (
+                            <span key={label.id} style={{
+                              fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 5px', borderRadius: 4,
+                              background: `${label.color}18`, color: label.color,
+                              border: `1px solid ${label.color}40`,
+                            }}>
+                              {label.name}
+                            </span>
+                          ))}
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
                         <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
                           {formatMailTime(email.received_at)}
                         </span>
+                        <button
+                          type="button"
+                          title="Priorité"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setContextMenuEmailId(contextMenuEmailId === email.id ? null : email.id)
+                          }}
+                          style={{
+                            background: 'transparent', color: 'var(--text-muted)',
+                            border: '1px solid var(--border)', borderRadius: 6,
+                            padding: '2px 6px', fontSize: 10, cursor: 'pointer',
+                            fontFamily: 'DM Mono, monospace',
+                          }}
+                        >
+                          ⋮
+                        </button>
                         <button
                           type="button"
                           title={email.tender_id ? 'Voir l\'AO' : 'Créer un appel d\'offres'}
@@ -848,6 +1212,34 @@ export default function MailPage() {
                         </button>
                       </div>
                     </div>
+                    {contextMenuEmailId === email.id && (
+                      <div
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                          position: 'absolute', right: 8, top: '100%', zIndex: 10,
+                          background: 'var(--bg-card)', border: '1px solid var(--border-hi)',
+                          borderRadius: 8, padding: 4, minWidth: 130,
+                          boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+                        }}
+                      >
+                        <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '4px 8px', fontFamily: 'DM Mono, monospace' }}>PRIORITÉ</div>
+                        {(['urgent', 'normal', 'info'] as EmailPriority[]).map(p => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => handleSetPriority(email, p)}
+                            style={{
+                              display: 'block', width: '100%', textAlign: 'left',
+                              padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+                              background: email.priority === p ? PRIORITY_STYLES[p].bg : 'transparent',
+                              color: PRIORITY_STYLES[p].color, fontSize: 11, fontFamily: 'DM Sans, system-ui',
+                            }}
+                          >
+                            {PRIORITY_STYLES[p].label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -869,6 +1261,26 @@ export default function MailPage() {
                 <button onClick={() => { setComposing(false); if (isMobile) setMobileShowDetail(false) }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 20 }}>×</button>
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: isMobile ? '12px 14px' : '16px 20px', gap: 8, overflowY: 'auto' }}>
+                {isFamilyOwner && familyMembers.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 8, flexShrink: 0 }}>
+                    <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', width: 32, textTransform: 'uppercase' }}>De</span>
+                    <select
+                      value={sendAsUserId}
+                      onChange={e => setSendAsUserId(e.target.value)}
+                      style={{
+                        flex: 1, fontSize: 13, background: 'transparent', border: 'none', outline: 'none',
+                        color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
+                      }}
+                    >
+                      <option value={userId ?? ''}>Mon compte ({session?.user?.email})</option>
+                      {familyMembers.filter(m => m.user_id !== userId).map(m => (
+                        <option key={m.user_id} value={m.user_id}>
+                          {m.display_name?.trim() || m.email} — {m.email}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {[
                   { label: 'À', key: 'to', type: 'email', placeholder: 'email@exemple.com' },
                   { label: 'Cc', key: 'cc', type: 'text', placeholder: 'copie à (virgules pour plusieurs)' },
@@ -1035,6 +1447,64 @@ export default function MailPage() {
               <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.8 }}>
                 <div>De : <span style={{ color: 'var(--text-secondary)' }}>{selected.from_address}</span></div>
                 <div>Date : <span style={{ color: 'var(--text-secondary)' }}>{selected.received_at ? new Date(selected.received_at).toLocaleString('fr-FR') : '—'}</span></div>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                  Priorité
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {(['urgent', 'normal', 'info'] as EmailPriority[]).map(p => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => handleSetPriority(selected, p)}
+                      style={{
+                        padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
+                        border: selected.priority === p ? `1px solid ${PRIORITY_STYLES[p].color}` : '1px solid var(--border)',
+                        background: selected.priority === p ? PRIORITY_STYLES[p].bg : 'transparent',
+                        color: PRIORITY_STYLES[p].color, fontFamily: 'DM Sans, system-ui',
+                      }}
+                    >
+                      {PRIORITY_STYLES[p].label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                  Étiquettes
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {PRESET_EMAIL_LABELS.map(label => {
+                    const active = (selected.labels ?? []).some(l => l.id === label.id)
+                    return (
+                      <button
+                        key={label.id}
+                        type="button"
+                        onClick={() => handleToggleLabel(selected, label)}
+                        style={{
+                          padding: '3px 8px', borderRadius: 12, fontSize: 10, cursor: 'pointer',
+                          border: `1px solid ${active ? label.color : 'var(--border)'}`,
+                          background: active ? `${label.color}22` : 'transparent',
+                          color: active ? label.color : 'var(--text-muted)',
+                          fontFamily: 'DM Mono, monospace',
+                        }}
+                      >
+                        {label.name}
+                      </button>
+                    )
+                  })}
+                  {(selected.labels ?? []).filter(l => !PRESET_EMAIL_LABELS.some(p => p.id === l.id)).map(label => (
+                    <span key={label.id} style={{
+                      padding: '3px 8px', borderRadius: 12, fontSize: 10,
+                      background: `${label.color}22`, color: label.color,
+                      border: `1px solid ${label.color}40`, fontFamily: 'DM Mono, monospace',
+                    }}>
+                      {label.name}
+                    </span>
+                  ))}
+                </div>
               </div>
 
               <div style={{ display: 'flex', gap: 8, marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>

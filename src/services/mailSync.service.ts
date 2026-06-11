@@ -125,19 +125,21 @@ export async function createTenderFromEmail(
   userId: string
 ): Promise<{ tender_id: string } | null> {
   const db = createAdminClient()
+  const { getMailUserScope } = await import('@/lib/mail-access')
+  const scope = await getMailUserScope(userId)
 
   // Récupérer l'email
   const { data: email, error } = await db
     .from('emails')
     .select('*')
     .eq('id', emailId)
-    .eq('user_id', userId)
+    .in('user_id', scope.allowedUserIds)
     .single()
 
   if (error || !email) return null
 
   try {
-    await reEnrichEmailIfNeeded(db, userId, emailId, { force: true })
+    await reEnrichEmailIfNeeded(db, email.user_id, emailId, { force: true })
     const { data: refreshed } = await db
       .from('emails')
       .select('*')

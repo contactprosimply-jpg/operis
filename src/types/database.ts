@@ -84,6 +84,14 @@ export interface Quote {
   created_at: string
 }
 
+export type EmailPriority = 'urgent' | 'normal' | 'info'
+
+export interface EmailLabel {
+  id: string
+  name: string
+  color: string
+}
+
 export interface Email {
   id: string
   user_id: string
@@ -101,6 +109,10 @@ export interface Email {
   attachments?: EmailAttachment[]
   has_attachments?: boolean
   attachments_pending?: boolean
+  source_member_id?: string | null
+  source_member_name?: string | null
+  priority?: EmailPriority
+  labels?: EmailLabel[]
   created_at: string
 }
 

@@ -5,6 +5,7 @@ import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import nodemailer from 'nodemailer'
 import { clampString, rejectUnexpectedFields } from '@/lib/api-validation'
+import { getFamilyContext } from '@/lib/family'
 
 export const maxDuration = 30
 
@@ -14,13 +15,13 @@ export async function POST(req: NextRequest) {
 
   const rawBody = await req.json()
   const unexpected = rejectUnexpectedFields(rawBody as Record<string, unknown>, [
-    'to', 'subject', 'body', 'cc', 'signature', 'attachments',
+    'to', 'subject', 'body', 'cc', 'signature', 'attachments', 'send_as_user_id',
   ])
   if (unexpected) {
     return Response.json({ success: false, error: unexpected }, { status: 400 })
   }
 
-  const { to, subject, body, cc, signature, attachments: rawAttachments } = rawBody
+  const { to, subject, body, cc, signature, attachments: rawAttachments, send_as_user_id } = rawBody
 
   const bodyText = clampString(body, 100000) ?? ''
   const signatureText = (clampString(signature, 10000) ?? '').trim()
@@ -34,17 +35,30 @@ export async function POST(req: NextRequest) {
     return Response.json({ success: false, error: 'Message ou signature requis' }, { status: 400 })
   }
 
+  let senderUserId = userId
+  if (send_as_user_id && typeof send_as_user_id === 'string' && send_as_user_id !== userId) {
+    const ctx = await getFamilyContext(userId)
+    if (!ctx.isOwner) {
+      return Response.json({ success: false, error: 'Envoi au nom d\'un membre non autorise' }, { status: 403 })
+    }
+    const allowed = [userId, ...ctx.memberUserIds]
+    if (!allowed.includes(send_as_user_id)) {
+      return Response.json({ success: false, error: 'Membre introuvable' }, { status: 404 })
+    }
+    senderUserId = send_as_user_id
+  }
+
   const db = createAdminClient()
 
   const { data: account, error } = await db
     .from('mail_accounts')
     .select('*')
-    .eq('user_id', userId)
+    .eq('user_id', senderUserId)
     .eq('is_active', true)
     .single()
 
   if (error || !account) {
-    return Response.json({ success: false, error: 'Aucun compte mail configurÃ©' }, { status: 400 })
+    return Response.json({ success: false, error: 'Aucun compte mail configure' }, { status: 400 })
   }
 
   const transporter = nodemailer.createTransport({
@@ -54,8 +68,6 @@ export async function POST(req: NextRequest) {
     auth: { user: account.smtp_user, pass: account.smtp_pass },
   })
 
-  // â”€â”€ Construction du HTML avec signature injectÃ©e â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Le body texte est converti en HTML puis la signature est ajoutÃ©e
   const bodyHtml = bodyText.replace(/\n/g, '<br>')
 
   let finalHtml: string
@@ -73,7 +85,7 @@ export async function POST(req: NextRequest) {
         ? `${bodyText}\n\n--\n${signatureText.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`
         : signatureText.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
     } else {
-      finalHtml = `${bodyBlock}${bodyBlock ? '<br>' : ''}<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;"><div style="font-family: DM Sans, Arial, sans-serif; font-size: 12px; color: #6b7280; line-height: 1.6;">${signatureText.replace(/\n/g, '<br>')}</div>`
+      finalHtml = `${bodyBlock}${bodyBlock ? '<br>' : ''}<hr style="border: none; border-top: 1px solid var(--border); margin: 16px 0;"><div style="font-family: DM Sans, Arial, sans-serif; font-size: 12px; color: #6b7280; line-height: 1.6;">${signatureText.replace(/\n/g, '<br>')}</div>`
       finalText = bodyText.trim() ? `${bodyText}\n\n--\n${signatureText}` : signatureText
     }
   } else {
@@ -102,7 +114,6 @@ export async function POST(req: NextRequest) {
       attachments: mailAttachments.length > 0 ? mailAttachments : undefined,
     })
 
-    // Logger l'envoi (ne pas bloquer si le log echoue)
     const { error: logError } = await db.from('email_logs').insert({
       type: 'consultation',
       to_address: toText,
@@ -114,9 +125,9 @@ export async function POST(req: NextRequest) {
     })
     if (logError) console.error('[Mail] Log envoi:', logError.message)
 
-    return Response.json({ success: true, data: { sent: true } })
-  } catch (e: any) {
-    return Response.json({ success: false, error: `Erreur envoi: ${e.message}` }, { status: 500 })
+    return Response.json({ success: true, data: { sent: true, from: account.smtp_user } })
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Erreur inconnue'
+    return Response.json({ success: false, error: `Erreur envoi: ${message}` }, { status: 500 })
   }
 }
-

@@ -38,6 +38,22 @@ export type MailAccountWithId = MailAccountConfig & {
   last_sync_uid?: number | null
 }
 
+export interface MailSourceMeta {
+  sourceMemberId?: string | null
+  sourceMemberName?: string | null
+}
+
+function mergeSyncResults(target: MailSyncResult, part: MailSyncResult) {
+  target.fetched += part.fetched
+  target.stored += part.stored
+  target.updated += part.updated
+  target.aoDetected += part.aoDetected
+  target.duplicates += part.duplicates
+  target.errors += part.errors
+  target.maxUid = Math.max(target.maxUid, part.maxUid)
+  target.quickStored = (target.quickStored ?? 0) + (part.quickStored ?? 0)
+}
+
 function getEnvMailAccount(): MailAccountConfig | null {
   if (!process.env.IMAP_USER || !process.env.IMAP_PASS) return null
   return {
@@ -139,6 +155,7 @@ async function quickInsertFromEnvelope(
   db: SupabaseClient,
   userId: string,
   envelope: ImapEnvelopeMeta,
+  source?: MailSourceMeta,
 ): Promise<string | null> {
   const detection = detectAo(envelope.subject, '')
   const insertPayload: Record<string, unknown> = {
@@ -156,6 +173,10 @@ async function quickInsertFromEnvelope(
     tender_id: null,
     attachments: [],
     has_attachments: false,
+  }
+  if (source?.sourceMemberId) {
+    insertPayload.source_member_id = source.sourceMemberId
+    insertPayload.source_member_name = source.sourceMemberName ?? null
   }
 
   let { data: inserted, error } = await db.from('emails').insert(insertPayload).select('id').single()
@@ -215,6 +236,7 @@ export async function syncMailAccount(
   userId: string,
   account: MailAccountWithId,
   options: { backfill?: boolean; quick?: boolean } = {},
+  source?: MailSourceMeta,
 ): Promise<MailSyncResult> {
   const backfill = options.backfill === true
   const quick = options.quick === true || !backfill
@@ -263,7 +285,7 @@ export async function syncMailAccount(
   const newEmailMap = new Map<number, string>()
   for (const envelope of newEnvelopes) {
     try {
-      const emailId = await quickInsertFromEnvelope(db, userId, envelope)
+      const emailId = await quickInsertFromEnvelope(db, userId, envelope, source)
       if (emailId) {
         newEmailMap.set(envelope.uid, emailId)
         result.stored++
@@ -393,6 +415,46 @@ export async function syncMailAccount(
   }
 
   return result
+}
+
+export async function syncFamilyMailAccounts(
+  ownerId: string,
+  options: { backfill?: boolean; quick?: boolean } = {},
+): Promise<MailSyncResult> {
+  const { getFamilyContext, memberDisplayName } = await import('@/lib/family')
+  const ctx = await getFamilyContext(ownerId)
+  const aggregated: MailSyncResult = {
+    fetched: 0,
+    stored: 0,
+    updated: 0,
+    aoDetected: 0,
+    duplicates: 0,
+    errors: 0,
+    maxUid: 0,
+    quickStored: 0,
+  }
+
+  const ownerAccount = await resolveMailAccount(ownerId)
+  if (ownerAccount) {
+    mergeSyncResults(aggregated, await syncMailAccount(ownerId, ownerAccount, options))
+  }
+
+  if (!ctx.isOwner) return aggregated
+
+  for (const member of ctx.members) {
+    if (member.user_id === ownerId) continue
+    const account = await resolveMailAccount(member.user_id)
+    if (!account) continue
+    mergeSyncResults(
+      aggregated,
+      await syncMailAccount(member.user_id, account, options, {
+        sourceMemberId: member.user_id,
+        sourceMemberName: memberDisplayName(member),
+      }),
+    )
+  }
+
+  return aggregated
 }
 
 export { formatImapError }
