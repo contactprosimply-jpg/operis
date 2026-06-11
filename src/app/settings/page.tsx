@@ -48,6 +48,7 @@ function SettingsPageContent() {
   const [resettingTenders, setResettingTenders] = useState(false)
   const [mailAccounts, setMailAccounts] = useState<MailAccountRow[]>([])
   const [deletingMailId, setDeletingMailId] = useState<string | null>(null)
+  const [imapPassEdited, setImapPassEdited] = useState(false)
 
   const [org, setOrg] = useState<OrganizationPayload | null>(null)
   const [orgName, setOrgName] = useState('')
@@ -82,10 +83,12 @@ function SettingsPageContent() {
         imap_host: primary.imap_host ?? 'mail.gandi.net',
         imap_port: String(primary.imap_port ?? 993),
         imap_user: primary.imap_user ?? '',
+        imap_pass: '',
       }))
     } else if (session?.user?.email) {
-      setImap(i => ({ ...i, imap_user: session.user.email ?? '' }))
+      setImap(i => ({ ...i, imap_user: session.user.email ?? '', imap_pass: '' }))
     }
+    setImapPassEdited(false)
   }
 
   useEffect(() => {
@@ -145,10 +148,29 @@ function SettingsPageContent() {
     setResettingTenders(false)
   }
 
+  const mailPayload = () => ({
+    imap_host: imap.imap_host,
+    imap_port: parseInt(imap.imap_port),
+    imap_user: imap.imap_user,
+    imap_pass: imapPassEdited ? imap.imap_pass : '',
+    smtp_host: imap.smtp_host,
+    smtp_port: parseInt(imap.smtp_port),
+    smtp_user: imap.imap_user,
+    smtp_pass: imapPassEdited ? imap.imap_pass : '',
+  })
+
+  const hasStoredMailPassword = mailAccounts.some(
+    a => a.imap_user.toLowerCase().trim() === imap.imap_user.toLowerCase().trim(),
+  )
+
   const handleTest = async () => {
+    if (!imapPassEdited && !hasStoredMailPassword) {
+      setTestResult({ success: false, message: 'Saisissez le mot de passe mail (serveur IMAP), pas le mot de passe Operis' })
+      return
+    }
     setTesting(true); setTestResult(null)
     try {
-      const res = await authFetch('/api/mail/accounts/test', { method: 'POST', body: JSON.stringify({ imap_host: imap.imap_host, imap_port: parseInt(imap.imap_port), imap_user: imap.imap_user, imap_pass: imap.imap_pass }) })
+      const res = await authFetch('/api/mail/accounts/test', { method: 'POST', body: JSON.stringify(mailPayload()) })
       const data = await res.json()
       setTestResult({ success: data.success, message: data.success ? `Connexion reussie — ${data.data?.count ?? 0} emails` : `Echec : ${data.error}` })
     } catch (e: any) { setTestResult({ success: false, message: `Erreur : ${e.message}` }) }
@@ -156,12 +178,16 @@ function SettingsPageContent() {
   }
 
   const handleSaveImap = async () => {
+    if (!imapPassEdited && !hasStoredMailPassword) {
+      show('Mot de passe mail requis (mot de passe du serveur mail, pas Operis)')
+      return
+    }
     setSaving(true)
     try {
-      const res = await authFetch('/api/mail/accounts', { method: 'POST', body: JSON.stringify({ imap_host: imap.imap_host, imap_port: parseInt(imap.imap_port), imap_user: imap.imap_user, imap_pass: imap.imap_pass, smtp_host: imap.smtp_host, smtp_port: parseInt(imap.smtp_port), smtp_user: imap.imap_user, smtp_pass: imap.imap_pass }) })
+      const res = await authFetch('/api/mail/accounts', { method: 'POST', body: JSON.stringify(mailPayload()) })
       const data = await res.json()
       if (data.success) {
-        show('Configuration sauvegardee')
+        show(imapPassEdited ? 'Configuration sauvegardee' : 'Configuration mise a jour (mot de passe conserve)')
         await loadMailAccounts()
       } else show(`Erreur : ${data.error}`)
     } catch (e: any) { show(`Erreur : ${e.message}`) }
@@ -448,15 +474,47 @@ function SettingsPageContent() {
                 })}
               </div>
             )}
+            <form autoComplete="off" onSubmit={e => e.preventDefault()}>
             <div style={card}>
               <div style={sTitle}>Serveur IMAP</div>
               <div style={sSub}>Connexion pour lire et importer tes emails</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 12 }}>
-                <Field label="Serveur IMAP" value={imap.imap_host} onChange={v => setImap(i => ({ ...i, imap_host: v }))} placeholder="mail.gandi.net" />
-                <Field label="Port" value={imap.imap_port} onChange={v => setImap(i => ({ ...i, imap_port: v }))} placeholder="993" />
+              <div style={{
+                padding: '10px 12px', borderRadius: 8, marginBottom: 14,
+                background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
+                fontSize: 12, color: '#fbbf24', lineHeight: 1.5,
+              }}>
+                Le mot de passe mail (Gandi, etc.) est different du mot de passe Operis.
+                Si Google remplit le champ automatiquement, effacez-le et saisissez le mot de passe du serveur mail.
               </div>
-              <Field label="Email *" value={imap.imap_user} onChange={v => setImap(i => ({ ...i, imap_user: v }))} placeholder="ton@email.com" type="email" />
-              <Field label="Mot de passe *" value={imap.imap_pass} onChange={v => setImap(i => ({ ...i, imap_pass: v }))} placeholder="••••••••" type="password" />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 12 }}>
+                <Field label="Serveur IMAP" value={imap.imap_host} onChange={v => setImap(i => ({ ...i, imap_host: v }))} placeholder="mail.gandi.net" autoComplete="off" />
+                <Field label="Port" value={imap.imap_port} onChange={v => setImap(i => ({ ...i, imap_port: v }))} placeholder="993" autoComplete="off" />
+              </div>
+              <Field
+                label="Email *"
+                value={imap.imap_user}
+                onChange={v => setImap(i => ({ ...i, imap_user: v }))}
+                placeholder="ton@email.com"
+                type="email"
+                name="operis-imap-user"
+                inputId="operis-imap-user"
+                autoComplete="off"
+                preventAutofill
+              />
+              <Field
+                label={hasStoredMailPassword ? 'Mot de passe mail' : 'Mot de passe mail *'}
+                value={imap.imap_pass}
+                onChange={v => {
+                  setImapPassEdited(true)
+                  setImap(i => ({ ...i, imap_pass: v }))
+                }}
+                placeholder={hasStoredMailPassword ? 'Laisser vide pour garder le mot de passe enregistre' : 'Mot de passe du serveur mail'}
+                type="password"
+                name="operis-imap-app-password"
+                inputId="operis-imap-app-password"
+                autoComplete="new-password"
+                preventAutofill
+              />
               {testResult && (
                 <div style={{ padding: '10px 14px', borderRadius: 8, marginBottom: 14, fontSize: 12, background: testResult.success ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', color: testResult.success ? '#4ade80' : '#f87171', border: `1px solid ${testResult.success ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}` }}>
                   {testResult.message}
@@ -476,6 +534,7 @@ function SettingsPageContent() {
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>Meme identifiant et mot de passe que IMAP.</div>
             </div>
+            </form>
           </>
         )}
 

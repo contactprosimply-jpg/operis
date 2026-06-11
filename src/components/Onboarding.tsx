@@ -231,7 +231,16 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
               <Field label="IMAP host" value={mailForm.imap_host} onChange={v => setMailForm(f => ({ ...f, imap_host: v }))} />
               <Field label="IMAP port" value={mailForm.imap_port} onChange={v => setMailForm(f => ({ ...f, imap_port: v }))} />
               <Field label="Email" value={mailForm.imap_user} onChange={v => setMailForm(f => ({ ...f, imap_user: v, smtp_user: v }))} />
-              <Field label="Mot de passe" value={mailForm.imap_pass} onChange={v => setMailForm(f => ({ ...f, imap_pass: v }))} type="password" />
+              <Field
+                label="Mot de passe mail"
+                value={mailForm.imap_pass}
+                onChange={v => setMailForm(f => ({ ...f, imap_pass: v }))}
+                type="password"
+                name="operis-imap-app-password"
+                autoComplete="new-password"
+                preventAutofill
+                placeholder="Mot de passe du serveur mail (pas Operis)"
+              />
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <Button variant="ghost" onClick={testMail} loading={testing}>Tester la connexion</Button>

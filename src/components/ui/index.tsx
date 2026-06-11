@@ -257,10 +257,25 @@ export function useToast() {
 }
 
 // ── FIELD ────────────────────────────────────────────────────
-export function Field({ label, value, onChange, placeholder, type = 'text' }: {
-  label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string
+export function Field({
+  label, value, onChange, placeholder, type = 'text',
+  autoComplete, name, inputId, preventAutofill,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+  type?: string
+  autoComplete?: string
+  name?: string
+  inputId?: string
+  /** Bloque l'autofill navigateur (Google, etc.) jusqu'au premier focus */
+  preventAutofill?: boolean
 }) {
   const [focused, setFocused] = useState(false)
+  const [autofillUnlocked, setAutofillUnlocked] = useState(!preventAutofill)
+  const readOnly = preventAutofill && !autofillUnlocked
+
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{
@@ -270,8 +285,22 @@ export function Field({ label, value, onChange, placeholder, type = 'text' }: {
         {label}
       </div>
       <input
-        type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+        id={inputId}
+        name={name}
+        type={type}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete={autoComplete ?? (preventAutofill ? 'off' : undefined)}
+        readOnly={readOnly}
+        data-1p-ignore={preventAutofill ? true : undefined}
+        data-lpignore={preventAutofill ? 'true' : undefined}
+        data-form-type={preventAutofill ? 'other' : undefined}
+        onFocus={() => {
+          setFocused(true)
+          if (preventAutofill && !autofillUnlocked) setAutofillUnlocked(true)
+        }}
+        onBlur={() => setFocused(false)}
         style={{
           width: '100%', background: 'var(--bg-secondary)',
           border: `1px solid ${focused ? 'var(--accent)' : 'var(--border-hi)'}`,

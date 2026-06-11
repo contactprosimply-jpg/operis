@@ -64,7 +64,7 @@ function LoginForm() {
           background: 'var(--bg-card)', border: '1px solid var(--border-hi)',
           borderRadius: 16, padding: '32px 28px', boxShadow: 'var(--shadow-md)',
         }}>
-          <form onSubmit={handleLogin}>
+          <form onSubmit={handleLogin} autoComplete="on">
             {error && (
               <div style={{
                 background: 'var(--danger-soft)', border: '1px solid rgba(239,68,68,0.3)',
@@ -76,7 +76,8 @@ function LoginForm() {
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 6 }}>Email</label>
               <input
-                type="email" value={email} onChange={e => setEmail(e.target.value)}
+                type="email" name="email" autoComplete="username"
+                value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="ton@email.fr" required
                 style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-hi)', borderRadius: 9, padding: '12px 14px', fontSize: 13, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box', fontFamily: 'DM Sans, system-ui' }}
                 onFocus={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--accent)'; (e.target as HTMLInputElement).style.boxShadow = '0 0 0 3px var(--accent-soft)' }}
@@ -86,7 +87,8 @@ function LoginForm() {
             <div style={{ marginBottom: 24 }}>
               <label style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 6 }}>Mot de passe</label>
               <input
-                type="password" value={password} onChange={e => setPassword(e.target.value)}
+                type="password" name="password" autoComplete="current-password"
+                value={password} onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••" required
                 style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-hi)', borderRadius: 9, padding: '12px 14px', fontSize: 13, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box', fontFamily: 'DM Sans, system-ui' }}
                 onFocus={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--accent)'; (e.target as HTMLInputElement).style.boxShadow = '0 0 0 3px var(--accent-soft)' }}
