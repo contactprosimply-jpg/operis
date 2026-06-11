@@ -11,6 +11,7 @@ import {
   leaveOrganizationAsMember,
   userBelongsToOrganization,
 } from '@/lib/organization'
+import { canAssignTender, canViewTender, getTenderAccessScope } from '@/lib/tender-access'
 
 export async function GET(req: NextRequest) {
   const userId = await getUserFromRequest(req)
@@ -98,8 +99,43 @@ export async function PUT(req: NextRequest) {
   }
 
   if (action === 'assign') {
-    await db.from('tenders').update({ assigned_to }).eq('id', tender_id).eq('user_id', userId)
-    return Response.json({ success: true, data: { assigned: true } })
+    const scope = await getTenderAccessScope(userId)
+    if (!canAssignTender(scope)) {
+      return Response.json({ success: false, error: 'Assignation reservee au createur' }, { status: 403 })
+    }
+    if (!tender_id) {
+      return Response.json({ success: false, error: 'tender_id requis' }, { status: 400 })
+    }
+
+    const { data: tender } = await db
+      .from('tenders')
+      .select('id, user_id, title')
+      .eq('id', tender_id)
+      .maybeSingle()
+
+    if (!tender || !canViewTender(scope, tender)) {
+      return Response.json({ success: false, error: 'AO introuvable' }, { status: 404 })
+    }
+
+    const assignee = assigned_to || null
+    if (assignee && !scope.members.some(m => m.user_id === assignee)) {
+      return Response.json({ success: false, error: 'Membre invalide' }, { status: 400 })
+    }
+
+    await db.from('tenders').update({ assigned_to: assignee }).eq('id', tender_id)
+
+    if (assignee && assignee !== userId) {
+      await db.from('notifications').insert({
+        user_id: assignee,
+        type: 'assignment',
+        title: 'AO vous a ete assigne',
+        message: `Le createur vous a assigne l'AO "${tender.title}"`,
+        tender_id: tender_id,
+        is_read: false,
+      })
+    }
+
+    return Response.json({ success: true, data: { assigned: true, assigned_to: assignee } })
   }
 
   if (action === 'leave') {

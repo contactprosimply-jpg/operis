@@ -5,6 +5,10 @@ import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import { collectTenderDocuments } from '@/lib/tender-documents'
 import { isValidUuid, rejectUnexpectedFields, validateTitle, badRequest } from '@/lib/api-validation'
+import {
+  canAssignTender,
+  getTenderIfAccessible,
+} from '@/lib/tender-access'
 
 export const maxDuration = 60
 
@@ -18,18 +22,13 @@ export async function GET(
   const { id } = await params
   if (!isValidUuid(id)) return badRequest('ID AO invalide')
 
-  const db = createAdminClient()
-
-  const { data: tender, error } = await db
-    .from('tenders')
-    .select('*')
-    .eq('id', id)
-    .eq('user_id', userId)
-    .single()
-
-  if (error || !tender) {
+  const access = await getTenderIfAccessible(id, userId, 'view')
+  if (!access) {
     return Response.json({ success: false, error: 'AO introuvable' }, { status: 404 })
   }
+
+  const tender = access.tender
+  const db = createAdminClient()
 
   const { data: consultations } = await db
     .from('consultation_suppliers')
@@ -49,7 +48,7 @@ export async function GET(
     .single()
 
   const documents = await collectTenderDocuments(
-    db, userId, id, consultations ?? [], quotes ?? []
+    db, tender.user_id as string, id, consultations ?? [], quotes ?? []
   )
 
   return Response.json({
@@ -60,7 +59,13 @@ export async function GET(
       quotes: quotes ?? [],
       documents,
       stats,
-    }
+      access: {
+        is_org_owner: access.scope.isOrgOwner,
+        can_delete: access.scope.isOrgOwner && access.scope.organizationId !== null
+          || !access.scope.organizationId && tender.user_id === userId,
+        can_assign: canAssignTender(access.scope),
+      },
+    },
   })
 }
 
@@ -89,18 +94,25 @@ export async function PATCH(
     if (titleErr) return badRequest(titleErr)
   }
 
-  const db = createAdminClient()
+  const access = await getTenderIfAccessible(id, userId, 'mutate')
+  if (!access) {
+    return Response.json({ success: false, error: 'AO introuvable' }, { status: 404 })
+  }
 
-  const payload: Record<string, any> = {}
+  const payload: Record<string, unknown> = {}
   for (const key of allowed) {
     if (key in body) payload[key] = body[key]
   }
 
+  if ('assigned_to' in payload && !canAssignTender(access.scope)) {
+    delete payload.assigned_to
+  }
+
+  const db = createAdminClient()
   const { data, error } = await db
     .from('tenders')
     .update(payload)
     .eq('id', id)
-    .eq('user_id', userId)
     .select()
     .single()
 
@@ -118,13 +130,16 @@ export async function DELETE(
   const { id } = await params
   if (!isValidUuid(id)) return badRequest('ID AO invalide')
 
-  const db = createAdminClient()
+  const access = await getTenderIfAccessible(id, userId, 'delete')
+  if (!access) {
+    return Response.json({
+      success: false,
+      error: 'Suppression reservee au createur du groupe',
+    }, { status: 403 })
+  }
 
-  const { error } = await db
-    .from('tenders')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', userId)
+  const db = createAdminClient()
+  const { error } = await db.from('tenders').delete().eq('id', id)
 
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
   return Response.json({ success: true, data: { deleted: true } })

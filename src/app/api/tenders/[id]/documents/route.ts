@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { collectTenderDocuments, type QuoteRow } from '@/lib/tender-documents'
 import { uploadTenderDocument, DEVIS_BUCKET } from '@/lib/devis-storage'
+import { assertTenderAccess } from '@/lib/tender-access'
 
 export async function GET(
   req: NextRequest,
@@ -16,8 +17,9 @@ export async function GET(
   const { id } = await params
   const db = createAdminClient()
 
-  const { data: tender } = await db.from('tenders').select('id').eq('id', id).eq('user_id', userId).single()
-  if (!tender) return Response.json({ success: false, error: 'AO introuvable' }, { status: 404 })
+  const access = await assertTenderAccess(db, id, userId, 'view')
+  if (!access.ok) return Response.json({ success: false, error: access.error }, { status: access.status })
+  const ownerId = access.tender.user_id
 
   const { data: consultations } = await db
     .from('consultation_suppliers')
@@ -30,7 +32,7 @@ export async function GET(
     .eq('tender_id', id)
 
   const documents = await collectTenderDocuments(
-    db, userId, id, consultations ?? [], (quotes ?? []) as QuoteRow[],
+    db, ownerId, id, consultations ?? [], (quotes ?? []) as QuoteRow[],
   )
   return Response.json({ success: true, data: documents })
 }
@@ -50,12 +52,13 @@ export async function POST(
   }
 
   const db = createAdminClient()
-  const { data: tender } = await db.from('tenders').select('id').eq('id', id).eq('user_id', userId).single()
-  if (!tender) return Response.json({ success: false, error: 'AO introuvable' }, { status: 404 })
+  const access = await assertTenderAccess(db, id, userId, 'mutate')
+  if (!access.ok) return Response.json({ success: false, error: access.error }, { status: access.status })
+  const ownerId = access.tender.user_id
 
   const docId = crypto.randomUUID()
   const buffer = Buffer.from(data, 'base64')
-  const storagePath = await uploadTenderDocument(db, userId, id, {
+  const storagePath = await uploadTenderDocument(db, ownerId, id, {
     filename,
     contentType: contentType || 'application/octet-stream',
     buffer,
@@ -63,7 +66,7 @@ export async function POST(
 
   const { data: row, error } = await db.from('tender_documents').insert({
     tender_id: id,
-    user_id: userId,
+    user_id: ownerId,
     filename,
     content_type: contentType || 'application/octet-stream',
     size: buffer.length,

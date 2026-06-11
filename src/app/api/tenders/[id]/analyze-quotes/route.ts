@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import { analyzeQuotesForTender } from '@/lib/mail-quote-extract'
+import { assertTenderAccess } from '@/lib/tender-access'
 
 export const maxDuration = 60
 
@@ -17,19 +18,13 @@ export async function POST(
   const { id } = await params
   const db = createAdminClient()
 
-  const { data: tender } = await db
-    .from('tenders')
-    .select('id')
-    .eq('id', id)
-    .eq('user_id', userId)
-    .single()
-
-  if (!tender) {
-    return Response.json({ success: false, error: 'AO introuvable' }, { status: 404 })
+  const access = await assertTenderAccess(db, id, userId, 'mutate')
+  if (!access.ok) {
+    return Response.json({ success: false, error: access.error }, { status: access.status })
   }
 
   try {
-    const result = await analyzeQuotesForTender(db, userId, id)
+    const result = await analyzeQuotesForTender(db, access.tender.user_id, id)
     return Response.json({ success: true, data: result })
   } catch (err) {
     console.error('[Analyze quotes]', err)

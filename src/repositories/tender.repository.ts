@@ -5,6 +5,12 @@
 
 import { createAdminClient } from '@/lib/supabase'
 import {
+  getTenderAccessScope,
+  canViewTender,
+  canPatchTender,
+  canDeleteTender,
+} from '@/lib/tender-access'
+import {
   Tender,
   TenderDetail,
   TenderStats,
@@ -14,44 +20,47 @@ import {
 
 export const tenderRepository = {
 
-  // ── Lister tous les tenders d'un utilisateur ──────────────
   async findAll(userId: string): Promise<TenderStats[]> {
+    const scope = await getTenderAccessScope(userId)
     const db = createAdminClient()
-    const { data, error } = await db
-      .from('tender_stats')
-      .select('*')
-      .eq('user_id', userId)
 
+    let query = db.from('tender_stats').select('*')
+
+    if (scope.isOrgOwner && scope.organizationId) {
+      query = query.in('user_id', scope.teamUserIds)
+    } else if (scope.organizationId) {
+      query = query.or(`user_id.eq.${scope.userId},assigned_to.eq.${scope.userId}`)
+    } else {
+      query = query.eq('user_id', userId)
+    }
+
+    const { data, error } = await query.order('deadline', { ascending: true, nullsFirst: false })
     if (error) throw new Error(error.message)
     return data as TenderStats[]
   },
 
-  // ── Récupérer un tender par ID ────────────────────────────
   async findById(id: string, userId: string): Promise<TenderDetail | null> {
+    const scope = await getTenderAccessScope(userId)
     const db = createAdminClient()
 
     const { data: tender, error } = await db
       .from('tenders')
       .select('*')
       .eq('id', id)
-      .eq('user_id', userId)
       .single()
 
-    if (error || !tender) return null
+    if (error || !tender || !canViewTender(scope, tender)) return null
 
-    // Charger les consultations avec fournisseurs
     const { data: consultations } = await db
       .from('consultation_suppliers')
       .select('*, supplier:suppliers(*)')
       .eq('tender_id', id)
 
-    // Charger les devis avec fournisseurs
     const { data: quotes } = await db
       .from('quotes')
       .select('*, supplier:suppliers(*)')
       .eq('tender_id', id)
 
-    // Charger les stats
     const { data: stats } = await db
       .from('tender_stats')
       .select('*')
@@ -66,7 +75,6 @@ export const tenderRepository = {
     } as TenderDetail
   },
 
-  // ── Créer un tender ───────────────────────────────────────
   async create(userId: string, payload: CreateTenderPayload): Promise<Tender> {
     const db = createAdminClient()
     const { data, error } = await db
@@ -79,14 +87,29 @@ export const tenderRepository = {
     return data as Tender
   },
 
-  // ── Mettre à jour un tender ───────────────────────────────
   async update(id: string, userId: string, payload: UpdateTenderPayload): Promise<Tender> {
+    const scope = await getTenderAccessScope(userId)
     const db = createAdminClient()
+
+    const { data: existing } = await db
+      .from('tenders')
+      .select('user_id, assigned_to')
+      .eq('id', id)
+      .single()
+
+    if (!existing || !canPatchTender(scope, existing)) {
+      throw new Error('AO introuvable')
+    }
+
+    const patch = { ...payload }
+    if ('assigned_to' in patch && !scope.isOrgOwner) {
+      delete patch.assigned_to
+    }
+
     const { data, error } = await db
       .from('tenders')
-      .update(payload)
+      .update(patch)
       .eq('id', id)
-      .eq('user_id', userId)
       .select()
       .single()
 
@@ -94,15 +117,21 @@ export const tenderRepository = {
     return data as Tender
   },
 
-  // ── Supprimer un tender ───────────────────────────────────
   async delete(id: string, userId: string): Promise<void> {
+    const scope = await getTenderAccessScope(userId)
     const db = createAdminClient()
-    const { error } = await db
-      .from('tenders')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', userId)
 
+    const { data: existing } = await db
+      .from('tenders')
+      .select('user_id')
+      .eq('id', id)
+      .single()
+
+    if (!existing || !canDeleteTender(scope, existing)) {
+      throw new Error('Suppression non autorisee')
+    }
+
+    const { error } = await db.from('tenders').delete().eq('id', id)
     if (error) throw new Error(error.message)
   },
 }

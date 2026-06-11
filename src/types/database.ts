@@ -33,6 +33,7 @@ export interface Tender {
   deadline: string | null
   status: TenderStatus
   source_email_id: string | null
+  assigned_to?: string | null
   created_at: string
   updated_at: string
 }
@@ -137,6 +138,7 @@ export interface TenderStats {
   client: string
   status: TenderStatus
   deadline: string | null
+  assigned_to?: string | null
   nb_suppliers: number
   nb_responses: number
   nb_relaunched: number

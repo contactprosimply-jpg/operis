@@ -5,6 +5,7 @@
 
 import { createAdminClient } from '@/lib/supabase'
 import { sendHtmlEmail } from '@/lib/mailer'
+import { getTenderAccessScope } from '@/lib/tender-access'
 
 const ADMIN_EMAIL = 'contact@nikodex.fr'
 
@@ -13,12 +14,21 @@ export async function checkAlertsForUser(userId: string): Promise<number> {
   let created = 0
 
   try {
-    // Récupérer les AO actifs de l'utilisateur
-    const { data: tenders } = await db
+    const scope = await getTenderAccessScope(userId)
+    let tenderQuery = db
       .from('tenders')
       .select('*, consultation_suppliers(id, status, supplier_id, last_sent_at)')
-      .eq('user_id', userId)
       .in('status', ['nouveau', 'en_cours', 'urgence'])
+
+    if (scope.isOrgOwner && scope.organizationId) {
+      tenderQuery = tenderQuery.in('user_id', scope.teamUserIds)
+    } else if (scope.organizationId) {
+      tenderQuery = tenderQuery.or(`user_id.eq.${userId},assigned_to.eq.${userId}`)
+    } else {
+      tenderQuery = tenderQuery.eq('user_id', userId)
+    }
+
+    const { data: tenders } = await tenderQuery
 
     if (!tenders?.length) return 0
 

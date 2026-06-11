@@ -1,8 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTenders } from '@/hooks'
+import { authFetch } from '@/lib/auth-client'
+import { memberDisplayName } from '@/lib/family'
+import type { OrganizationPayload } from '@/lib/organization'
 import { Button, Modal, Field, Badge, useToast, Card, KpiCard, tableRowHoverHandlers, TableSkeleton } from '@/components/ui'
 import type { TenderStatus } from '@/types/database'
 
@@ -42,6 +45,20 @@ export default function TendersPage() {
   const [filter, setFilter] = useState('actifs')
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ title: '', client: '', deadline: '', description: '' })
+  const [org, setOrg] = useState<OrganizationPayload | null>(null)
+
+  useEffect(() => {
+    authFetch('/api/organization')
+      .then(r => r.json())
+      .then(data => { if (data.success) setOrg(data.data ?? null) })
+      .catch(() => {})
+  }, [])
+
+  const memberLabel = (userId?: string | null) => {
+    if (!userId || !org?.members) return '—'
+    const m = org.members.find(x => x.user_id === userId)
+    return m ? memberDisplayName(m) : '—'
+  }
 
   const filtered = filter === 'actifs'
     ? tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status))
@@ -122,7 +139,11 @@ export default function TendersPage() {
         <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Titre', 'Client', 'Deadline', 'Budget HT', 'Priorite', 'Statut', 'Fournisseurs', 'Reponses', 'Devis'].map(h => (
+              {[
+                'Titre', 'Client', 'Deadline', 'Budget HT', 'Priorite', 'Statut',
+                ...(org?.is_owner ? ['Membre'] : []),
+                'Fournisseurs', 'Reponses', 'Devis',
+              ].map(h => (
                 <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
               ))}
             </tr>
@@ -153,6 +174,11 @@ export default function TendersPage() {
                       {priorite.icon} {priorite.label}
                     </span>
                   </td>
+                  {org?.is_owner && (
+                    <td style={{ padding: '12px 14px', fontSize: 11, color: 'var(--text-secondary)' }}>
+                      {memberLabel(t.assigned_to ?? t.user_id)}
+                    </td>
+                  )}
                   <td style={{ padding: '12px 14px' }} onClick={e => e.stopPropagation()}>
                     <select
                       value={t.status}

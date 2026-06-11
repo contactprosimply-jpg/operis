@@ -57,12 +57,17 @@ export default function DashboardPage() {
   const [emails, setEmails] = useState<Email[]>([])
   const [quoteEmails, setQuoteEmails] = useState<Email[]>([])
   const [creatingAo, setCreatingAo] = useState<string | null>(null)
+  const [notifications, setNotifications] = useState<Array<{ id: string; title: string; message: string; tender_id?: string; is_read: boolean }>>([])
+  const [org, setOrg] = useState<{ is_owner?: boolean; name?: string } | null>(null)
+
   useEffect(() => {
     if (!ready || !accessToken) return
     const load = async () => {
-      const [aoRes, unlinkedRes] = await Promise.all([
+      const [aoRes, unlinkedRes, notifRes, orgRes] = await Promise.all([
         authFetch('/api/mail/emails?ao=true'),
         authFetch('/api/mail/emails?unlinked=true&limit=150'),
+        authFetch('/api/notifications?limit=6'),
+        authFetch('/api/organization'),
       ])
       const aoData = await aoRes.json()
       const unlinkedData = await unlinkedRes.json()
@@ -78,6 +83,10 @@ export default function DashboardPage() {
         )
         setQuoteEmails(devisLike)
       }
+      const notifData = await notifRes.json()
+      if (notifData.success) setNotifications(notifData.data ?? [])
+      const orgData = await orgRes.json()
+      if (orgData.success) setOrg(orgData.data ?? null)
     }
     load()
   }, [ready, accessToken])
@@ -109,6 +118,10 @@ export default function DashboardPage() {
   const totalDevis = tenders.reduce((a, t) => a + (t.nb_quotes ?? 0), 0)
   const gagnes = tenders.filter(t => t.status === 'gagne').length
   const tauxReussite = tenders.length > 0 ? Math.round((gagnes / tenders.length) * 100) : 0
+  const relanceCandidates = actifs.filter(
+    t => t.nb_suppliers > 0 && t.nb_responses < t.nb_suppliers,
+  )
+  const unreadNotifs = notifications.filter(n => !n.is_read)
 
   if (loading) return (
     <div className="animate-fade-in">
@@ -130,8 +143,47 @@ export default function DashboardPage() {
         </h1>
         <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
           {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+          {org?.is_owner ? ` · Vue equipe (${org.name ?? 'groupe'})` : ''}
         </p>
       </div>
+
+      {unreadNotifs.length > 0 && (
+        <Card hover={false} style={{ padding: '14px 18px', marginBottom: 20, border: '1px solid rgba(59,126,246,0.25)', background: 'rgba(59,126,246,0.06)' }}>
+          <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--accent)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Notifications ({unreadNotifs.length})
+          </div>
+          {unreadNotifs.slice(0, 4).map(n => (
+            <div
+              key={n.id}
+              onClick={() => n.tender_id && router.push(`/tenders/${n.tender_id}`)}
+              style={{
+                padding: '8px 0', borderBottom: '1px solid var(--border)', cursor: n.tender_id ? 'pointer' : 'default',
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{n.title}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{n.message}</div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {relanceCandidates.length > 0 && (
+        <Card hover={false} style={{ padding: '14px 18px', marginBottom: 20, border: '1px solid rgba(245,158,11,0.25)', background: 'rgba(245,158,11,0.06)' }}>
+          <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: '#fbbf24', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Relances a envisager ({relanceCandidates.length})
+          </div>
+          {relanceCandidates.slice(0, 5).map(t => (
+            <div
+              key={t.tender_id}
+              onClick={() => router.push(`/tenders/${t.tender_id}`)}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0', cursor: 'pointer' }}
+            >
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{t.title}</span>
+              <Badge color="amber">{t.nb_responses}/{t.nb_suppliers} reponses</Badge>
+            </div>
+          ))}
+        </Card>
+      )}
 
       <div className="kpi-grid" data-tour="dashboard-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
         <KpiCard label="AO actifs" value={actifs.length} icon={<IconDoc />} color="blue" delay={0}

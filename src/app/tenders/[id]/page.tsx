@@ -8,6 +8,8 @@ import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast, Card } from '@/components/ui'
 import ConsultationComposeModal, { type ConsultationComposePayload } from '@/components/ConsultationComposeModal'
 import SpeechMicButton from '@/components/SpeechMicButton'
+import { memberDisplayName } from '@/lib/family'
+import type { OrganizationPayload } from '@/lib/organization'
 
 const STATUS_OPTIONS = [
   { value: 'nouveau', label: 'Nouveau', color: '#60a5fa' },
@@ -138,6 +140,8 @@ export default function TenderDetailPage() {
   const [showLinkEmailModal, setShowLinkEmailModal] = useState(false)
   const [unlinkedEmails, setUnlinkedEmails] = useState<any[]>([])
   const [linkingEmail, setLinkingEmail] = useState(false)
+  const [org, setOrg] = useState<OrganizationPayload | null>(null)
+  const [assigningMember, setAssigningMember] = useState(false)
 
   // Form édition AO
   const [editForm, setEditForm] = useState({
@@ -176,6 +180,13 @@ export default function TenderDetailPage() {
   }, [id])
 
   const refreshTender = useCallback(() => loadTender(true), [loadTender])
+
+  useEffect(() => {
+    authFetch('/api/organization')
+      .then(r => r.json())
+      .then(data => { if (data.success) setOrg(data.data ?? null) })
+      .catch(() => {})
+  }, [])
 
   const loadLinkedEmails = useCallback(async () => {
     try {
@@ -562,6 +573,29 @@ export default function TenderDetailPage() {
     } catch { show('Erreur téléchargement') }
   }
 
+  const handleAssignMember = async (memberId: string) => {
+    setAssigningMember(true)
+    try {
+      const res = await authFetch('/api/organization', {
+        method: 'PUT',
+        body: JSON.stringify({
+          action: 'assign',
+          tender_id: id,
+          assigned_to: memberId || null,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        show(memberId ? 'Membre assigne sur cet AO' : 'Assignation retiree')
+        await refreshTender()
+      } else show(`Erreur : ${data.error}`)
+    } catch (e: unknown) {
+      const err = e as { message?: string }
+      show(`Erreur : ${err.message ?? 'reseau'}`)
+    }
+    setAssigningMember(false)
+  }
+
   const handleDelete = async () => {
     if (!confirm('Supprimer cet AO définitivement ?')) return
     const res = await authFetch(`/api/tenders/${id}`, { method: 'DELETE' })
@@ -631,6 +665,33 @@ export default function TenderDetailPage() {
               )}
             </div>
             <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>{tender.client}</div>
+            {tender.access?.can_assign && org?.members && org.members.length > 1 && (
+              <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  Assigne a
+                </span>
+                <select
+                  value={tender.assigned_to ?? ''}
+                  onChange={e => handleAssignMember(e.target.value)}
+                  disabled={assigningMember}
+                  style={{
+                    fontSize: 12, padding: '6px 10px', borderRadius: 8,
+                    border: '1px solid var(--border-hi)', background: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
+                    minWidth: 180,
+                  }}
+                >
+                  <option value="">Non assigne</option>
+                  {org.members
+                    .filter(m => m.user_id !== org.owner_id)
+                    .map(m => (
+                      <option key={m.user_id} value={m.user_id}>
+                        {memberDisplayName(m)}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Suivi de l&apos;AO</span>
@@ -662,7 +723,9 @@ export default function TenderDetailPage() {
             <Button variant="ghost" onClick={handleExportPdf} loading={exportingPdf}>Exporter PDF</Button>
             <Button variant="ghost" onClick={() => refreshTender()} disabled={refreshing}>Actualiser</Button>
             <Button variant="ghost" onClick={() => setShowEdit(true)}>Modifier</Button>
-            <Button variant="danger" onClick={handleDelete}>Supprimer</Button>
+            {tender.access?.can_delete && (
+              <Button variant="danger" onClick={handleDelete}>Supprimer</Button>
+            )}
           </div>
         </div>
       </Card>

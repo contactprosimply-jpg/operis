@@ -6,6 +6,7 @@ import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { downloadDevisFile } from '@/lib/devis-storage'
 import { downloadAttachmentBuffer } from '@/lib/mail-storage'
 import { normalizeAttachments } from '@/lib/mail-attachments'
+import { assertTenderAccess } from '@/lib/tender-access'
 
 export async function GET(
   req: NextRequest,
@@ -17,13 +18,14 @@ export async function GET(
   const { id, docId } = await params
   const db = createAdminClient()
 
-  const { data: tender } = await db.from('tenders').select('id').eq('id', id).eq('user_id', userId).single()
-  if (!tender) return Response.json({ success: false, error: 'AO introuvable' }, { status: 404 })
+  const access = await assertTenderAccess(db, id, userId, 'view')
+  if (!access.ok) return Response.json({ success: false, error: access.error }, { status: access.status })
+  const ownerId = access.tender.user_id
 
   if (docId.startsWith('mail:')) {
     const [, emailId, indexStr] = docId.split(':')
     const index = parseInt(indexStr, 10)
-    const { data: email } = await db.from('emails').select('attachments').eq('id', emailId).eq('user_id', userId).single()
+    const { data: email } = await db.from('emails').select('attachments').eq('id', emailId).eq('user_id', ownerId).single()
     if (!email) return Response.json({ success: false, error: 'Fichier introuvable' }, { status: 404 })
     const attachments = normalizeAttachments(email.attachments)
     const att = attachments[index]
@@ -61,7 +63,7 @@ export async function GET(
     .select('*')
     .eq('id', docId)
     .eq('tender_id', id)
-    .eq('user_id', userId)
+    .eq('user_id', ownerId)
     .single()
 
   if (!doc) return Response.json({ success: false, error: 'Fichier introuvable' }, { status: 404 })
