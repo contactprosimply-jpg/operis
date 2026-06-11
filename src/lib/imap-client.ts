@@ -287,6 +287,15 @@ async function validateSentMailboxOnClient(
   }
 }
 
+/** Chemin sous Courrier indésirable / Junk (faux \\Sent sur Gandi/Thunderbird). */
+function pathLooksLikeSpamTree(path: string): boolean {
+  const lower = path.toLowerCase()
+  const parts = lower.split(/[/\\]/)
+  return parts.some(p =>
+    ['junk', 'spam', 'courrier indésirable', 'courrier indesirable', 'indésirables', 'indesirables'].includes(p),
+  )
+}
+
 async function probeMailboxPath(client: ImapFlow, path: string): Promise<boolean> {
   try {
     const lock = await client.getMailboxLock(path)

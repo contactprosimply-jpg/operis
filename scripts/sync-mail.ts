@@ -1,25 +1,36 @@
 /**
  * Sync IMAP multi-dossiers (src/lib/mail-sync.ts).
  * Usage : npm run sync
+ *
+ * Important : dotenv avant import de mail-sync (sinon supabase.ts plante).
  */
 import dotenv from 'dotenv'
 import { createClient } from '@supabase/supabase-js'
-import { listImapMailboxes } from '../src/lib/imap-client'
-import { syncUserMailAccounts, mapMailAccountRow } from '../src/lib/mail-sync'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 
-dotenv.config({ path: '.env.local' })
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+dotenv.config({ path: join(root, '.env.local') })
+dotenv.config({ path: join(root, '.env.production.local') })
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 if (!url || !key) {
-  console.error('NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY requis (.env.local)')
+  console.error('Variables manquantes dans .env.local :')
+  console.error('  - NEXT_PUBLIC_SUPABASE_URL')
+  console.error('  - SUPABASE_SERVICE_ROLE_KEY')
   process.exit(1)
 }
 
-const db = createClient(url, key)
+const db = createClient(url, key, {
+  auth: { autoRefreshToken: false, persistSession: false },
+})
 const filterUser = process.env.SYNC_USER_ID
 
-async function listBoxesForAccounts() {
+async function listBoxesForAccounts(
+  listImapMailboxes: typeof import('../src/lib/imap-client').listImapMailboxes,
+  mapMailAccountRow: typeof import('../src/lib/mail-sync').mapMailAccountRow,
+) {
   let q = db.from('mail_accounts').select('*').eq('is_active', true)
   if (filterUser) q = q.eq('user_id', filterUser)
   const { data: accounts } = await q
@@ -38,8 +49,11 @@ async function listBoxesForAccounts() {
 }
 
 async function main() {
+  const { listImapMailboxes } = await import('../src/lib/imap-client')
+  const { syncUserMailAccounts, mapMailAccountRow } = await import('../src/lib/mail-sync')
+
   console.log('── listBoxes() : dossiers disponibles sur Gandi ──')
-  await listBoxesForAccounts()
+  await listBoxesForAccounts(listImapMailboxes, mapMailAccountRow)
 
   let q = db.from('mail_accounts').select('user_id').eq('is_active', true)
   if (filterUser) q = q.eq('user_id', filterUser)
