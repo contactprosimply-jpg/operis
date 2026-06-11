@@ -253,6 +253,7 @@ export default function MailPage() {
 
   const handleSelectionChange = (sel: MailFolderSelection) => {
     setFolderSelection(sel)
+    setEmails([])
     setSelected(null)
     setComposing(false)
     if (isMobile) setMobileShowDetail(false)

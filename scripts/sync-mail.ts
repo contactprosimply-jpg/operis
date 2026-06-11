@@ -1,10 +1,11 @@
 /**
- * Sync IMAP multi-dossiers (aligné sur src/lib/mail-sync.ts).
+ * Sync IMAP multi-dossiers (src/lib/mail-sync.ts).
  * Usage : npm run sync
  */
 import dotenv from 'dotenv'
 import { createClient } from '@supabase/supabase-js'
-import { syncUserMailAccounts } from '../src/lib/mail-sync'
+import { listImapMailboxes } from '../src/lib/imap-client'
+import { syncUserMailAccounts, mapMailAccountRow } from '../src/lib/mail-sync'
 
 dotenv.config({ path: '.env.local' })
 
@@ -18,7 +19,28 @@ if (!url || !key) {
 const db = createClient(url, key)
 const filterUser = process.env.SYNC_USER_ID
 
+async function listBoxesForAccounts() {
+  let q = db.from('mail_accounts').select('*').eq('is_active', true)
+  if (filterUser) q = q.eq('user_id', filterUser)
+  const { data: accounts } = await q
+
+  for (const row of accounts ?? []) {
+    const account = mapMailAccountRow(row)
+    if (!account) continue
+    console.log(`\n══ Dossiers IMAP pour ${account.imap_user} ══`)
+    try {
+      const boxes = await listImapMailboxes(account)
+      console.log(JSON.stringify(boxes, null, 2))
+    } catch (e) {
+      console.error('listBoxes erreur:', e)
+    }
+  }
+}
+
 async function main() {
+  console.log('── listBoxes() : dossiers disponibles sur Gandi ──')
+  await listBoxesForAccounts()
+
   let q = db.from('mail_accounts').select('user_id').eq('is_active', true)
   if (filterUser) q = q.eq('user_id', filterUser)
   const { data: accounts } = await q
@@ -29,6 +51,7 @@ async function main() {
     return
   }
 
+  console.log('\n── Sync multi-dossiers (inbox, sent, drafts, trash, spam, custom) ──')
   for (const userId of userIds) {
     console.log(`\n── Sync user ${userId} ──`)
     try {
@@ -36,8 +59,15 @@ async function main() {
       console.log(
         `fetched=${result.fetched} stored=${result.stored} updated=${result.updated} errors=${result.errors}`,
       )
-      if (result.mailboxes?.custom?.length) {
-        console.log(`dossiers perso: ${result.mailboxes.custom.join(', ')}`)
+      if (result.mailboxes) {
+        console.log('Résolu:', {
+          inbox: result.mailboxes.inbox,
+          sent: result.mailboxes.sent ?? '(introuvable)',
+          drafts: result.mailboxes.drafts,
+          trash: result.mailboxes.trash,
+          spam: result.mailboxes.spam,
+          custom: result.mailboxes.custom,
+        })
       }
     } catch (e) {
       console.error('Erreur:', e)

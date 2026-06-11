@@ -14,6 +14,7 @@ import {
 import type { Email, EmailLabel } from '@/types/database'
 import { getMailUserScope } from '@/lib/mail-access'
 import { resolveMailAccount } from '@/lib/mail-sync'
+
 function sentListKey(subject: string | null | undefined, to: string | null | undefined, at: string | null | undefined): string {
   return `${subject ?? ''}|${to ?? ''}|${(at ?? '').slice(0, 16)}`
 }
@@ -43,6 +44,42 @@ function emailLogToSentRow(
   } as Email
 }
 
+type FolderQueryOpts = {
+  hasMailFolder: boolean
+  hasDeletedAt: boolean
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyFolderFilter(q: any, folder: string | null, imapPath: string | undefined, opts: FolderQueryOpts) {
+  if (!folder || !opts.hasMailFolder) return q
+
+  if (folder === 'custom' && imapPath) {
+    q = q.eq('mail_folder', 'custom').eq('imap_mailbox', imapPath)
+    if (opts.hasDeletedAt) q = q.is('deleted_at', null)
+    return q
+  }
+
+  if (!['inbox', 'sent', 'drafts', 'trash', 'spam'].includes(folder)) return q
+
+  if (folder === 'inbox') {
+    q = q.or('mail_folder.eq.inbox,mail_folder.is.null')
+    if (opts.hasDeletedAt) q = q.is('deleted_at', null)
+    return q
+  }
+
+  if (folder === 'sent') {
+    return q.eq('mail_folder', 'sent')
+  }
+
+  if (folder === 'trash') {
+    return q.eq('mail_folder', 'trash')
+  }
+
+  q = q.eq('mail_folder', folder)
+  if (opts.hasDeletedAt && folder !== 'trash') q = q.is('deleted_at', null)
+  return q
+}
+
 export async function GET(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
@@ -60,7 +97,6 @@ export async function GET(req: NextRequest) {
   const since = searchParams.get('since') || undefined
   const until = searchParams.get('until') || undefined
   const labelFilter = searchParams.get('label')?.trim() || undefined
-  const scope = await getMailUserScope(userId)
   const db = createAdminClient()
   const limit = Math.min(Number(searchParams.get('limit') || 250), 500)
   const folder = searchParams.get('folder')
@@ -69,37 +105,18 @@ export async function GET(req: NextRequest) {
   const sentFolder = folder === 'sent'
   const mailAccount = sentFolder ? await resolveMailAccount(userId) : null
 
-  const applyFilters = (
-    query: ReturnType<typeof db.from>,
-    fields: string,
-    useV8Filters: boolean,
-    useFolderColumn = true,
-  ) => {
-    let q = query
+  const buildQuery = (fields: string, opts: FolderQueryOpts, useV8Filters: boolean) => {
+    let q = db.from('emails')
       .select(fields)
       .order('received_at', { ascending: false })
       .limit(limit)
+      .eq('user_id', userId)
 
-    q = q.eq('user_id', userId)
-
-    if (folder === 'custom' && imapPath && useFolderColumn) {
-      q = q.eq('mail_folder', 'custom').eq('imap_mailbox', imapPath).is('deleted_at', null)
-    } else if (folder && ['inbox', 'sent', 'drafts', 'trash', 'spam'].includes(folder)) {
-      if (folder === 'inbox' && useFolderColumn) {
-        q = q.or('mail_folder.eq.inbox,mail_folder.is.null').is('deleted_at', null)
-      } else if (folder === 'sent' && useFolderColumn) {
-        q = q.or('mail_folder.eq.sent,imap_mailbox.ilike.%Sent%,imap_mailbox.ilike.%Envoy%').is('deleted_at', null)
-      } else if (folder === 'trash' && useFolderColumn) {
-        q = q.eq('mail_folder', 'trash')
-      } else if (useFolderColumn) {
-        q = q.eq('mail_folder', folder).is('deleted_at', null)
-      }
-    }
+    q = applyFolderFilter(q, folder, imapPath, opts)
 
     if (searchQ) {
       q = q.or(`subject.ilike.%${searchQ}%,from_address.ilike.%${searchQ}%,to_address.ilike.%${searchQ}%`)
     }
-
     if (isAo !== undefined) q = q.eq('is_ao', isAo)
     if (isRead !== undefined) q = q.eq('is_read', isRead)
     if (hasAttachments) q = q.eq('has_attachments', true)
@@ -117,13 +134,30 @@ export async function GET(req: NextRequest) {
     return q
   }
 
-  let { data, error } = await applyFilters(db.from('emails'), EMAIL_LIST_FIELDS, true, true)
+  let opts: FolderQueryOpts = { hasMailFolder: true, hasDeletedAt: true }
+  let { data, error } = await buildQuery(EMAIL_LIST_FIELDS, opts, true)
+
   if (error && isMissingDbColumnError(error.message)) {
-    const legacy = await applyFilters(db.from('emails'), EMAIL_LIST_FIELDS_LEGACY, false, false)
-    data = legacy.data
-    error = legacy.error
+    if (/deleted_at/i.test(error.message)) {
+      opts = { ...opts, hasDeletedAt: false }
+      const retry = await buildQuery(EMAIL_LIST_FIELDS.replace(/, deleted_at, original_folder/, ''), opts, true)
+      data = retry.data
+      error = retry.error
+    }
+    if (error && /mail_folder/i.test(error.message)) {
+      opts = { hasMailFolder: false, hasDeletedAt: false }
+      const legacy = await buildQuery(EMAIL_LIST_FIELDS_LEGACY, opts, false)
+      data = legacy.data
+      error = legacy.error
+    }
   }
+
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
+
+  // Sans colonne mail_folder : inbox = tout, autres dossiers = vide
+  if (!opts.hasMailFolder && folder && folder !== 'inbox') {
+    data = []
+  }
 
   let rows = (data ?? []) as unknown as Email[]
 

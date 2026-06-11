@@ -297,6 +297,26 @@ async function probeMailboxPath(client: ImapFlow, path: string): Promise<boolean
   }
 }
 
+/** Liste tous les dossiers IMAP (diagnostic Gandi / Thunderbird). */
+export async function listImapMailboxes(config: MailAccountConfig): Promise<
+  Array<{ path: string; specialUse?: string; name?: string }>
+> {
+  const client = createImapClient(config)
+  await client.connect()
+  try {
+    const mailboxes = await client.list()
+    return mailboxes.map(m => ({
+      path: m.path,
+      specialUse: m.specialUse ?? undefined,
+      name: m.name,
+    }))
+  } finally {
+    try {
+      await client.logout()
+    } catch { /* ignore */ }
+  }
+}
+
 /** Découverte des dossiers IMAP (SPECIAL-USE + noms courants Gandi/Thunderbird). */
 export async function resolveSpecialMailboxes(config: MailAccountConfig): Promise<ResolvedMailboxes> {
   const client = createImapClient(config)

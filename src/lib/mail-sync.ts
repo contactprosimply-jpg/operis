@@ -78,7 +78,7 @@ function mergeSyncResults(target: MailSyncResult, part: MailSyncResult) {
   if (part.mailboxes) target.mailboxes = part.mailboxes
 }
 
-function mapMailAccountRow(account: {
+export function mapMailAccountRow(account: {
   id: string
   imap_host?: string | null
   imap_port?: number | null
@@ -438,10 +438,31 @@ async function syncOneMailboxFolder(
       }
     }
     const mid = envelopeMessageId(userId, envelope, job.mailboxPath)
-    await db.from('emails')
-      .update(patch)
+    const { data: existingRow } = await db
+      .from('emails')
+      .select('mail_folder, imap_mailbox')
       .eq('user_id', userId)
       .eq('message_id', mid)
+      .maybeSingle()
+
+    // Ne pas reclasser un mail inbox reçu via collision Message-ID
+    if (
+      existingRow &&
+      job.folder !== 'inbox' &&
+      existingRow.mail_folder === 'inbox' &&
+      existingRow.imap_mailbox &&
+      existingRow.imap_mailbox !== job.mailboxPath
+    ) {
+      await db.from('emails')
+        .update({ is_read: envelope.isRead })
+        .eq('user_id', userId)
+        .eq('message_id', mid)
+    } else {
+      await db.from('emails')
+        .update(patch)
+        .eq('user_id', userId)
+        .eq('message_id', mid)
+    }
     result.updated++
   }
 
