@@ -334,20 +334,41 @@ export async function resolveSpecialMailboxes(config: MailAccountConfig): Promis
     const result: ResolvedMailboxes = { inbox: 'INBOX', custom: [] }
     let sentFromSpecialUse = false
     const mailboxes = await client.list()
+    const accountUser = config.imap_user.trim()
+
+    const sentCandidates = new Set<string>()
     for (const m of mailboxes) {
-      if (m.specialUse === '\\Sent') {
-        result.sent = m.path
-        sentFromSpecialUse = true
+      if (m.specialUse === '\\Sent' && !pathLooksLikeSpamTree(m.path)) {
+        sentCandidates.add(m.path)
       }
-      if (m.specialUse === '\\Drafts') result.drafts = m.path
-      if (m.specialUse === '\\Trash') result.trash = m.path
-      if (m.specialUse === '\\Junk') result.spam = m.path
+      if (m.specialUse === '\\Drafts' && !result.drafts) result.drafts = m.path
+      if (m.specialUse === '\\Trash' && !pathLooksLikeSpamTree(m.path) && !result.trash) {
+        result.trash = m.path
+      }
+      if (m.specialUse === '\\Junk' && !result.spam) result.spam = m.path
+    }
+    for (const m of mailboxes) {
+      if (MAILBOX_NAME_HINTS.sent.some(h => pathMatchesHint(m.path, h)) && !pathLooksLikeSpamTree(m.path)) {
+        sentCandidates.add(m.path)
+      }
+    }
+    for (const path of ['Sent', 'INBOX.Sent', 'INBOX/Sent']) {
+      if (mailboxes.some(m => m.path === path)) sentCandidates.add(path)
+    }
+    for (const path of sentCandidates) {
+      if (await validateSentMailboxOnClient(client, path, accountUser)) {
+        result.sent = path
+        sentFromSpecialUse = mailboxes.some(m => m.path === path && m.specialUse === '\\Sent')
+        break
+      }
     }
     for (const [kind, hints] of Object.entries(MAILBOX_NAME_HINTS) as Array<
       [Exclude<keyof ResolvedMailboxes, 'inbox' | 'custom'>, string[]]
     >) {
       if (result[kind]) continue
       for (const m of mailboxes) {
+        if (kind === 'sent' && pathLooksLikeSpamTree(m.path)) continue
+        if (kind === 'trash' && pathLooksLikeSpamTree(m.path)) continue
         if (hints.some(h => pathMatchesHint(m.path, h))) {
           result[kind] = m.path
           break
@@ -366,11 +387,18 @@ export async function resolveSpecialMailboxes(config: MailAccountConfig): Promis
       }
     }
     if (result.sent && !sentFromSpecialUse) {
-      const accountUser = config.imap_user.trim()
       const valid = await validateSentMailboxOnClient(client, result.sent, accountUser)
       if (!valid) {
-        console.warn(`[IMAP] dossier "${result.sent}" ignoré — contient du courrier reçu, pas des envoyés`)
+        const rejected = result.sent
+        console.warn(`[IMAP] dossier "${rejected}" ignoré — contient du courrier reçu, pas des envoyés`)
         delete result.sent
+        for (const path of sentCandidates) {
+          if (path === rejected) continue
+          if (await validateSentMailboxOnClient(client, path, accountUser)) {
+            result.sent = path
+            break
+          }
+        }
       }
     }
 
