@@ -119,6 +119,7 @@ export interface Email {
 
 export interface EmailLog {
   id: string
+  user_id?: string | null
   tender_id: string | null
   supplier_id: string | null
   type: 'consultation' | 'relance' | 'relance_2'

@@ -10,6 +10,22 @@ import { PRESET_EMAIL_LABELS } from '@/lib/mail-api'
 import { Spinner } from '@/components/ui'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
+import MailFolderSidebar from '@/components/mail/MailFolderSidebar'
+import MailComposePanel from '@/components/mail/MailComposePanel'
+import {
+  filterEmailsForFolder,
+  type MailFolder,
+  type SentMailRow,
+  SPAM_LABEL,
+  TRASH_LABEL,
+} from '@/lib/mail-folders'
+import {
+  loadDrafts,
+  upsertDraft,
+  removeDraft,
+  newDraftId,
+  type MailDraft,
+} from '@/lib/mail-drafts'
 
 interface SpeechRecognitionEventLike {
   resultIndex: number
@@ -25,11 +41,6 @@ interface SpeechRecognitionLike {
   onerror: () => void
   start: () => void
   stop: () => void
-}
-
-const inputStyle: React.CSSProperties = {
-  flex: 1, background: 'transparent', border: 'none', outline: 'none',
-  fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
 }
 
 type MailFilter = 'all' | 'unread' | 'ao' | 'attachments'
@@ -129,6 +140,13 @@ export default function MailPage() {
   const [linkModalOpen, setLinkModalOpen] = useState(false)
   const [tendersForLink, setTendersForLink] = useState<Array<{ id: string; title: string; client: string }>>([])
   const [linkingTender, setLinkingTender] = useState(false)
+  const [folder, setFolder] = useState<MailFolder>('inbox')
+  const [allEmails, setAllEmails] = useState<Email[]>([])
+  const [sentMails, setSentMails] = useState<SentMailRow[]>([])
+  const [drafts, setDrafts] = useState<MailDraft[]>([])
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null)
+  const [selectedSent, setSelectedSent] = useState<SentMailRow | null>(null)
+  const [mailAccountEmail, setMailAccountEmail] = useState<string | null>(null)
   const [filter, setFilter] = useState<MailFilter>('all')
   const [priorityFilter, setPriorityFilter] = useState<EmailPriority | ''>('')
   const [fromFilter, setFromFilter] = useState('')
@@ -207,6 +225,38 @@ export default function MailPage() {
 
   useEffect(() => {
     if (!ready || !userId) return
+    authFetch('/api/mail/accounts')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          const acc = data.data?.primary ?? data.data?.accounts?.[0]
+          setMailAccountEmail(acc?.smtp_user ?? acc?.imap_user ?? session?.user?.email ?? null)
+        }
+      })
+      .catch(() => {})
+    setDrafts(loadDrafts(userId))
+  }, [ready, userId, session?.user?.email])
+
+  const loadSentMails = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/mail/sent?limit=100')
+      const data = await res.json()
+      if (data.success) setSentMails(data.data ?? [])
+    } catch { /* ignore */ }
+  }, [])
+
+  const handleFolderChange = (f: MailFolder) => {
+    setFolder(f)
+    setSelected(null)
+    setSelectedSent(null)
+    setComposing(false)
+    if (isMobile) setMobileShowDetail(false)
+    if (f === 'sent') loadSentMails()
+    if (f === 'drafts' && userId) setDrafts(loadDrafts(userId))
+  }
+
+  useEffect(() => {
+    if (!ready || !userId) return
     authFetch('/api/tenders')
       .then(r => r.json())
       .then(data => {
@@ -226,9 +276,10 @@ export default function MailPage() {
     const safetyTimer = setTimeout(() => { if (!silent) setLoading(false) }, 12000)
     try {
       const params = new URLSearchParams({ limit: '250' })
-      if (filter === 'ao') params.set('ao', 'true')
-      if (filter === 'unread') params.set('unread', 'true')
-      if (filter === 'attachments') params.set('attachments', 'true')
+      const listFilter = folder === 'inbox' ? filter : 'all'
+      if (listFilter === 'ao') params.set('ao', 'true')
+      if (listFilter === 'unread') params.set('unread', 'true')
+      if (listFilter === 'attachments') params.set('attachments', 'true')
       if (priorityFilter) params.set('priority', priorityFilter)
       if (fromFilter.trim()) params.set('from', fromFilter.trim())
       if (tenderFilter) params.set('tender_id', tenderFilter)
@@ -244,7 +295,8 @@ export default function MailPage() {
           if (diff > 0) showToast(`${diff} nouveau(x) email(s)`)
         }
         emailCountRef.current = newEmails.length
-        setEmails(newEmails)
+        setAllEmails(newEmails)
+        setEmails(filterEmailsForFolder(newEmails, folder))
         const sid = selectedIdRef.current
         if (sid) {
           const updated = newEmails.find(e => e.id === sid)
@@ -256,7 +308,11 @@ export default function MailPage() {
       clearTimeout(safetyTimer)
       if (!silent) setLoading(false)
     }
-  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter])
+  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, folder])
+
+  useEffect(() => {
+    setEmails(filterEmailsForFolder(allEmails, folder))
+  }, [folder, allEmails])
 
   const loadEmailDetail = useCallback(async (emailId: string, silent = false) => {
     if (!silent) setLoadingDetail(true)
@@ -481,13 +537,32 @@ export default function MailPage() {
     if (target && selected?.id !== target.id) selectEmail(target)
   }, [pendingEmailId, emails, selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openCompose = (prefill: Partial<typeof compose> = {}) => {
+  const openCompose = (prefill: Partial<typeof compose> = {}, draftId?: string) => {
     setCompose({ to: '', cc: '', subject: '', body: '', ...prefill })
     setAttachments([])
+    setActiveDraftId(draftId ?? newDraftId())
     setComposing(true)
     setSendError(null)
+    setSelected(null)
+    setSelectedSent(null)
     if (isMobile) setMobileShowDetail(true)
   }
+
+  useEffect(() => {
+    if (!composing || !userId || !activeDraftId) return
+    const t = setTimeout(() => {
+      upsertDraft(userId, {
+        id: activeDraftId,
+        to: compose.to,
+        cc: compose.cc,
+        subject: compose.subject,
+        body: compose.body,
+        updatedAt: new Date().toISOString(),
+      })
+      if (folder === 'drafts') setDrafts(loadDrafts(userId))
+    }, 800)
+    return () => clearTimeout(t)
+  }, [composing, compose, activeDraftId, userId, folder])
 
   const openReply = (email: Email) => {
     const originalLines = (email.body_text ?? '').split('\n').slice(0, 8).map(l => `> ${l}`).join('\n')
@@ -548,8 +623,11 @@ export default function MailPage() {
       })
       const data = await res.json()
       if (data.success) {
+        if (userId && activeDraftId) removeDraft(userId, activeDraftId)
+        setActiveDraftId(null)
         setComposing(false)
         if (isMobile) setMobileShowDetail(false)
+        loadSentMails()
         showToast('Email envoyé ✓')
       } else setSendError(data.error)
     } catch (e: any) { setSendError(e.message) }
@@ -748,8 +826,28 @@ export default function MailPage() {
     }
   }
 
-  const unreadTotal = emails.filter(e => !e.is_read).length
+  const inboxEmails = filterEmailsForFolder(allEmails, 'inbox')
+  const unreadTotal = inboxEmails.filter(e => !e.is_read).length
   const grouped = groupEmailsByDate(emails)
+  const folderBadges: Partial<Record<MailFolder, number>> = {
+    inbox: unreadTotal,
+    drafts: drafts.length,
+  }
+
+  const handleMoveToFolder = async (email: Email, target: 'spam' | 'trash') => {
+    const label = target === 'spam' ? SPAM_LABEL : TRASH_LABEL
+    const current = email.labels ?? []
+    const without = current.filter(l => l.id !== SPAM_LABEL.id && l.id !== TRASH_LABEL.id)
+    const next = [...without, label]
+    try {
+      await patchEmail(email.id, { labels: next })
+      applyEmailPatch(email.id, { labels: next })
+      setAllEmails(prev => prev.map(e => e.id === email.id ? { ...e, labels: next } : e))
+      showToast(target === 'spam' ? 'Déplacé vers indésirables' : 'Déplacé vers corbeille')
+    } catch {
+      showToast('Erreur déplacement')
+    }
+  }
 
   const showList = !isMobile || !mobileShowDetail
   const showPanel = !isMobile || mobileShowDetail
@@ -779,6 +877,18 @@ export default function MailPage() {
         </div>
       )}
 
+      {!isMobile && (
+        <MailFolderSidebar
+          accountEmail={mailAccountEmail}
+          folder={folder}
+          onFolderChange={handleFolderChange}
+          onCompose={() => openCompose()}
+          onSync={handleSync}
+          syncing={syncing}
+          badges={folderBadges}
+        />
+      )}
+
       {/* Liste emails */}
       {showList && (
         <div style={{
@@ -788,10 +898,32 @@ export default function MailPage() {
           background: 'var(--bg-secondary)', flexShrink: 0,
         }}>
           <div style={{ padding: isMobile ? '12px 12px 10px' : '16px 14px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+            {isMobile && (
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>
+                {(['inbox', 'drafts', 'sent', 'spam', 'trash'] as MailFolder[]).map(f => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => handleFolderChange(f)}
+                    style={{
+                      padding: '5px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
+                      border: 'none',
+                      background: folder === f ? 'var(--accent-soft)' : 'var(--bg-hover)',
+                      color: folder === f ? 'var(--accent)' : 'var(--text-muted)',
+                      fontFamily: 'DM Sans, system-ui',
+                    }}
+                  >
+                    {f === 'inbox' ? 'Entrant' : f === 'drafts' ? 'Brouillons' : f === 'sent' ? 'Envoyés' : f === 'spam' ? 'Spam' : 'Corbeille'}
+                  </button>
+                ))}
+              </div>
+            )}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 10 }}>
               <div style={{ minWidth: 0, flex: '1 1 auto' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: isMobile ? 15 : 14, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>Messagerie</span>
+                  <span style={{ fontSize: isMobile ? 15 : 14, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                    {folder === 'inbox' ? 'Courrier entrant' : folder === 'drafts' ? 'Brouillons' : folder === 'sent' ? 'Envoyés' : folder === 'spam' ? 'Indésirables' : 'Corbeille'}
+                  </span>
                   {unreadTotal > 0 && (
                     <span style={{
                       background: '#ef4444', color: '#fff', borderRadius: 10, fontSize: 10, fontWeight: 700,
@@ -844,6 +976,7 @@ export default function MailPage() {
               </div>
             </div>
 
+            {folder === 'inbox' && (
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
               {filterButtons.map(f => (
                 <button key={f.key} onClick={() => setFilter(f.key)} style={{
@@ -853,7 +986,9 @@ export default function MailPage() {
                 }}>{f.label}</button>
               ))}
             </div>
+            )}
 
+            {folder === 'inbox' && (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               <select
                 value={priorityFilter}
@@ -893,7 +1028,8 @@ export default function MailPage() {
                 Filtres {showAdvancedFilters ? '▾' : '▸'}
               </button>
             </div>
-            {showAdvancedFilters && (
+            )}
+            {folder === 'inbox' && showAdvancedFilters && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
                 <select
                   value={tenderFilter}
@@ -950,13 +1086,70 @@ export default function MailPage() {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-            {!ready || (loading && emails.length === 0) ? (
+            {folder === 'sent' ? (
+              sentMails.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 32, fontSize: 12, color: 'var(--text-muted)' }}>
+                  Aucun message envoyé depuis Operis
+                </div>
+              ) : sentMails.map(row => (
+                <div
+                  key={row.id}
+                  onClick={() => {
+                    setSelectedSent(row)
+                    setSelected(null)
+                    setComposing(false)
+                    if (isMobile) setMobileShowDetail(true)
+                  }}
+                  style={{
+                    padding: isMobile ? '14px 12px' : '12px 14px',
+                    borderBottom: '1px solid var(--border)', cursor: 'pointer',
+                    background: selectedSent?.id === row.id ? 'var(--bg-hover)' : 'transparent',
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+                    À : {row.to_address}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{row.subject ?? '(sans objet)'}</div>
+                  <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+                    {formatMailTime(row.sent_at)}
+                  </div>
+                </div>
+              ))
+            ) : folder === 'drafts' ? (
+              drafts.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 32, fontSize: 12, color: 'var(--text-muted)' }}>
+                  Aucun brouillon — cliquez sur « Nouveau message »
+                </div>
+              ) : drafts.map(draft => (
+                <div
+                  key={draft.id}
+                  onClick={() => openCompose({
+                    to: draft.to,
+                    cc: draft.cc,
+                    subject: draft.subject,
+                    body: draft.body,
+                  }, draft.id)}
+                  style={{
+                    padding: isMobile ? '14px 12px' : '12px 14px',
+                    borderBottom: '1px solid var(--border)', cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+                    {draft.subject || '(sans objet)'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    {draft.to || 'Pas de destinataire'} · {formatMailTime(draft.updatedAt)}
+                  </div>
+                </div>
+              ))
+            ) : !ready || (loading && emails.length === 0) ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}><Spinner /></div>
             ) : emails.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {syncing ? 'Synchronisation en cours…' : 'Aucun email pour ce filtre'}
+                  {syncing ? 'Synchronisation en cours…' : 'Aucun email dans ce dossier'}
                 </div>
+                {folder === 'inbox' && (
                 <button
                   type="button"
                   onClick={handleSync}
@@ -980,6 +1173,7 @@ export default function MailPage() {
                   {syncing ? <Spinner size={14} /> : '↻'}
                   Synchroniser maintenant
                 </button>
+                )}
               </div>
             ) : grouped.map(group => (
               <div key={group.label}>
@@ -1139,103 +1333,51 @@ export default function MailPage() {
 
       {/* Panel détail / compositeur */}
       {showPanel && (
-        <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-primary)', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ flex: 1, overflow: composing ? 'hidden' : 'auto', background: 'var(--bg-primary)', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {composing ? (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isMobile ? '12px 14px' : '14px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-                {isMobile && (
-                  <button onClick={() => { setComposing(false); setMobileShowDetail(false) }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 14, marginRight: 8 }}>←</button>
-                )}
-                <span style={{ fontSize: 13, fontWeight: 600 }}>Nouveau message</span>
-                <button onClick={() => { setComposing(false); if (isMobile) setMobileShowDetail(false) }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 20 }}>×</button>
+            <MailComposePanel
+              isMobile={isMobile}
+              compose={compose}
+              onChange={patch => setCompose(c => ({ ...c, ...patch }))}
+              onSend={handleSend}
+              onCancel={() => {
+                setComposing(false)
+                if (isMobile) setMobileShowDetail(false)
+              }}
+              onAttach={() => fileInputRef.current?.click()}
+              attachments={attachments}
+              onRemoveAttachment={i => setAttachments(a => a.filter((_, j) => j !== i))}
+              sending={sending}
+              sendError={sendError}
+              isListening={isListening}
+              onToggleSpeech={toggleSpeech}
+              bodyRef={bodyRef}
+              fileInputRef={fileInputRef}
+              onFilesSelected={files => setAttachments(a => [...a, ...Array.from(files)])}
+              signaturePreview={signaturePreview}
+              SignaturePreview={SignaturePreview}
+            />
+          ) : selectedSent ? (
+            <div style={{ padding: isMobile ? '12px 14px' : '20px 24px' }}>
+              {isMobile && (
+                <button onClick={() => { setMobileShowDetail(false); setSelectedSent(null) }} style={{
+                  background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
+                  fontSize: 13, marginBottom: 12, fontFamily: 'DM Sans, system-ui',
+                }}>← Retour</button>
+              )}
+              <div style={{ fontSize: isMobile ? 16 : 15, fontWeight: 600, marginBottom: 12, color: 'var(--text-primary)' }}>
+                {selectedSent.subject ?? '(sans objet)'}
               </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: isMobile ? '12px 14px' : '16px 20px', gap: 8, overflowY: 'auto' }}>
-                {[
-                  { label: 'À', key: 'to', type: 'email', placeholder: 'email@exemple.com' },
-                  { label: 'Cc', key: 'cc', type: 'text', placeholder: 'copie à (virgules pour plusieurs)' },
-                  { label: 'Objet', key: 'subject', type: 'text', placeholder: '' },
-                ].map(field => (
-                  <div key={field.key} style={{ display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 8, flexShrink: 0 }}>
-                    <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', width: 32, textTransform: 'uppercase' }}>{field.label}</span>
-                    <input
-                      type={field.type}
-                      value={(compose as Record<string, string>)[field.key]}
-                      onChange={e => setCompose(c => ({ ...c, [field.key]: e.target.value }))}
-                      placeholder={field.placeholder}
-                      style={inputStyle}
-                    />
-                  </div>
-                ))}
-                <div style={{
-                  flex: 1, minHeight: 140, display: 'flex', flexDirection: 'column',
-                  background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1 }}>
-                    <textarea ref={bodyRef} value={compose.body} onChange={e => setCompose(c => ({ ...c, body: e.target.value }))}
-                      placeholder="Écris ton message ici..."
-                      style={{
-                        flex: 1, minHeight: 100, background: 'transparent', border: 'none', outline: 'none',
-                        fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
-                        resize: 'none', padding: '14px 16px',
-                      }} />
-                    <button
-                      type="button"
-                      onClick={toggleSpeech}
-                      title="Dictée vocale (fr-FR)"
-                      style={{
-                        margin: '10px 10px 0 0', width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-                        border: isListening ? '2px solid #ef4444' : '1px solid var(--border-hi)',
-                        background: isListening ? 'rgba(239,68,68,0.15)' : 'var(--bg-secondary)',
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        position: 'relative',
-                      }}
-                    >
-                      {isListening && (
-                        <span style={{
-                          position: 'absolute', inset: -4, borderRadius: '50%',
-                          border: '2px solid #ef4444', animation: 'pulse 1s ease infinite',
-                        }} />
-                      )}
-                      <svg viewBox="0 0 24 24" fill="none" stroke={isListening ? '#ef4444' : 'currentColor'} strokeWidth="1.8" width="16" height="16">
-                        <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-                        <path d="M19 10v2a7 7 0 01-14 0v-2" />
-                        <line x1="12" y1="19" x2="12" y2="23" />
-                        <line x1="8" y1="23" x2="16" y2="23" />
-                      </svg>
-                    </button>
-                  </div>
-                  {signaturePreview.html && (
-                    <div style={{ padding: '0 12px 12px', flexShrink: 0 }}>
-                      <SignaturePreview html={signaturePreview.html} />
-                    </div>
-                  )}
-                </div>
-
-                {attachments.length > 0 && (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {attachments.map((f, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, color: 'var(--text-secondary)' }}>
-                        📎 {f.name}
-                        <button onClick={() => setAttachments(a => a.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f87171', fontSize: 14, lineHeight: 1 }}>×</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {sendError && <div style={{ fontSize: 12, color: '#f87171', background: 'rgba(239,68,68,0.1)', borderRadius: 7, padding: '8px 12px' }}>{sendError}</div>}
-
-                <div style={{ display: 'flex', gap: 8, paddingTop: 8, borderTop: '1px solid var(--border)', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <button onClick={handleSend} disabled={sending} style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: sending ? 0.5 : 1, fontFamily: 'DM Sans, system-ui', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {sending && <Spinner size={11} />}
-                    {sending ? 'Envoi...' : 'Envoyer'}
-                  </button>
-                  <button onClick={() => fileInputRef.current?.click()} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-secondary)', borderRadius: 7, padding: '7px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
-                    📎 Joindre
-                  </button>
-                  <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }}
-                    onChange={e => { if (e.target.files) setAttachments(a => [...a, ...Array.from(e.target.files!)]) }} />
-                  <button onClick={() => { setComposing(false); if (isMobile) setMobileShowDetail(false) }} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-secondary)', borderRadius: 7, padding: '7px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Annuler</button>
-                </div>
+              <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.8 }}>
+                <div>À : <span style={{ color: 'var(--text-secondary)' }}>{selectedSent.to_address}</span></div>
+                <div>Date : <span style={{ color: 'var(--text-secondary)' }}>{new Date(selectedSent.sent_at).toLocaleString('fr-FR')}</span></div>
+              </div>
+              <div style={{
+                background: 'var(--bg-card)', border: '1px solid var(--border-hi)', borderRadius: 10,
+                padding: '16px 18px', fontSize: 14, lineHeight: 1.65, color: 'var(--text-secondary)',
+                whiteSpace: 'pre-wrap', fontFamily: 'DM Sans, system-ui',
+              }}>
+                {selectedSent.body ?? ''}
               </div>
             </div>
           ) : selected ? (
@@ -1384,6 +1526,8 @@ export default function MailPage() {
                 ) : (
                   <button onClick={() => handleMarkRead(selected)} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-secondary)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Marquer lu</button>
                 )}
+                <button type="button" onClick={() => handleMoveToFolder(selected, 'spam')} style={{ background: 'transparent', border: '1px solid rgba(239,68,68,0.35)', color: '#f87171', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Indésirable</button>
+                <button type="button" onClick={() => handleMoveToFolder(selected, 'trash')} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-muted)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Corbeille</button>
               </div>
 
               {(selected.attachments?.length ?? 0) > 0 && (

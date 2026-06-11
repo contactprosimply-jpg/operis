@@ -214,6 +214,7 @@ export const tenderService = {
           })
 
           await emailLogRepository.create({
+            user_id: userId,
             tender_id: tenderId,
             supplier_id: supplierId,
             type: 'consultation',
@@ -230,6 +231,7 @@ export const tenderService = {
         } catch (emailError: unknown) {
           const msg = emailError instanceof Error ? emailError.message : 'Erreur envoi'
           await emailLogRepository.create({
+            user_id: userId,
             tender_id: tenderId,
             supplier_id: supplierId,
             type: 'consultation',
@@ -290,6 +292,7 @@ export const tenderService = {
 
       // 3. Logger
       await emailLogRepository.create({
+        user_id: userId,
         tender_id: tenderId,
         supplier_id: supplierId,
         type: newCount >= 2 ? 'relance_2' : 'relance',

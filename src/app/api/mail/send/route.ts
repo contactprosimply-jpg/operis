@@ -105,7 +105,8 @@ export async function POST(req: NextRequest) {
     })
 
     const { error: logError } = await db.from('email_logs').insert({
-      type: 'consultation',
+      user_id: userId,
+      type: 'outbound',
       to_address: toText,
       subject: subjectText,
       body: finalText,

@@ -24,6 +24,8 @@ export const PRESET_EMAIL_LABELS: EmailLabel[] = [
   { id: 'repondu', name: 'Répondu', color: '#4ade80' },
   { id: 'en-attente', name: 'En attente', color: '#60a5fa' },
   { id: 'archive', name: 'Archivé', color: '#6b7280' },
+  { id: 'indesirable', name: 'Indésirable', color: '#ef4444' },
+  { id: 'corbeille', name: 'Corbeille', color: '#94a3b8' },
 ]
 
 export function tenderAutoLabel(tenderId: string, title: string, status: string): EmailLabel {
