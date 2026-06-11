@@ -2,13 +2,7 @@
 
 import { NextRequest } from 'next/server'
 import { getUserEmailFromRequest, getUserFromRequest, unauthorized } from '@/lib/auth'
-import { getMailUserScope } from '@/lib/mail-access'
-import {
-  formatImapError,
-  resolveMailAccount,
-  syncFamilyMailAccounts,
-  syncUserMailAccounts,
-} from '@/lib/mail-sync'
+import { formatImapError, resolveMailAccount, syncUserMailAccounts } from '@/lib/mail-sync'
 import { checkRateLimit } from '@/lib/rateLimit'
 
 export const maxDuration = 60
@@ -30,18 +24,15 @@ export async function POST(req: NextRequest) {
     }, { status: 429 })
   }
 
-  const scope = await getMailUserScope(userId)
-  const mode = scope.isOwner ? 'family' : 'personal'
-
   const appEnv = process.env.APP_ENV || process.env.VERCEL_ENV || 'development'
   let supabaseHost = 'unknown'
   try {
     supabaseHost = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL || '').host
   } catch { /* ignore */ }
-  console.log(`[mail/sync] APP_ENV=${appEnv} supabase=${supabaseHost} user=${userId} mode=${mode}`)
+  console.log(`[mail/sync] APP_ENV=${appEnv} supabase=${supabaseHost} user=${userId} personal`)
 
   const account = await resolveMailAccount(userId, { loginEmail })
-  if (!account && !scope.isOwner) {
+  if (!account) {
     return Response.json({
       success: false,
       error: 'Aucun compte mail configuré. Paramètres → Messagerie : enregistrez votre email IMAP et mot de passe, puis testez la connexion.',
@@ -58,11 +49,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = scope.isOwner
-      ? await syncFamilyMailAccounts(userId, { backfill, quick, loginEmail })
-      : await syncUserMailAccounts(userId, { backfill, quick, loginEmail })
-
-    console.log(`[mail/sync] user=${userId} mode=${mode} fetched=${result.fetched} stored=${result.stored} errors=${result.errors}`)
+    const result = await syncUserMailAccounts(userId, { backfill, quick, loginEmail })
+    console.log(`[mail/sync] user=${userId} fetched=${result.fetched} stored=${result.stored} errors=${result.errors}`)
     return Response.json({ success: true, data: result })
   } catch (e) {
     return Response.json({

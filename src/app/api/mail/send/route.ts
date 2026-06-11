@@ -5,7 +5,6 @@ import { getUserEmailFromRequest, getUserFromRequest, unauthorized } from '@/lib
 import { createAdminClient } from '@/lib/supabase'
 import nodemailer from 'nodemailer'
 import { clampString, rejectUnexpectedFields } from '@/lib/api-validation'
-import { getMailUserScope } from '@/lib/mail-access'
 import { resolveMailAccount } from '@/lib/mail-sync'
 export const maxDuration = 30
 
@@ -16,13 +15,13 @@ export async function POST(req: NextRequest) {
 
   const rawBody = await req.json()
   const unexpected = rejectUnexpectedFields(rawBody as Record<string, unknown>, [
-    'to', 'subject', 'body', 'cc', 'signature', 'attachments', 'send_as_user_id',
+    'to', 'subject', 'body', 'cc', 'signature', 'attachments',
   ])
   if (unexpected) {
     return Response.json({ success: false, error: unexpected }, { status: 400 })
   }
 
-  const { to, subject, body, cc, signature, attachments: rawAttachments, send_as_user_id } = rawBody
+  const { to, subject, body, cc, signature, attachments: rawAttachments } = rawBody
 
   const bodyText = clampString(body, 100000) ?? ''
   const signatureText = (clampString(signature, 10000) ?? '').trim()
@@ -36,25 +35,9 @@ export async function POST(req: NextRequest) {
     return Response.json({ success: false, error: 'Message ou signature requis' }, { status: 400 })
   }
 
-  const scope = await getMailUserScope(userId)
-  let sendAsUserId = userId
-  let sendAsEmail = loginEmail
-
-  if (send_as_user_id && typeof send_as_user_id === 'string') {
-    if (!scope.isOwner) {
-      return Response.json({ success: false, error: 'Envoi au nom d\'un membre reserve au createur' }, { status: 403 })
-    }
-    if (!scope.allowedUserIds.includes(send_as_user_id)) {
-      return Response.json({ success: false, error: 'Membre non autorise' }, { status: 400 })
-    }
-    sendAsUserId = send_as_user_id
-    const member = scope.members.find(m => m.user_id === send_as_user_id)
-    sendAsEmail = member?.email ?? null
-  }
-
-  const mailCfg = await resolveMailAccount(sendAsUserId, { loginEmail: sendAsEmail })
+  const mailCfg = await resolveMailAccount(userId, { loginEmail })
   if (!mailCfg?.id) {
-    return Response.json({ success: false, error: 'Aucun compte mail configure pour ce membre' }, { status: 400 })
+    return Response.json({ success: false, error: 'Aucun compte mail configure' }, { status: 400 })
   }
 
   const db = createAdminClient()

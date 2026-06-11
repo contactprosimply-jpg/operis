@@ -541,9 +541,9 @@ function SettingsPageContent() {
           <>
             {!org ? (
               <div style={card}>
-                <div style={sTitle}>Creer votre groupe Famille</div>
+                <div style={sTitle}>Creer votre groupe (AO)</div>
                 <div style={sSub}>
-                  Le createur est le membre n°1. Un lien d&apos;invitation sera genere pour ajouter les autres comptes Operis.
+                  Regroupez vos comptes Operis pour les appels d&apos;offres. Chaque compte garde sa messagerie personnelle.
                 </div>
                 <Field label="Nom du groupe" value={orgName} onChange={setOrgName} placeholder="Ex: Nikodex Group" />
                 <Button variant="primary" loading={creatingOrg} onClick={handleCreateOrg}>Creer le groupe</Button>
@@ -554,8 +554,8 @@ function SettingsPageContent() {
                   <div style={sTitle}>{org.name}</div>
                   <div style={sSub}>
                     {org.is_owner
-                      ? 'Vous etes le createur (membre n°1). Partagez le lien pour inviter les autres.'
-                      : `Vous etes membre n°${org.my_number ?? '?'} — createur : ${org.owner_email ?? 'inconnu'}`}
+                      ? 'Vous etes le createur (membre n°1). Invitez l\'equipe pour collaborer sur les AO.'
+                      : `Membre n°${org.my_number ?? '?'} — createur : ${org.owner_email ?? 'inconnu'}`}
                   </div>
                   {org.is_owner && session?.user?.email && org.owner_email
                     && session.user.email.toLowerCase() !== org.owner_email.toLowerCase() && (

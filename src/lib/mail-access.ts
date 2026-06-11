@@ -1,14 +1,10 @@
-import { getFamilyContext } from '@/lib/family'
-
+/** Messagerie strictement personnelle — le groupe Famille sert aux AO, pas aux boîtes mail. */
 export async function getMailUserScope(requestingUserId: string) {
-  const ctx = await getFamilyContext(requestingUserId)
-  const allowedUserIds = [requestingUserId, ...ctx.memberUserIds]
-
   return {
-    isOwner: ctx.isOwner,
-    organizationId: ctx.organizationId,
-    members: ctx.members,
-    memberUserIds: ctx.memberUserIds,
-    allowedUserIds: [...new Set(allowedUserIds)],
+    isOwner: false,
+    organizationId: null,
+    members: [],
+    memberUserIds: [],
+    allowedUserIds: [requestingUserId],
   }
 }
