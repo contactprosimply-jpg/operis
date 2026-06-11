@@ -23,6 +23,7 @@ export interface OrganizationPayload {
   my_number: number | null
   members: OrgMemberRow[]
   invite_link: string | null
+  owned_groups?: Array<{ id: string; name: string }>
 }
 
 export function appBaseUrl(): string {
@@ -40,18 +41,47 @@ export function generateInviteToken(): string {
   return randomBytes(24).toString('base64url')
 }
 
-export async function userBelongsToOrganization(db: ReturnType<typeof createAdminClient>, userId: string) {
-  const { data: owned } = await db.from('organizations').select('id').eq('owner_id', userId).maybeSingle()
-  if (owned) return { type: 'owner' as const, organizationId: owned.id }
+export async function listOwnedOrganizations(db: ReturnType<typeof createAdminClient>, userId: string) {
+  const { data } = await db
+    .from('organizations')
+    .select('id, name, owner_id, created_at')
+    .eq('owner_id', userId)
+    .order('created_at', { ascending: false })
+  return data ?? []
+}
 
-  const { data: membership } = await db
+export async function userBelongsToOrganization(db: ReturnType<typeof createAdminClient>, userId: string) {
+  const owned = await listOwnedOrganizations(db, userId)
+  if (owned.length) return { type: 'owner' as const, organizationId: owned[0].id }
+
+  const { data: memberships } = await db
     .from('organization_members')
     .select('organization_id')
     .eq('user_id', userId)
-    .maybeSingle()
+    .limit(1)
 
+  const membership = memberships?.[0]
   if (membership) return { type: 'member' as const, organizationId: membership.organization_id as string }
   return null
+}
+
+async function purgeOrganization(db: ReturnType<typeof createAdminClient>, organizationId: string) {
+  const { error: inviteErr } = await db
+    .from('organization_invites')
+    .delete()
+    .eq('organization_id', organizationId)
+  if (inviteErr && !inviteErr.message.includes('organization_invites')) {
+    return inviteErr
+  }
+
+  const { error: membersErr } = await db
+    .from('organization_members')
+    .delete()
+    .eq('organization_id', organizationId)
+  if (membersErr) return membersErr
+
+  const { error } = await db.from('organizations').delete().eq('id', organizationId)
+  return error
 }
 
 async function resolveMemberEmails(
@@ -146,14 +176,11 @@ export async function createOrganizationInvite(
 export async function getOrganizationPayloadForUser(userId: string): Promise<OrganizationPayload | null> {
   const db = createAdminClient()
 
-  const { data: owned } = await db
-    .from('organizations')
-    .select('id, name, owner_id')
-    .eq('owner_id', userId)
-    .maybeSingle()
+  const ownedList = await listOwnedOrganizations(db, userId)
+  const ownedGroups = ownedList.map(o => ({ id: o.id, name: o.name }))
 
-  let org = owned
-  let isOwner = !!owned
+  let org: { id: string; name: string; owner_id: string } | null = ownedList[0] ?? null
+  let isOwner = ownedList.length > 0
 
   if (!org) {
     const { data: membership } = await db
@@ -201,20 +228,33 @@ export async function getOrganizationPayloadForUser(userId: string): Promise<Org
     my_number: myMember?.number ?? null,
     members,
     invite_link: inviteLink,
+    owned_groups: ownedGroups.length ? ownedGroups : undefined,
   }
 }
 
-export async function deleteOrganizationForOwner(userId: string) {
+export async function deleteOrganizationForOwner(
+  userId: string,
+  options?: { organizationId?: string; deleteAll?: boolean },
+) {
   const db = createAdminClient()
-  const { data: org } = await db.from('organizations').select('id, name').eq('owner_id', userId).maybeSingle()
-  if (!org) return { ok: false as const, error: 'Aucun groupe a supprimer' }
+  const owned = await listOwnedOrganizations(db, userId)
+  if (!owned.length) return { ok: false as const, error: 'Aucun groupe a supprimer' }
 
-  await db.from('organization_invites').delete().eq('organization_id', org.id)
-  await db.from('organization_members').delete().eq('organization_id', org.id)
-  const { error } = await db.from('organizations').delete().eq('id', org.id).eq('owner_id', userId)
-  if (error) return { ok: false as const, error: error.message }
+  let targets = owned
+  if (options?.organizationId) {
+    targets = owned.filter(o => o.id === options.organizationId)
+    if (!targets.length) return { ok: false as const, error: 'Groupe introuvable ou non autorise' }
+  } else if (!options?.deleteAll) {
+    targets = [owned[0]]
+  }
 
-  return { ok: true as const, name: org.name }
+  for (const org of targets) {
+    const error = await purgeOrganization(db, org.id)
+    if (error) return { ok: false as const, error: error.message }
+  }
+
+  const names = targets.map(o => o.name).join(', ')
+  return { ok: true as const, name: names, deleted_count: targets.length }
 }
 
 export async function leaveOrganizationAsMember(userId: string) {

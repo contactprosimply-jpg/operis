@@ -297,16 +297,27 @@ function SettingsPageContent() {
     setLeavingOrg(false)
   }
 
-  const handleDeleteOrg = async () => {
-    const ok = confirm(`Supprimer le groupe "${org?.name}" ? Tous les membres seront retires.`)
-    if (!ok) return
+  const handleDeleteOrg = async (deleteAll = false) => {
+    const count = org?.owned_groups?.length ?? 1
+    const msg = deleteAll && count > 1
+      ? `Supprimer tous vos groupes (${count}) ? Action irreversible.`
+      : `Supprimer le groupe "${org?.name}" ? Tous les membres seront retires.`
+    if (!confirm(msg)) return
     setDeletingOrg(true)
     try {
-      const res = await authFetch('/api/organization', { method: 'DELETE' })
+      const res = await authFetch('/api/organization', {
+        method: 'PUT',
+        body: JSON.stringify({
+          action: 'delete_group',
+          organization_id: deleteAll ? undefined : org?.id,
+          delete_all: deleteAll,
+        }),
+      })
       const data = await res.json()
       if (data.success) {
         setOrg(null)
-        show(`Groupe "${data.data?.name ?? org?.name}" supprime`)
+        show(`Groupe(s) supprime(s) : ${data.data?.name ?? org?.name}`)
+        await loadOrganization()
       } else show(`Erreur : ${data.error}`)
     } catch (e: unknown) {
       const err = e as { message?: string }
@@ -600,23 +611,52 @@ function SettingsPageContent() {
 
                 <div style={card}>
                   {org.is_owner ? (
-                    <Button
-                      variant="ghost"
-                      loading={deletingOrg}
-                      onClick={handleDeleteOrg}
-                      style={{ color: '#f87171', borderColor: 'rgba(248,113,113,0.35)' }}
-                    >
-                      Supprimer ce groupe
-                    </Button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {org.owned_groups && org.owned_groups.length > 1 && (
+                        <div style={{ fontSize: 12, color: '#fbbf24', marginBottom: 4 }}>
+                          Vous avez {org.owned_groups.length} groupes crees : {org.owned_groups.map(g => g.name).join(', ')}
+                        </div>
+                      )}
+                      <Button
+                        variant="ghost"
+                        loading={deletingOrg}
+                        onClick={() => handleDeleteOrg(false)}
+                        style={{ color: '#f87171', borderColor: 'rgba(248,113,113,0.35)' }}
+                      >
+                        Supprimer ce groupe
+                      </Button>
+                      {org.owned_groups && org.owned_groups.length > 1 && (
+                        <Button
+                          variant="ghost"
+                          loading={deletingOrg}
+                          onClick={() => handleDeleteOrg(true)}
+                          style={{ color: '#f87171', borderColor: 'rgba(248,113,113,0.35)' }}
+                        >
+                          Supprimer tous mes groupes ({org.owned_groups.length})
+                        </Button>
+                      )}
+                    </div>
                   ) : (
-                    <Button
-                      variant="ghost"
-                      loading={leavingOrg}
-                      onClick={handleLeaveOrg}
-                      style={{ color: '#f87171', borderColor: 'rgba(248,113,113,0.35)' }}
-                    >
-                      Quitter ce groupe
-                    </Button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <Button
+                        variant="ghost"
+                        loading={leavingOrg}
+                        onClick={handleLeaveOrg}
+                        style={{ color: '#f87171', borderColor: 'rgba(248,113,113,0.35)' }}
+                      >
+                        Quitter ce groupe
+                      </Button>
+                      {org.owned_groups && org.owned_groups.length > 0 && (
+                        <Button
+                          variant="ghost"
+                          loading={deletingOrg}
+                          onClick={() => handleDeleteOrg(true)}
+                          style={{ color: '#f87171', borderColor: 'rgba(248,113,113,0.35)' }}
+                        >
+                          Supprimer mes groupes crees ({org.owned_groups.length})
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
 

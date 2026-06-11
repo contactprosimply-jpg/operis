@@ -78,7 +78,7 @@ export async function PUT(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
-  const { action, member_id, tender_id, assigned_to } = await req.json()
+  const { action, member_id, tender_id, assigned_to, organization_id, delete_all } = await req.json()
   const db = createAdminClient()
 
   if (action === 'regenerate_invite') {
@@ -108,6 +108,18 @@ export async function PUT(req: NextRequest) {
     return Response.json({ success: true, data: { left: true } })
   }
 
+  if (action === 'delete_group') {
+    const result = await deleteOrganizationForOwner(userId, {
+      organizationId: organization_id as string | undefined,
+      deleteAll: delete_all === true,
+    })
+    if (!result.ok) return Response.json({ success: false, error: result.error }, { status: 400 })
+    return Response.json({
+      success: true,
+      data: { deleted: true, name: result.name, deleted_count: result.deleted_count },
+    })
+  }
+
   return Response.json({ success: false, error: 'Action inconnue' }, { status: 400 })
 }
 
@@ -115,8 +127,15 @@ export async function DELETE(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
-  const result = await deleteOrganizationForOwner(userId)
+  const body = await req.json().catch(() => ({}))
+  const organizationId = body?.organization_id as string | undefined
+  const deleteAll = body?.delete_all === true
+
+  const result = await deleteOrganizationForOwner(userId, { organizationId, deleteAll })
   if (!result.ok) return Response.json({ success: false, error: result.error }, { status: 400 })
 
-  return Response.json({ success: true, data: { deleted: true, name: result.name } })
+  return Response.json({
+    success: true,
+    data: { deleted: true, name: result.name, deleted_count: result.deleted_count },
+  })
 }
