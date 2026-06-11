@@ -4,7 +4,7 @@ export const EMAIL_LIST_FIELDS_LEGACY =
   'id, user_id, message_id, subject, from_address, to_address, received_at, is_read, is_ao, ao_score, tender_id, has_attachments, created_at'
 
 export const EMAIL_LIST_FIELDS =
-  'id, user_id, message_id, subject, from_address, to_address, received_at, is_read, is_ao, ao_score, tender_id, has_attachments, source_member_id, source_member_name, priority, labels, created_at'
+  'id, user_id, message_id, subject, from_address, to_address, received_at, is_read, is_ao, ao_score, tender_id, has_attachments, source_member_id, source_member_name, priority, labels, mail_folder, imap_uid, imap_mailbox, created_at'
 
 export function isMissingDbColumnError(message: string): boolean {
   return /column .* does not exist/i.test(message) || /Could not find the .* column/i.test(message)

@@ -13,9 +13,7 @@ import { groupEmailsByDate } from '@/lib/mail-grouping'
 import MailFolderSidebar from '@/components/mail/MailFolderSidebar'
 import MailComposePanel from '@/components/mail/MailComposePanel'
 import {
-  filterEmailsForFolder,
   type MailFolder,
-  type SentMailRow,
   SPAM_LABEL,
   TRASH_LABEL,
 } from '@/lib/mail-folders'
@@ -142,11 +140,10 @@ export default function MailPage() {
   const [linkingTender, setLinkingTender] = useState(false)
   const [folder, setFolder] = useState<MailFolder>('inbox')
   const [allEmails, setAllEmails] = useState<Email[]>([])
-  const [sentMails, setSentMails] = useState<SentMailRow[]>([])
   const [drafts, setDrafts] = useState<MailDraft[]>([])
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null)
-  const [selectedSent, setSelectedSent] = useState<SentMailRow | null>(null)
   const [mailAccountEmail, setMailAccountEmail] = useState<string | null>(null)
+  const [inboxUnread, setInboxUnread] = useState(0)
   const [filter, setFilter] = useState<MailFilter>('all')
   const [priorityFilter, setPriorityFilter] = useState<EmailPriority | ''>('')
   const [fromFilter, setFromFilter] = useState('')
@@ -237,22 +234,14 @@ export default function MailPage() {
     setDrafts(loadDrafts(userId))
   }, [ready, userId, session?.user?.email])
 
-  const loadSentMails = useCallback(async () => {
-    try {
-      const res = await authFetch('/api/mail/sent?limit=100')
-      const data = await res.json()
-      if (data.success) setSentMails(data.data ?? [])
-    } catch { /* ignore */ }
-  }, [])
-
   const handleFolderChange = (f: MailFolder) => {
     setFolder(f)
     setSelected(null)
-    setSelectedSent(null)
     setComposing(false)
     if (isMobile) setMobileShowDetail(false)
-    if (f === 'sent') loadSentMails()
     if (f === 'drafts' && userId) setDrafts(loadDrafts(userId))
+    loadEmails(false)
+    if (f === 'sent' || f === 'inbox') void runSync(true)
   }
 
   useEffect(() => {
@@ -275,7 +264,7 @@ export default function MailPage() {
     if (!silent) setLoading(true)
     const safetyTimer = setTimeout(() => { if (!silent) setLoading(false) }, 12000)
     try {
-      const params = new URLSearchParams({ limit: '250' })
+      const params = new URLSearchParams({ limit: '250', folder })
       const listFilter = folder === 'inbox' ? filter : 'all'
       if (listFilter === 'ao') params.set('ao', 'true')
       if (listFilter === 'unread') params.set('unread', 'true')
@@ -296,7 +285,10 @@ export default function MailPage() {
         }
         emailCountRef.current = newEmails.length
         setAllEmails(newEmails)
-        setEmails(filterEmailsForFolder(newEmails, folder))
+        setEmails(newEmails)
+        if (folder === 'inbox') {
+          setInboxUnread(newEmails.filter((e: Email) => !e.is_read).length)
+        }
         const sid = selectedIdRef.current
         if (sid) {
           const updated = newEmails.find(e => e.id === sid)
@@ -310,11 +302,12 @@ export default function MailPage() {
     }
   }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, folder])
 
-  useEffect(() => {
-    setEmails(filterEmailsForFolder(allEmails, folder))
-  }, [folder, allEmails])
-
   const loadEmailDetail = useCallback(async (emailId: string, silent = false) => {
+    if (emailId.startsWith('elog-')) {
+      const local = emailsRef.current.find(e => e.id === emailId)
+      if (local) setSelected(local)
+      return
+    }
     if (!silent) setLoadingDetail(true)
     const safetyTimer = setTimeout(() => { if (!silent) setLoadingDetail(false) }, 60000)
     try {
@@ -384,6 +377,7 @@ export default function MailPage() {
           errors = 0,
           duplicates = 0,
           skippedOutbound = 0,
+          mailboxes,
           accounts,
         } = data.data ?? {}
         const total = stored + updated
@@ -406,7 +400,12 @@ export default function MailPage() {
           } else if (!silent && quickStored > 0) {
             showToast(`${quickStored} nouveau(x) email(s)`)
           }
-          setAutoSyncStatus(`Synchro : ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
+          const syncTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+          if (folder === 'sent' && mailboxes && !mailboxes.sent) {
+            setAutoSyncStatus(`Synchro ${syncTime} — dossier Envoyés introuvable sur IMAP`)
+          } else {
+            setAutoSyncStatus(`Synchro : ${syncTime}`)
+          }
         }
         await loadEmails(true)
         const sid = selectedIdRef.current
@@ -544,7 +543,6 @@ export default function MailPage() {
     setComposing(true)
     setSendError(null)
     setSelected(null)
-    setSelectedSent(null)
     if (isMobile) setMobileShowDetail(true)
   }
 
@@ -627,7 +625,7 @@ export default function MailPage() {
         setActiveDraftId(null)
         setComposing(false)
         if (isMobile) setMobileShowDetail(false)
-        loadSentMails()
+        void runSync(true, true)
         showToast('Email envoyé ✓')
       } else setSendError(data.error)
     } catch (e: any) { setSendError(e.message) }
@@ -826,8 +824,9 @@ export default function MailPage() {
     }
   }
 
-  const inboxEmails = filterEmailsForFolder(allEmails, 'inbox')
-  const unreadTotal = inboxEmails.filter(e => !e.is_read).length
+  const unreadTotal = folder === 'inbox'
+    ? emails.filter(e => !e.is_read).length
+    : inboxUnread
   const grouped = groupEmailsByDate(emails)
   const folderBadges: Partial<Record<MailFolder, number>> = {
     inbox: unreadTotal,
@@ -1086,41 +1085,7 @@ export default function MailPage() {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-            {folder === 'sent' ? (
-              sentMails.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 32, fontSize: 12, color: 'var(--text-muted)' }}>
-                  Aucun message envoyé depuis Operis
-                </div>
-              ) : sentMails.map(row => (
-                <div
-                  key={row.id}
-                  onClick={() => {
-                    setSelectedSent(row)
-                    setSelected(null)
-                    setComposing(false)
-                    if (isMobile) setMobileShowDetail(true)
-                  }}
-                  style={{
-                    padding: isMobile ? '14px 12px' : '12px 14px',
-                    borderBottom: '1px solid var(--border)', cursor: 'pointer',
-                    background: selectedSent?.id === row.id ? 'var(--bg-hover)' : 'transparent',
-                  }}
-                >
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
-                    À : {row.to_address}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{row.subject ?? '(sans objet)'}</div>
-                  <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
-                    {formatMailTime(row.sent_at)}
-                  </div>
-                </div>
-              ))
-            ) : folder === 'drafts' ? (
-              drafts.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 32, fontSize: 12, color: 'var(--text-muted)' }}>
-                  Aucun brouillon — cliquez sur « Nouveau message »
-                </div>
-              ) : drafts.map(draft => (
+            {folder === 'drafts' && drafts.length > 0 && drafts.map(draft => (
                 <div
                   key={draft.id}
                   onClick={() => openCompose({
@@ -1141,10 +1106,15 @@ export default function MailPage() {
                     {draft.to || 'Pas de destinataire'} · {formatMailTime(draft.updatedAt)}
                   </div>
                 </div>
-              ))
-            ) : !ready || (loading && emails.length === 0) ? (
+              ))}
+            {folder === 'drafts' && drafts.length === 0 && !loading && emails.length === 0 && (
+              <div style={{ textAlign: 'center', padding: 24, fontSize: 12, color: 'var(--text-muted)' }}>
+                Aucun brouillon — synchronisez ou créez un message
+              </div>
+            )}
+            {(!ready || (loading && emails.length === 0 && (folder !== 'drafts' || drafts.length === 0))) ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}><Spinner /></div>
-            ) : emails.length === 0 ? (
+            ) : emails.length === 0 && folder !== 'drafts' ? (
               <div style={{ textAlign: 'center', padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                   {syncing ? 'Synchronisation en cours…' : 'Aucun email dans ce dossier'}
@@ -1206,7 +1176,9 @@ export default function MailPage() {
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                             color: email.is_read ? 'var(--text-secondary)' : 'var(--text-primary)',
                           }}>
-                            {email.from_address?.split('<')[0].trim() || email.from_address}
+                            {folder === 'sent'
+                              ? `À : ${email.to_address?.split('<')[0].trim() || email.to_address || '—'}`
+                              : email.from_address?.split('<')[0].trim() || email.from_address}
                           </span>
                         </div>
                         <div style={{
@@ -1357,29 +1329,6 @@ export default function MailPage() {
               signaturePreview={signaturePreview}
               SignaturePreview={SignaturePreview}
             />
-          ) : selectedSent ? (
-            <div style={{ padding: isMobile ? '12px 14px' : '20px 24px' }}>
-              {isMobile && (
-                <button onClick={() => { setMobileShowDetail(false); setSelectedSent(null) }} style={{
-                  background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
-                  fontSize: 13, marginBottom: 12, fontFamily: 'DM Sans, system-ui',
-                }}>← Retour</button>
-              )}
-              <div style={{ fontSize: isMobile ? 16 : 15, fontWeight: 600, marginBottom: 12, color: 'var(--text-primary)' }}>
-                {selectedSent.subject ?? '(sans objet)'}
-              </div>
-              <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.8 }}>
-                <div>À : <span style={{ color: 'var(--text-secondary)' }}>{selectedSent.to_address}</span></div>
-                <div>Date : <span style={{ color: 'var(--text-secondary)' }}>{new Date(selectedSent.sent_at).toLocaleString('fr-FR')}</span></div>
-              </div>
-              <div style={{
-                background: 'var(--bg-card)', border: '1px solid var(--border-hi)', borderRadius: 10,
-                padding: '16px 18px', fontSize: 14, lineHeight: 1.65, color: 'var(--text-secondary)',
-                whiteSpace: 'pre-wrap', fontFamily: 'DM Sans, system-ui',
-              }}>
-                {selectedSent.body ?? ''}
-              </div>
-            </div>
           ) : selected ? (
             <div style={{ padding: isMobile ? '12px 14px' : '20px 24px' }}>
               {loadingDetail && (
@@ -1394,7 +1343,7 @@ export default function MailPage() {
                 }}>← Retour</button>
               )}
 
-              {!selected.tender_id && (
+              {folder !== 'sent' && selected.mail_folder !== 'sent' && !selected.tender_id && (
                 <div style={{
                   background: selected.is_ao ? 'rgba(59,126,246,0.08)' : 'var(--bg-card)',
                   border: selected.is_ao ? '1px solid rgba(59,126,246,0.2)' : '1px solid var(--border)',
@@ -1456,7 +1405,11 @@ export default function MailPage() {
 
               <div style={{ fontSize: isMobile ? 16 : 15, fontWeight: 600, marginBottom: 12, color: 'var(--text-primary)', lineHeight: 1.4 }}>{selected.subject}</div>
               <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.8 }}>
-                <div>De : <span style={{ color: 'var(--text-secondary)' }}>{selected.from_address}</span></div>
+                {(folder === 'sent' || selected.mail_folder === 'sent') ? (
+                  <div>À : <span style={{ color: 'var(--text-secondary)' }}>{selected.to_address || '—'}</span></div>
+                ) : (
+                  <div>De : <span style={{ color: 'var(--text-secondary)' }}>{selected.from_address}</span></div>
+                )}
                 <div>Date : <span style={{ color: 'var(--text-secondary)' }}>{selected.received_at ? new Date(selected.received_at).toLocaleString('fr-FR') : '—'}</span></div>
               </div>
 

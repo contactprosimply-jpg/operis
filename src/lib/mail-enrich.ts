@@ -53,7 +53,7 @@ export async function reEnrichEmailIfNeeded(
 ): Promise<{ bodyText: string; attachments: StoredEmailAttachment[] } | null> {
   const { data: email } = await db
     .from('emails')
-    .select('id, message_id, body_text, body_html, has_attachments, attachments')
+    .select('id, message_id, imap_mailbox, body_text, body_html, has_attachments, attachments')
     .eq('id', emailId)
     .single()
 
@@ -68,7 +68,11 @@ export async function reEnrichEmailIfNeeded(
   const account = await resolveMailAccount(userId)
   if (!account) return null
 
-  const source = await fetchMessageSourceByMessageId(account, email.message_id)
+  const source = await fetchMessageSourceByMessageId(
+    account,
+    email.message_id,
+    email.imap_mailbox || 'INBOX',
+  )
   if (!source) return null
 
   const parsed = await simpleParser(source)

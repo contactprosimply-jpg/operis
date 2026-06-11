@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase'
 import nodemailer from 'nodemailer'
 import { clampString, rejectUnexpectedFields } from '@/lib/api-validation'
 import { resolveMailAccount } from '@/lib/mail-sync'
+import { normalizeMessageId } from '@/lib/mail-message-id'
 export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
@@ -94,7 +95,7 @@ export async function POST(req: NextRequest) {
     : []
 
   try {
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: `"${account.smtp_user.split('@')[0]}" <${account.smtp_user}>`,
       to: toText,
       cc: typeof cc === 'string' ? cc.slice(0, 500) : undefined,
@@ -104,13 +105,41 @@ export async function POST(req: NextRequest) {
       attachments: mailAttachments.length > 0 ? mailAttachments : undefined,
     })
 
+    const sentAt = new Date().toISOString()
+    const messageId = normalizeMessageId(info.messageId, `sent-${userId}-${Date.now()}`)
+    const sentInsert: Record<string, unknown> = {
+      user_id: userId,
+      message_id: messageId,
+      subject: subjectText,
+      from_address: account.smtp_user,
+      to_address: toText,
+      body_text: finalText,
+      body_html: finalHtml,
+      received_at: sentAt,
+      is_read: true,
+      is_ao: false,
+      ao_score: 0,
+      tender_id: null,
+      attachments: [],
+      has_attachments: mailAttachments.length > 0,
+      mail_folder: 'sent',
+    }
+    const { error: sentEmailError } = await db.from('emails').insert(sentInsert)
+    if (sentEmailError && !sentEmailError.message.includes('duplicate key')) {
+      const fallback = { ...sentInsert }
+      delete fallback.mail_folder
+      delete fallback.attachments
+      delete fallback.has_attachments
+      await db.from('emails').insert(fallback)
+    }
+
     const { error: logError } = await db.from('email_logs').insert({
       user_id: userId,
       type: 'outbound',
       to_address: toText,
       subject: subjectText,
       body: finalText,
-      sent_at: new Date().toISOString(),
+      sent_at: sentAt,
       success: true,
       error_message: null,
     })

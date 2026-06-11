@@ -4,8 +4,10 @@ import {
   fetchRecentEnvelopes,
   fetchMessageSources,
   formatImapError,
+  resolveSpecialMailboxes,
   type MailAccountConfig,
   type ImapEnvelopeMeta,
+  type ResolvedMailboxes,
 } from '@/lib/imap-client'
 import { parseMailAttachments, extractEmailAddress, type StoredEmailAttachment } from '@/lib/mail-attachments'
 import { isEmailIncompleteForEnrich } from '@/lib/mail-enrich'
@@ -43,6 +45,7 @@ export interface MailSyncResult {
   maxUid: number
   quickStored?: number
   skippedOutbound?: number
+  mailboxes?: ResolvedMailboxes
   accounts?: MailSyncAccountReport[]
 }
 
@@ -65,6 +68,7 @@ function mergeSyncResults(target: MailSyncResult, part: MailSyncResult) {
   target.errors += part.errors
   target.maxUid = Math.max(target.maxUid, part.maxUid)
   target.quickStored = (target.quickStored ?? 0) + (part.quickStored ?? 0)
+  if (part.mailboxes) target.mailboxes = part.mailboxes
 }
 
 function mapMailAccountRow(account: {
@@ -122,9 +126,10 @@ export async function resolveMailAccount(
 
 async function fetchEnvelopesWithFallback(
   account: MailAccountWithId,
+  mailboxPath: string,
   opts: { sinceDays: number; limit: number; minUid?: number; fullScan?: boolean },
 ) {
-  return fetchRecentEnvelopes(account, opts)
+  return fetchRecentEnvelopes(account, { ...opts, mailboxPath })
 }
 
 async function saveEmailAttachments(
@@ -152,8 +157,14 @@ function isOwnOutbound(fromAddress: string, toAddress: string, accountEmail: str
   return true
 }
 
-function envelopeMessageId(userId: string, envelope: ImapEnvelopeMeta): string {
-  return normalizeMessageId(envelope.messageId, `uid-${userId}-${envelope.uid}`)
+type DbMailFolder = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam'
+
+function envelopeMessageId(
+  userId: string,
+  envelope: ImapEnvelopeMeta,
+  mailboxPath: string,
+): string {
+  return normalizeMessageId(envelope.messageId, `uid-${userId}-${mailboxPath}-${envelope.uid}`)
 }
 
 async function loadExistingMessageIds(
@@ -182,10 +193,12 @@ async function quickInsertFromEnvelope(
   db: SupabaseClient,
   userId: string,
   envelope: ImapEnvelopeMeta,
+  mailFolder: DbMailFolder,
+  mailboxPath: string,
   source?: MailSourceMeta,
 ): Promise<string | null> {
   const detection = detectAo(envelope.subject, '')
-  const messageId = normalizeMessageId(envelope.messageId, `uid-${userId}-${envelope.uid}`)
+  const messageId = envelopeMessageId(userId, envelope, mailboxPath)
   const insertPayload: Record<string, unknown> = {
     user_id: userId,
     message_id: messageId,
@@ -201,6 +214,9 @@ async function quickInsertFromEnvelope(
     tender_id: null,
     attachments: [],
     has_attachments: false,
+    mail_folder: mailFolder,
+    imap_uid: envelope.uid,
+    imap_mailbox: mailboxPath,
   }
   if (source?.sourceMemberId) {
     insertPayload.source_member_id = source.sourceMemberId
@@ -217,6 +233,9 @@ async function quickInsertFromEnvelope(
     delete fallback.source_member_name
     delete fallback.priority
     delete fallback.labels
+    delete fallback.mail_folder
+    delete fallback.imap_uid
+    delete fallback.imap_mailbox
     const retry = await db.from('emails').insert(fallback).select('id').single()
     inserted = retry.data
     error = retry.error
@@ -266,6 +285,191 @@ async function enrichEmailFromSource(
 
 }
 
+async function syncOneMailboxFolder(
+  db: SupabaseClient,
+  userId: string,
+  account: MailAccountWithId,
+  result: MailSyncResult,
+  job: {
+    folder: DbMailFolder
+    mailboxPath: string
+    sinceDays: number
+    limit: number
+    skipOutbound: boolean
+    fullScan: boolean
+  },
+  quick: boolean,
+  source?: MailSourceMeta,
+) {
+  const fetchOpts = {
+    sinceDays: job.sinceDays,
+    limit: job.limit,
+    minUid: 0,
+    fullScan: job.fullScan,
+  }
+
+  const envelopes = await fetchEnvelopesWithFallback(account, job.mailboxPath, fetchOpts)
+  result.fetched += envelopes.length
+  if (envelopes.length && job.folder === 'inbox') {
+    result.maxUid = Math.max(result.maxUid, ...envelopes.map(m => m.uid))
+  }
+
+  const candidates = job.skipOutbound
+    ? envelopes.filter(e => !isOwnOutbound(e.from, e.to, account.imap_user))
+    : envelopes
+  if (job.skipOutbound) {
+    result.skippedOutbound = (result.skippedOutbound ?? 0) + (envelopes.length - candidates.length)
+  }
+
+  const existingIds = await loadExistingMessageIds(
+    db,
+    userId,
+    candidates.map(e => envelopeMessageId(userId, e, job.mailboxPath)),
+  )
+
+  const newEnvelopes: ImapEnvelopeMeta[] = []
+  const existingEnvelopes: ImapEnvelopeMeta[] = []
+
+  for (const envelope of candidates) {
+    const mid = envelopeMessageId(userId, envelope, job.mailboxPath)
+    if (existingIds.has(mid)) existingEnvelopes.push(envelope)
+    else newEnvelopes.push(envelope)
+  }
+
+  result.duplicates += candidates.length - newEnvelopes.length
+
+  const newEmailMap = new Map<number, string>()
+  for (const envelope of newEnvelopes) {
+    try {
+      const emailId = await quickInsertFromEnvelope(
+        db, userId, envelope, job.folder, job.mailboxPath, source,
+      )
+      if (emailId) {
+        newEmailMap.set(envelope.uid, emailId)
+        result.stored++
+        result.quickStored = (result.quickStored ?? 0) + 1
+        if (job.folder === 'inbox' && detectAo(envelope.subject, '').isAo) result.aoDetected++
+      } else {
+        result.errors++
+      }
+    } catch (err) {
+      result.errors++
+      console.error(`[Mail sync/${job.folder}] quick insert:`, err)
+    }
+  }
+
+  for (const envelope of existingEnvelopes) {
+    const patch: Record<string, unknown> = {
+      is_read: envelope.isRead,
+      mail_folder: job.folder,
+      imap_uid: envelope.uid,
+      imap_mailbox: job.mailboxPath,
+    }
+    if (job.folder === 'inbox') {
+      const d = detectAo(envelope.subject, '')
+      if (d.isAo || d.score > 0) {
+        patch.is_ao = d.isAo
+        patch.ao_score = d.score
+        if (d.isAo) result.aoDetected++
+      }
+    }
+    const mid = envelopeMessageId(userId, envelope, job.mailboxPath)
+    await db.from('emails')
+      .update(patch)
+      .eq('user_id', userId)
+      .eq('message_id', mid)
+    result.updated++
+  }
+
+  const enrichLimit = quick ? (job.folder === 'inbox' ? 15 : 8) : (job.folder === 'inbox' ? 40 : 20)
+  const enrichUids = newEnvelopes.map(e => e.uid).slice(-enrichLimit)
+
+  if (enrichUids.length) {
+    try {
+      const sources = await fetchMessageSources(account, enrichUids, job.mailboxPath)
+      const envelopeByUid = new Map(newEnvelopes.map(e => [e.uid, e]))
+
+      for (const { uid, source: raw } of sources) {
+        const envelope = envelopeByUid.get(uid)
+        const emailId = newEmailMap.get(uid)
+        if (!envelope || !emailId) continue
+        try {
+          await enrichEmailFromSource(db, userId, emailId, raw, envelope, account, result)
+        } catch (err) {
+          result.errors++
+          console.error(`[Mail sync/${job.folder}] enrich:`, err)
+        }
+      }
+    } catch (err) {
+      console.error(`[Mail sync/${job.folder}] source fetch:`, err)
+    }
+  }
+
+  if (job.folder === 'inbox' && existingEnvelopes.length) {
+    const { data: recentDbEmails } = await db
+      .from('emails')
+      .select('id, message_id, body_text, body_html, has_attachments, attachments, imap_mailbox')
+      .eq('user_id', userId)
+      .eq('mail_folder', 'inbox')
+      .order('received_at', { ascending: false })
+      .limit(80)
+
+    const incompleteByMsgId = new Map<string, { id: string; imap_mailbox?: string | null }>()
+    for (const em of recentDbEmails ?? []) {
+      if (em.message_id && isEmailIncompleteForEnrich(em)) {
+        incompleteByMsgId.set(em.message_id, { id: em.id, imap_mailbox: em.imap_mailbox })
+      }
+    }
+
+    const existingEnrichList: {
+      uid: number
+      envelope: ImapEnvelopeMeta
+      emailId: string
+      mailboxPath: string
+    }[] = []
+    for (const envelope of existingEnvelopes) {
+      const mid = envelopeMessageId(userId, envelope, job.mailboxPath)
+      const row = incompleteByMsgId.get(mid)
+      if (row) {
+        existingEnrichList.push({
+          uid: envelope.uid,
+          envelope,
+          emailId: row.id,
+          mailboxPath: row.imap_mailbox ?? job.mailboxPath,
+        })
+      }
+    }
+
+    const toEnrichExisting = existingEnrichList.slice(0, quick ? 10 : 25)
+    if (toEnrichExisting.length) {
+      const byMailbox = new Map<string, typeof toEnrichExisting>()
+      for (const item of toEnrichExisting) {
+        const list = byMailbox.get(item.mailboxPath) ?? []
+        list.push(item)
+        byMailbox.set(item.mailboxPath, list)
+      }
+      for (const [mbPath, items] of byMailbox) {
+        try {
+          const sources = await fetchMessageSources(account, items.map(e => e.uid), mbPath)
+          const byUid = new Map(items.map(e => [e.uid, e]))
+          for (const { uid, source: raw } of sources) {
+            const item = byUid.get(uid)
+            if (!item) continue
+            try {
+              await enrichEmailFromSource(db, userId, item.emailId, raw, item.envelope, account, result)
+              result.updated++
+            } catch (err) {
+              result.errors++
+            }
+          }
+        } catch (err) {
+          console.error('[Mail sync] existing source fetch:', err)
+        }
+      }
+    }
+  }
+}
+
 export async function syncMailAccount(
   userId: string,
   account: MailAccountWithId,
@@ -274,13 +478,7 @@ export async function syncMailAccount(
 ): Promise<MailSyncResult> {
   const backfill = options.backfill === true
   const quick = options.quick === true || !backfill
-
-  // Quick : pas de minUid (dédup par message_id) — évite les boîtes figées si last_sync_uid est faux
-  const fetchOpts = quick && !backfill
-    ? { sinceDays: 21, limit: 200, minUid: 0, fullScan: false }
-    : backfill
-      ? { sinceDays: 180, limit: 300, minUid: 0, fullScan: true }
-      : { sinceDays: 45, limit: 150, minUid: 0, fullScan: false }
+  const fullScan = backfill && !quick
 
   const db = createAdminClient()
   const result: MailSyncResult = {
@@ -292,142 +490,46 @@ export async function syncMailAccount(
     errors: 0,
     maxUid: account.last_sync_uid ?? 0,
     quickStored: 0,
+    skippedOutbound: 0,
   }
 
-  const envelopes = await fetchEnvelopesWithFallback(account, fetchOpts)
-  result.fetched = envelopes.length
-  if (envelopes.length) {
-    result.maxUid = Math.max(result.maxUid, ...envelopes.map(m => m.uid))
+  const mailboxes = await resolveSpecialMailboxes(account)
+  result.mailboxes = mailboxes
+  if (!mailboxes.sent) {
+    console.warn(`[Mail sync] dossier Envoyés introuvable pour ${account.imap_user}`)
   }
+  const inboxSince = fullScan ? 180 : quick ? 21 : 45
+  const inboxLimit = fullScan ? 300 : quick ? 200 : 150
 
-  const inbound = envelopes.filter(e => !isOwnOutbound(e.from, e.to, account.imap_user))
-  result.skippedOutbound = envelopes.length - inbound.length
-  const existingIds = await loadExistingMessageIds(
-    db,
-    userId,
-    inbound.map(e => envelopeMessageId(userId, e)),
-  )
+  const jobs: Array<{
+    folder: DbMailFolder
+    mailboxPath?: string
+    sinceDays: number
+    limit: number
+    skipOutbound: boolean
+  }> = [
+    { folder: 'inbox', mailboxPath: mailboxes.inbox, sinceDays: inboxSince, limit: inboxLimit, skipOutbound: true },
+    { folder: 'sent', mailboxPath: mailboxes.sent, sinceDays: fullScan ? 365 : 180, limit: fullScan ? 250 : 150, skipOutbound: false },
+    { folder: 'drafts', mailboxPath: mailboxes.drafts, sinceDays: 90, limit: 40, skipOutbound: false },
+    { folder: 'trash', mailboxPath: mailboxes.trash, sinceDays: 60, limit: 60, skipOutbound: false },
+    { folder: 'spam', mailboxPath: mailboxes.spam, sinceDays: 60, limit: 60, skipOutbound: false },
+  ]
 
-  const newEnvelopes: ImapEnvelopeMeta[] = []
-  const existingEnvelopes: ImapEnvelopeMeta[] = []
-
-  for (const envelope of inbound) {
-    const mid = envelopeMessageId(userId, envelope)
-    if (existingIds.has(mid)) {
-      existingEnvelopes.push(envelope)
-    } else {
-      newEnvelopes.push(envelope)
-    }
-  }
-
-  result.duplicates = inbound.length - newEnvelopes.length
-
-  // Phase 1 — insertion rapide (visible immédiatement dans Operis)
-  const newEmailMap = new Map<number, string>()
-  for (const envelope of newEnvelopes) {
+  for (const job of jobs) {
+    if (!job.mailboxPath) continue
     try {
-      const emailId = await quickInsertFromEnvelope(db, userId, envelope, source)
-      if (emailId) {
-        newEmailMap.set(envelope.uid, emailId)
-        result.stored++
-        result.quickStored = (result.quickStored ?? 0) + 1
-        if (detectAo(envelope.subject, '').isAo) result.aoDetected++
-      } else {
-        result.errors++
-      }
+      await syncOneMailboxFolder(
+        db,
+        userId,
+        account,
+        result,
+        { ...job, mailboxPath: job.mailboxPath, fullScan },
+        quick,
+        source,
+      )
     } catch (err) {
       result.errors++
-      console.error('[Mail sync] quick insert error:', err)
-    }
-  }
-
-  // Mise à jour emails déjà en base (lu/non-lu + AO)
-  for (const envelope of existingEnvelopes) {
-    const d = detectAo(envelope.subject, '')
-    const patch: Record<string, unknown> = { is_read: envelope.isRead }
-    if (d.isAo || d.score > 0) {
-      patch.is_ao = d.isAo
-      patch.ao_score = d.score
-      if (d.isAo) result.aoDetected++
-    }
-    const mid = envelopeMessageId(userId, envelope)
-    await db.from('emails')
-      .update(patch)
-      .eq('user_id', userId)
-      .eq('message_id', mid)
-    result.updated++
-  }
-
-  // Phase 2 — corps + PJ uniquement pour les nouveaux (limité pour rester < 60s)
-  const uidsToEnrich = newEnvelopes.map(e => e.uid)
-  const enrichLimit = quick ? 15 : 40
-  const enrichUids = uidsToEnrich.slice(-enrichLimit)
-
-  if (enrichUids.length) {
-    try {
-      const sources = await fetchMessageSources(account, enrichUids)
-      const envelopeByUid = new Map(newEnvelopes.map(e => [e.uid, e]))
-
-      for (const { uid, source } of sources) {
-        const envelope = envelopeByUid.get(uid)
-        const emailId = newEmailMap.get(uid)
-        if (!envelope || !emailId) continue
-        try {
-          await enrichEmailFromSource(db, userId, emailId, source, envelope, account, result)
-        } catch (err) {
-          result.errors++
-          console.error('[Mail sync] enrich error:', err)
-        }
-      }
-    } catch (err) {
-      console.error('[Mail sync] source fetch error:', err)
-    }
-  }
-
-  // Phase 2b — emails déjà en base mais sans corps/PJ (réponses fournisseurs visibles sans analyse)
-  if (existingEnvelopes.length) {
-    const { data: recentDbEmails } = await db
-      .from('emails')
-      .select('id, message_id, body_text, body_html, has_attachments, attachments')
-      .eq('user_id', userId)
-      .order('received_at', { ascending: false })
-      .limit(80)
-
-    const incompleteByMsgId = new Map<string, string>()
-    for (const em of recentDbEmails ?? []) {
-      if (em.message_id && isEmailIncompleteForEnrich(em)) {
-        incompleteByMsgId.set(em.message_id, em.id)
-      }
-    }
-
-    const existingEnrichList: { uid: number; envelope: ImapEnvelopeMeta; emailId: string }[] = []
-    for (const envelope of existingEnvelopes) {
-      const emailId = incompleteByMsgId.get(envelope.messageId)
-      if (emailId) existingEnrichList.push({ uid: envelope.uid, envelope, emailId })
-    }
-
-    const phase2bLimit = quick ? 10 : 25
-    const toEnrichExisting = existingEnrichList.slice(0, phase2bLimit)
-
-    if (toEnrichExisting.length) {
-      try {
-        const sources = await fetchMessageSources(account, toEnrichExisting.map(e => e.uid))
-        const byUid = new Map(toEnrichExisting.map(e => [e.uid, e]))
-
-        for (const { uid, source } of sources) {
-          const item = byUid.get(uid)
-          if (!item) continue
-          try {
-            await enrichEmailFromSource(db, userId, item.emailId, source, item.envelope, account, result)
-            result.updated++
-          } catch (err) {
-            result.errors++
-            console.error('[Mail sync] existing enrich error:', err)
-          }
-        }
-      } catch (err) {
-        console.error('[Mail sync] existing source fetch error:', err)
-      }
+      console.error(`[Mail sync] dossier ${job.folder}:`, err)
     }
   }
 

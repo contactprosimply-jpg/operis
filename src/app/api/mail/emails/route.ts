@@ -13,6 +13,37 @@ import {
 } from '@/lib/mail-api'
 import type { Email, EmailLabel } from '@/types/database'
 import { getMailUserScope } from '@/lib/mail-access'
+import { resolveMailAccount } from '@/lib/mail-sync'
+import { extractEmailAddress } from '@/lib/mail-attachments'
+
+function sentListKey(subject: string | null | undefined, to: string | null | undefined, at: string | null | undefined): string {
+  return `${subject ?? ''}|${to ?? ''}|${(at ?? '').slice(0, 16)}`
+}
+
+function emailLogToSentRow(
+  log: { id: string; to_address: string; subject: string; body: string; sent_at: string },
+  userId: string,
+  fromAddress: string,
+): Email {
+  return {
+    id: `elog-${log.id}`,
+    user_id: userId,
+    message_id: `elog-${log.id}`,
+    subject: log.subject,
+    from_address: fromAddress,
+    to_address: log.to_address,
+    body_text: log.body,
+    body_html: null,
+    received_at: log.sent_at,
+    is_read: true,
+    is_ao: false,
+    ao_score: 0,
+    tender_id: null,
+    has_attachments: false,
+    mail_folder: 'sent',
+    created_at: log.sent_at,
+  } as Email
+}
 
 export async function GET(req: NextRequest) {
   const userId = await getUserFromRequest(req)
@@ -34,11 +65,18 @@ export async function GET(req: NextRequest) {
   const scope = await getMailUserScope(userId)
   const db = createAdminClient()
   const limit = Math.min(Number(searchParams.get('limit') || 250), 500)
+  const folder = searchParams.get('folder')
+  const sentFolder = folder === 'sent'
+  const mailAccount = sentFolder ? await resolveMailAccount(userId) : null
+  const ownEmail = mailAccount?.imap_user
+    ? (extractEmailAddress(mailAccount.imap_user) || mailAccount.imap_user.toLowerCase().trim())
+    : null
 
   const applyFilters = (
     query: ReturnType<typeof db.from>,
     fields: string,
     useV8Filters: boolean,
+    useFolderColumn = true,
   ) => {
     let q = query
       .select(fields)
@@ -46,6 +84,22 @@ export async function GET(req: NextRequest) {
       .limit(limit)
 
     q = q.eq('user_id', userId)
+
+    if (folder && ['inbox', 'sent', 'drafts', 'trash', 'spam'].includes(folder)) {
+      if (folder === 'inbox' && useFolderColumn) {
+        q = q.or('mail_folder.eq.inbox,mail_folder.is.null')
+      } else if (folder === 'sent') {
+        if (useFolderColumn && ownEmail) {
+          q = q.or(`mail_folder.eq.sent,from_address.ilike.%${ownEmail}%`)
+        } else if (useFolderColumn) {
+          q = q.eq('mail_folder', 'sent')
+        } else if (ownEmail) {
+          q = q.ilike('from_address', `%${ownEmail}%`)
+        }
+      } else if (useFolderColumn) {
+        q = q.eq('mail_folder', folder)
+      }
+    }
 
     if (isAo !== undefined) q = q.eq('is_ao', isAo)
     if (isRead !== undefined) q = q.eq('is_read', isRead)
@@ -64,16 +118,53 @@ export async function GET(req: NextRequest) {
     return q
   }
 
-  let { data, error } = await applyFilters(db.from('emails'), EMAIL_LIST_FIELDS, true)
+  let { data, error } = await applyFilters(db.from('emails'), EMAIL_LIST_FIELDS, true, true)
   if (error && isMissingDbColumnError(error.message)) {
-    const legacy = await applyFilters(db.from('emails'), EMAIL_LIST_FIELDS_LEGACY, false)
+    const legacy = await applyFilters(db.from('emails'), EMAIL_LIST_FIELDS_LEGACY, false, false)
     data = legacy.data
     error = legacy.error
   }
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
 
-  const rows = (data ?? []) as unknown as Email[]
-  return Response.json({ success: true, data: rows.map(toListEmail) })
+  let rows = (data ?? []) as unknown as Email[]
+
+  if (sentFolder) {
+    const fromAddress = mailAccount?.imap_user ?? ''
+    const existingKeys = new Set(rows.map(r => sentListKey(r.subject, r.to_address, r.received_at)))
+    const { data: logs, error: logsError } = await db
+      .from('email_logs')
+      .select('id, to_address, subject, body, sent_at')
+      .eq('user_id', userId)
+      .eq('success', true)
+      .order('sent_at', { ascending: false })
+      .limit(limit)
+
+    const logRows = logsError && /user_id/i.test(logsError.message) ? [] : (logs ?? [])
+    for (const log of logRows) {
+      const key = sentListKey(log.subject, log.to_address, log.sent_at)
+      if (existingKeys.has(key)) continue
+      existingKeys.add(key)
+      rows.push(emailLogToSentRow(log, userId, fromAddress))
+    }
+
+    rows.sort((a, b) => {
+      const ta = a.received_at ? new Date(a.received_at).getTime() : 0
+      const tb = b.received_at ? new Date(b.received_at).getTime() : 0
+      return tb - ta
+    })
+    rows = rows.slice(0, limit)
+  }
+
+  return Response.json({
+    success: true,
+    data: rows.map(row => {
+      const lite = toListEmail(row)
+      if (String(row.id).startsWith('elog-') && row.body_text) {
+        lite.body_text = row.body_text
+      }
+      return lite
+    }),
+  })
 }
 
 export async function PATCH(req: NextRequest) {

@@ -228,28 +228,117 @@ async function fetchEnvelopeBySinceStream(
   return messages.sort((a, b) => a.uid - b.uid).slice(-limit)
 }
 
-/** Liste rapide des enveloppes (sans télécharger le corps — ~10x plus rapide). */
-export async function fetchRecentEnvelopes(
-  config: MailAccountConfig,
-  options: { sinceDays?: number; limit?: number; minUid?: number; fullScan?: boolean } = {},
+export interface ResolvedMailboxes {
+  inbox: string
+  sent?: string
+  drafts?: string
+  trash?: string
+  spam?: string
+}
+
+const MAILBOX_NAME_HINTS: Record<Exclude<keyof ResolvedMailboxes, 'inbox'>, string[]> = {
+  sent: [
+    'sent', 'envoyés', 'envoyes', 'éléments envoyés', 'elements envoyes',
+    'sent items', 'sent messages', 'sent mail', 'outbox', 'mail sent',
+  ],
+  drafts: ['drafts', 'draft', 'brouillons', 'brouillon'],
+  trash: ['trash', 'deleted', 'corbeille', 'supprimés', 'supprimes'],
+  spam: ['junk', 'spam', 'indésirables', 'indesirables'],
+}
+
+const PROBE_MAILBOX_PATHS: Record<Exclude<keyof ResolvedMailboxes, 'inbox'>, string[]> = {
+  sent: [
+    'Sent', 'INBOX.Sent', 'INBOX/Sent', 'Envoyés', 'INBOX.Envoyés', 'INBOX/Envoyés',
+    'Sent Messages', 'INBOX/Sent Messages', 'INBOX.Sent Messages',
+  ],
+  drafts: ['Drafts', 'INBOX.Drafts', 'INBOX/Drafts', 'Brouillons', 'INBOX/Brouillons'],
+  trash: ['Trash', 'INBOX.Trash', 'INBOX/Trash', 'Corbeille', 'INBOX/Corbeille', 'Deleted'],
+  spam: ['Junk', 'INBOX.Junk', 'INBOX/Junk', 'Spam', 'Indésirables', 'INBOX/Indésirables'],
+}
+
+function pathMatchesHint(path: string, hint: string): boolean {
+  const lower = path.toLowerCase()
+  const leaf = lower.split(/[./]/).pop() ?? lower
+  return leaf === hint || lower.endsWith(`/${hint}`) || lower.endsWith(`.${hint}`) || lower.includes(hint)
+}
+
+async function probeMailboxPath(client: ImapFlow, path: string): Promise<boolean> {
+  try {
+    const lock = await client.getMailboxLock(path)
+    lock.release()
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Découverte des dossiers IMAP (SPECIAL-USE + noms courants Gandi/Thunderbird). */
+export async function resolveSpecialMailboxes(config: MailAccountConfig): Promise<ResolvedMailboxes> {
+  const client = createImapClient(config)
+  await client.connect()
+  try {
+    const result: ResolvedMailboxes = { inbox: 'INBOX' }
+    const mailboxes = await client.list()
+    for (const m of mailboxes) {
+      if (m.specialUse === '\\Sent') result.sent = m.path
+      if (m.specialUse === '\\Drafts') result.drafts = m.path
+      if (m.specialUse === '\\Trash') result.trash = m.path
+      if (m.specialUse === '\\Junk') result.spam = m.path
+    }
+    for (const [kind, hints] of Object.entries(MAILBOX_NAME_HINTS) as Array<
+      [Exclude<keyof ResolvedMailboxes, 'inbox'>, string[]]
+    >) {
+      if (result[kind]) continue
+      for (const m of mailboxes) {
+        if (hints.some(h => pathMatchesHint(m.path, h))) {
+          result[kind] = m.path
+          break
+        }
+      }
+    }
+    for (const [kind, paths] of Object.entries(PROBE_MAILBOX_PATHS) as Array<
+      [Exclude<keyof ResolvedMailboxes, 'inbox'>, string[]]
+    >) {
+      if (result[kind]) continue
+      for (const path of paths) {
+        if (await probeMailboxPath(client, path)) {
+          result[kind] = path
+          break
+        }
+      }
+    }
+    return result
+  } finally {
+    try {
+      await client.logout()
+    } catch {}
+  }
+}
+
+async function fetchEnvelopesInOpenMailbox(
+  client: ImapFlow,
+  mailboxPath: string,
+  accountUser: string,
+  options: { sinceDays: number; limit: number; minUid?: number; fullScan?: boolean },
 ): Promise<ImapEnvelopeMeta[]> {
-  const sinceDays = options.sinceDays ?? 30
-  const limit = options.limit ?? 40
+  const sinceDays = options.sinceDays
+  const limit = options.limit
   const minUid = options.minUid ?? 0
   const fullScan = options.fullScan === true
   const since = sinceDate(sinceDays)
-  const accountUser = config.imap_user.trim()
-  const client = createImapClient(config)
+  const isInbox = mailboxPath.toUpperCase() === 'INBOX'
+  const batches: ImapEnvelopeMeta[][] = []
+  const mergeCap = Math.max(limit, 100)
+  const uidFetchLimit = fullScan ? 0 : mergeCap
 
-  await client.connect()
-  const lock = await client.getMailboxLock('INBOX')
+  if (!isInbox) {
+    batches.push(await fetchEnvelopeBySequence(client, limit, accountUser, since))
+    batches.push(await fetchEnvelopeBySinceStream(client, since, limit, accountUser))
+    const merged = mergeEnvelopesByUid(batches)
+    return merged.slice(-limit)
+  }
 
-  try {
-    const batches: ImapEnvelopeMeta[][] = []
-    const mergeCap = Math.max(limit, 100)
-    const uidFetchLimit = fullScan ? 0 : mergeCap
-
-    if (!fullScan) {
+  if (!fullScan) {
       // Fraîcheur : 48 h + non-lus (indépendant du last_sync_uid)
       batches.push(await fetchEnvelopeBySinceStream(client, sinceHoursAgo(48), mergeCap, accountUser))
       batches.push(await fetchEnvelopeBySinceStream(client, startOfToday(), mergeCap, accountUser))
@@ -294,9 +383,38 @@ export async function fetchRecentEnvelopes(
 
     batches.push(await fetchEnvelopeBySinceStream(client, since, mergeCap, accountUser))
 
-    const merged = mergeEnvelopesByUid(batches)
-    const resultCap = fullScan ? Math.max(limit, merged.length) : mergeCap
-    return merged.slice(-resultCap)
+  const merged = mergeEnvelopesByUid(batches)
+  const resultCap = fullScan ? Math.max(limit, merged.length) : mergeCap
+  return merged.slice(-resultCap)
+}
+
+/** Liste rapide des enveloppes (sans télécharger le corps — ~10x plus rapide). */
+export async function fetchRecentEnvelopes(
+  config: MailAccountConfig,
+  options: {
+    mailboxPath?: string
+    sinceDays?: number
+    limit?: number
+    minUid?: number
+    fullScan?: boolean
+  } = {},
+): Promise<ImapEnvelopeMeta[]> {
+  const mailboxPath = options.mailboxPath ?? 'INBOX'
+  const sinceDays = options.sinceDays ?? 30
+  const limit = options.limit ?? 40
+  const accountUser = config.imap_user.trim()
+  const client = createImapClient(config)
+
+  await client.connect()
+  const lock = await client.getMailboxLock(mailboxPath)
+
+  try {
+    return await fetchEnvelopesInOpenMailbox(client, mailboxPath, accountUser, {
+      sinceDays,
+      limit,
+      minUid: options.minUid ?? 0,
+      fullScan: options.fullScan === true,
+    })
   } finally {
     lock.release()
     try {
@@ -309,13 +427,14 @@ export async function fetchRecentEnvelopes(
 export async function fetchMessageSourceByMessageId(
   config: MailAccountConfig,
   messageId: string,
+  mailboxPath = 'INBOX',
 ): Promise<Buffer | null> {
   const bare = messageId.replace(/^<|>$/g, '')
   const candidates = [messageId, `<${bare}>`, bare]
 
   const client = createImapClient(config)
   await client.connect()
-  const lock = await client.getMailboxLock('INBOX')
+  const lock = await client.getMailboxLock(mailboxPath)
 
   try {
     let uid: number | undefined
@@ -344,12 +463,13 @@ export async function fetchMessageSourceByMessageId(
 export async function fetchMessageSources(
   config: MailAccountConfig,
   uids: number[],
+  mailboxPath = 'INBOX',
 ): Promise<ImapMessageSource[]> {
   if (!uids.length) return []
 
   const client = createImapClient(config)
   await client.connect()
-  const lock = await client.getMailboxLock('INBOX')
+  const lock = await client.getMailboxLock(mailboxPath)
 
   try {
     const messages: ImapMessageSource[] = []

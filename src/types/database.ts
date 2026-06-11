@@ -114,6 +114,9 @@ export interface Email {
   source_member_name?: string | null
   priority?: EmailPriority
   labels?: EmailLabel[]
+  mail_folder?: string | null
+  imap_uid?: number | null
+  imap_mailbox?: string | null
   created_at: string
 }
 
