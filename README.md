@@ -4,7 +4,9 @@ Application Next.js + Supabase pour consulter fournisseurs, suivre les AO et la 
 
 **Production :** https://operis-f26g78.vercel.app
 
-**Lien démo (connexion → appels d'offres) :** https://operis-f26g78.vercel.app/app
+**Lien présentation (page Operis + aperçu AO + inscription) :** https://operis-f26g78.vercel.app
+
+**Accès direct app (déjà connecté → AO) :** https://operis-f26g78.vercel.app/app
 
 ## Développement
 
@@ -23,7 +25,7 @@ npm run desktop         # ouvre l'app (URL prod par défaut)
 npm run desktop:build   # installeur Windows + version portable → dist-desktop/
 ```
 
-Variables optionnelles : `OPERIS_URL` (base), `OPERIS_ENTRY` (URL complète d'entrée, défaut `/app`).
+Variables optionnelles : `OPERIS_URL` (base), `OPERIS_ENTRY` (URL d'entrée, défaut page de présentation).
 
 ## Migrations Supabase
 

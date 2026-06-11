@@ -35,6 +35,13 @@ const FEATURES = [
   },
 ]
 
+const DEMO_TENDERS = [
+  { title: 'Rénovation école primaire — Lot plomberie', client: 'Ville de Lyon', deadline: '12j', budget: '185 000 €', status: 'En cours', statusColor: '#3b7ef6', priorite: 'Haute' },
+  { title: 'Extension entrepôt logistique', client: 'ProLogis SA', deadline: '5j', budget: '420 000 €', status: 'Urgence', statusColor: '#ef4444', priorite: 'Urgente' },
+  { title: 'Menuiseries extérieures — Résidence Les Pins', client: 'Nexity', deadline: '21j', budget: '92 500 €', status: 'Nouveau', statusColor: '#94a3b8', priorite: 'Normale' },
+  { title: 'VRD parking commercial', client: 'Carrefour Property', deadline: '8j', budget: '156 000 €', status: 'En cours', statusColor: '#3b7ef6', priorite: 'Normale' },
+]
+
 const PLANS = [
   {
     name: 'Essentiel',
@@ -124,7 +131,8 @@ export default function LandingPage() {
           <nav style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <a href="#fonctionnalites" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500, display: 'none' }} className="landing-nav-link">Fonctionnalités</a>
             <a href="#tarifs" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500, display: 'none' }} className="landing-nav-link">Tarifs</a>
-            <BtnGhost href="/login">Se connecter</BtnGhost>
+            <a href="#appels-offres" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500 }} className="landing-nav-link">Appels d&apos;offres</a>
+            <BtnGhost href="/login?redirect=/tenders">Se connecter</BtnGhost>
             <BtnPrimary href="/register">Créer un compte</BtnPrimary>
           </nav>
         </div>
@@ -158,7 +166,8 @@ export default function LandingPage() {
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
           <BtnPrimary href="/register">Créer un compte gratuit</BtnPrimary>
-          <BtnGhost href="/login">Se connecter</BtnGhost>
+          <BtnGhost href="/login?redirect=/tenders">Se connecter</BtnGhost>
+          <BtnGhost href="#appels-offres">Voir les appels d&apos;offres</BtnGhost>
         </div>
         <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 16 }}>
           Essai 14 jours · Sans carte bancaire · Annulation à tout moment
@@ -190,6 +199,81 @@ export default function LandingPage() {
                 <div style={{ fontSize: 24, fontWeight: 700, color: k.color }}>{k.val}</div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Aperçu appels d'offres */}
+      <section id="appels-offres" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px 56px' }}>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <h2 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 12px' }}>
+            Vos appels d&apos;offres, en un coup d&apos;œil
+          </h2>
+          <p style={{ fontSize: 15, color: 'var(--text-secondary)', margin: 0, maxWidth: 520, marginInline: 'auto' }}>
+            Statuts, échéances, budgets et fournisseurs — connectez-vous pour piloter vos dossiers réels.
+          </p>
+        </div>
+        <div style={{
+          background: 'var(--bg-card)', border: '1px solid var(--border-hi)',
+          borderRadius: 16, boxShadow: 'var(--shadow-md)', overflow: 'hidden',
+        }}>
+          <div style={{
+            padding: '14px 20px', borderBottom: '1px solid var(--border)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+          }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Appels d&apos;offres</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Exemple de tableau — données de démonstration</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <BtnGhost href="/login?redirect=/tenders">Accéder à mes AO</BtnGhost>
+              <BtnPrimary href="/register">Créer un compte</BtnPrimary>
+            </div>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+                  {['AO', 'Client', 'Échéance', 'Budget', 'Priorité', 'Statut'].map(h => (
+                    <th key={h} style={{
+                      padding: '12px 16px', textAlign: 'left', fontSize: 10,
+                      fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)',
+                      textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500,
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {DEMO_TENDERS.map((t, i) => (
+                  <tr key={t.title} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 1 ? 'rgba(148,163,184,0.03)' : 'transparent' }}>
+                    <td style={{ padding: '14px 16px', fontWeight: 600, color: 'var(--text-primary)', maxWidth: 280 }}>{t.title}</td>
+                    <td style={{ padding: '14px 16px', color: 'var(--text-secondary)' }}>{t.client}</td>
+                    <td style={{ padding: '14px 16px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: t.deadline === '5j' ? '#f87171' : '#34d399' }}>{t.deadline}</td>
+                    <td style={{ padding: '14px 16px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#34d399' }}>{t.budget}</td>
+                    <td style={{ padding: '14px 16px', fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-secondary)' }}>{t.priorite}</td>
+                    <td style={{ padding: '14px 16px' }}>
+                      <span style={{
+                        fontSize: 10, fontFamily: 'DM Mono, monospace', fontWeight: 600,
+                        padding: '3px 8px', borderRadius: 4,
+                        background: `${t.statusColor}18`, color: t.statusColor,
+                        border: `1px solid ${t.statusColor}40`,
+                      }}>{t.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{
+            padding: '16px 20px', borderTop: '1px solid var(--border)',
+            background: 'var(--bg-secondary)', textAlign: 'center',
+          }}>
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+              Créez votre compte pour gérer vos consultations, relances et devis fournisseurs.
+            </span>
+            <a href="/register" style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600, textDecoration: 'none', marginLeft: 8 }}>
+              Commencer gratuitement →
+            </a>
           </div>
         </div>
       </section>

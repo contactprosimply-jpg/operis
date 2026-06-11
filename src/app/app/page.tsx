@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/AuthProvider'
 import { Spinner } from '@/components/ui'
 
-/** Point d'entrée démo / application : connexion puis appels d'offres. */
+/** Utilisateurs connectés → AO ; visiteurs → page de présentation */
 export default function AppEntryPage() {
   const { ready, session } = useAuth()
   const router = useRouter()
@@ -13,7 +13,7 @@ export default function AppEntryPage() {
   useEffect(() => {
     if (!ready) return
     if (session) router.replace('/tenders')
-    else router.replace('/login?redirect=/tenders')
+    else router.replace('/')
   }, [ready, session, router])
 
   return (
