@@ -168,12 +168,12 @@ async function getSyncTargets(ownerId) {
   // Par défaut : tous les comptes IMAP actifs (un sync par ligne mail_accounts)
   const targets = []
   for (const a of accounts) {
-    const meta = await resolveSourceMeta(a.user_id, ownerId)
     targets.push({
       accountId: a.id,
       userId: a.user_id,
       imapUser: a.imap_user,
-      ...meta,
+      sourceMemberId: null,
+      sourceMemberName: null,
     })
   }
   return targets

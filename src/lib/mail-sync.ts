@@ -79,35 +79,54 @@ function getEnvMailAccount(): MailAccountConfig | null {
   }
 }
 
-export async function resolveMailAccount(userId: string): Promise<MailAccountWithId | null> {
-  const db = createAdminClient()
+function mapMailAccountRow(account: {
+  id: string
+  imap_host?: string | null
+  imap_port?: number | null
+  imap_user?: string | null
+  imap_pass?: string | null
+  last_sync_uid?: number | null
+}): MailAccountWithId | null {
+  if (!account.imap_user || !account.imap_pass) return null
+  return {
+    id: account.id,
+    imap_host: account.imap_host || 'mail.gandi.net',
+    imap_port: Number(account.imap_port) || 993,
+    imap_user: account.imap_user,
+    imap_pass: account.imap_pass,
+    last_sync_uid: account.last_sync_uid ?? 0,
+  }
+}
 
-  const { data: account } = await db
+export async function resolveMailAccounts(userId: string): Promise<MailAccountWithId[]> {
+  const db = createAdminClient()
+  const { data: rows } = await db
     .from('mail_accounts')
     .select('*')
     .eq('user_id', userId)
     .eq('is_active', true)
-    .maybeSingle()
 
-  if (account) {
-    if (account.imap_user && account.imap_pass) {
-      return {
-        id: account.id,
-        imap_host: account.imap_host || 'mail.gandi.net',
-        imap_port: Number(account.imap_port) || 993,
-        imap_user: account.imap_user,
-        imap_pass: account.imap_pass,
-        last_sync_uid: account.last_sync_uid ?? 0,
-      }
-    }
-    // Ligne existante sans mot de passe — ne pas retomber sur les variables d'env
-    return null
+  const accounts: MailAccountWithId[] = []
+  for (const row of rows ?? []) {
+    const mapped = mapMailAccountRow(row)
+    if (mapped) accounts.push(mapped)
   }
 
-  const envAccount = getEnvMailAccount()
-  if (envAccount && userId === ENV_MAIL_FALLBACK_USER_ID) return envAccount
+  if (accounts.length) return accounts
 
-  return null
+  if (!rows?.length) {
+    const envAccount = getEnvMailAccount()
+    if (envAccount && userId === ENV_MAIL_FALLBACK_USER_ID) {
+      return [{ ...envAccount }]
+    }
+  }
+
+  return []
+}
+
+export async function resolveMailAccount(userId: string): Promise<MailAccountWithId | null> {
+  const accounts = await resolveMailAccounts(userId)
+  return accounts[0] ?? null
 }
 
 async function fetchEnvelopesWithFallback(
@@ -501,6 +520,63 @@ async function syncOneAccount(
   }
 }
 
+/** Sync tous les comptes IMAP du user connecté (messagerie personnelle). */
+export async function syncUserMailAccounts(
+  userId: string,
+  options: { backfill?: boolean; quick?: boolean } = {},
+): Promise<MailSyncResult> {
+  const accounts = await resolveMailAccounts(userId)
+  const aggregated: MailSyncResult = {
+    fetched: 0,
+    stored: 0,
+    updated: 0,
+    aoDetected: 0,
+    duplicates: 0,
+    errors: 0,
+    maxUid: 0,
+    quickStored: 0,
+    accounts: [],
+  }
+
+  if (!accounts.length) {
+    aggregated.accounts!.push({
+      user_id: userId,
+      email: null,
+      display_name: null,
+      status: 'skipped',
+      reason: 'compte_mail_non_configure',
+    })
+    return aggregated
+  }
+
+  for (const account of accounts) {
+    try {
+      const result = await syncMailAccount(userId, account, options)
+      mergeSyncResults(aggregated, result)
+      aggregated.accounts!.push({
+        user_id: userId,
+        email: account.imap_user,
+        display_name: null,
+        status: 'ok',
+        stored: result.stored,
+        fetched: result.fetched,
+      })
+    } catch (e) {
+      aggregated.errors++
+      aggregated.accounts!.push({
+        user_id: userId,
+        email: account.imap_user,
+        display_name: null,
+        status: 'error',
+        reason: formatImapError(e),
+      })
+    }
+  }
+
+  return aggregated
+}
+
+/** Famille — désactivé côté API pour les tests ; conservé pour réactivation ultérieure. */
 export async function syncFamilyMailAccounts(
   ownerId: string,
   options: { backfill?: boolean; quick?: boolean } = {},

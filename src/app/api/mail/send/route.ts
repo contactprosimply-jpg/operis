@@ -5,8 +5,7 @@ import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import nodemailer from 'nodemailer'
 import { clampString, rejectUnexpectedFields } from '@/lib/api-validation'
-import { getFamilyContext } from '@/lib/family'
-
+import { resolveMailAccount } from '@/lib/mail-sync'
 export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
@@ -15,13 +14,13 @@ export async function POST(req: NextRequest) {
 
   const rawBody = await req.json()
   const unexpected = rejectUnexpectedFields(rawBody as Record<string, unknown>, [
-    'to', 'subject', 'body', 'cc', 'signature', 'attachments', 'send_as_user_id',
+    'to', 'subject', 'body', 'cc', 'signature', 'attachments',
   ])
   if (unexpected) {
     return Response.json({ success: false, error: unexpected }, { status: 400 })
   }
 
-  const { to, subject, body, cc, signature, attachments: rawAttachments, send_as_user_id } = rawBody
+  const { to, subject, body, cc, signature, attachments: rawAttachments } = rawBody
 
   const bodyText = clampString(body, 100000) ?? ''
   const signatureText = (clampString(signature, 10000) ?? '').trim()
@@ -35,26 +34,16 @@ export async function POST(req: NextRequest) {
     return Response.json({ success: false, error: 'Message ou signature requis' }, { status: 400 })
   }
 
-  let senderUserId = userId
-  if (send_as_user_id && typeof send_as_user_id === 'string' && send_as_user_id !== userId) {
-    const ctx = await getFamilyContext(userId)
-    if (!ctx.isOwner) {
-      return Response.json({ success: false, error: 'Envoi au nom d\'un membre non autorise' }, { status: 403 })
-    }
-    const allowed = [userId, ...ctx.memberUserIds]
-    if (!allowed.includes(send_as_user_id)) {
-      return Response.json({ success: false, error: 'Membre introuvable' }, { status: 404 })
-    }
-    senderUserId = send_as_user_id
+  const mailCfg = await resolveMailAccount(userId)
+  if (!mailCfg?.id) {
+    return Response.json({ success: false, error: 'Aucun compte mail configure' }, { status: 400 })
   }
 
   const db = createAdminClient()
-
   const { data: account, error } = await db
     .from('mail_accounts')
     .select('*')
-    .eq('user_id', senderUserId)
-    .eq('is_active', true)
+    .eq('id', mailCfg.id)
     .single()
 
   if (error || !account) {

@@ -26,15 +26,11 @@ export async function GET(req: NextRequest) {
   const hasAttachments = searchParams.get('attachments') === 'true' ? true : undefined
   const unlinked = searchParams.get('unlinked') === 'true'
   const tenderId = searchParams.get('tender_id') || undefined
-  const view = searchParams.get('view') || 'mine'
-  const memberId = searchParams.get('member_id') || undefined
   const priority = searchParams.get('priority') || undefined
   const fromQuery = searchParams.get('from')?.trim() || undefined
   const since = searchParams.get('since') || undefined
   const until = searchParams.get('until') || undefined
   const labelFilter = searchParams.get('label')?.trim() || undefined
-  const sourceMemberId = searchParams.get('source_member_id') || undefined
-
   const scope = await getMailUserScope(userId)
   const db = createAdminClient()
   const limit = Math.min(Number(searchParams.get('limit') || 250), 500)
@@ -49,13 +45,7 @@ export async function GET(req: NextRequest) {
       .order('received_at', { ascending: false })
       .limit(limit)
 
-    if (view === 'team' && scope.isOwner) {
-      q = q.in('user_id', scope.allowedUserIds)
-    } else if (memberId && scope.isOwner && scope.allowedUserIds.includes(memberId)) {
-      q = q.eq('user_id', memberId)
-    } else {
-      q = q.eq('user_id', userId)
-    }
+    q = q.eq('user_id', userId)
 
     if (isAo !== undefined) q = q.eq('is_ao', isAo)
     if (isRead !== undefined) q = q.eq('is_read', isRead)
@@ -70,13 +60,6 @@ export async function GET(req: NextRequest) {
     if (until) q = q.lte('received_at', until)
     if (useV8Filters && labelFilter) {
       q = q.contains('labels', [{ name: labelFilter }] as EmailLabel[])
-    }
-    if (useV8Filters && sourceMemberId && scope.isOwner) {
-      if (sourceMemberId === 'owner') {
-        q = q.eq('user_id', userId).is('source_member_id', null)
-      } else if (scope.allowedUserIds.includes(sourceMemberId)) {
-        q = q.eq('source_member_id', sourceMemberId)
-      }
     }
     return q
   }

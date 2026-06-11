@@ -9,13 +9,10 @@ import { requestProductTour } from '@/lib/product-tour'
 
 const ACCENT_COLORS = ['#3b7ef6', '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316']
 
-const MEMBER_COLORS = ['#3b7ef6', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#06b6d4']
-
 const TABS = [
   { id: 'general',    label: 'General',    icon: '⚙' },
   { id: 'messagerie', label: 'Messagerie', icon: '✉' },
   { id: 'signature',  label: 'Signature',  icon: '✍' },
-  { id: 'famille',    label: 'Famille',    icon: '👥' },
   { id: 'apparence',  label: 'Apparence',  icon: '🎨' },
 ]
 
@@ -36,15 +33,6 @@ export default function SettingsPage() {
   const [themeId, setThemeId] = useState(DEFAULT_THEME_ID)
   const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT)
 
-  // Famille
-  const [org, setOrg] = useState<any>(null)
-  const [members, setMembers] = useState<any[]>([])
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteName, setInviteName] = useState('')
-  const [inviteColor, setInviteColor] = useState('#3b7ef6')
-  const [inviting, setInviting] = useState(false)
-  const [orgName, setOrgName] = useState('')
-  const [creatingOrg, setCreatingOrg] = useState(false)
   const [resettingTenders, setResettingTenders] = useState(false)
 
   useEffect(() => {
@@ -69,14 +57,6 @@ export default function SettingsPage() {
         if (savedAccent) setAccentColor(savedAccent)
         if (savedGeneral) setGeneral(JSON.parse(savedGeneral))
         if (savedAttachment) setAttachmentName(savedAttachment)
-
-        // Load org
-        const orgRes = await authFetch('/api/organization')
-        const orgData = await orgRes.json()
-        if (orgData.success && orgData.data) {
-          setOrg(orgData.data)
-          setMembers(orgData.data.organization_members ?? [])
-        }
       } catch (e) { console.error(e) }
       setLoading(false)
     }
@@ -171,42 +151,6 @@ export default function SettingsPage() {
     localStorage.setItem('operis_accent', accentColor)
     applyTheme(themeId, accentColor)
     show('Theme applique')
-  }
-
-  const handleCreateOrg = async () => {
-    if (!orgName.trim()) return
-    setCreatingOrg(true)
-    try {
-      const res = await authFetch('/api/organization', { method: 'POST', body: JSON.stringify({ name: orgName }) })
-      const data = await res.json()
-      if (data.success) { setOrg(data.data); show('Organisation creee') }
-      else show(`Erreur : ${data.error}`)
-    } catch (e: any) { show(`Erreur : ${e.message}`) }
-    setCreatingOrg(false)
-  }
-
-  const handleInvite = async () => {
-    if (!inviteEmail.trim()) return
-    setInviting(true)
-    try {
-      const res = await authFetch('/api/organization', { method: 'PUT', body: JSON.stringify({ action: 'invite', email: inviteEmail, display_name: inviteName, color: inviteColor }) })
-      const data = await res.json()
-      if (data.success) {
-        show(`${inviteEmail} ajoute a la famille`)
-        setInviteEmail(''); setInviteName('')
-        const orgRes = await authFetch('/api/organization')
-        const orgData = await orgRes.json()
-        if (orgData.success && orgData.data) setMembers(orgData.data.organization_members ?? [])
-      } else show(`Erreur : ${data.error}`)
-    } catch (e: any) { show(`Erreur : ${e.message}`) }
-    setInviting(false)
-  }
-
-  const handleRemoveMember = async (memberId: string, name: string) => {
-    if (!confirm(`Retirer ${name} de la famille ?`)) return
-    await authFetch('/api/organization', { method: 'PUT', body: JSON.stringify({ action: 'remove', member_id: memberId }) })
-    setMembers(m => m.filter(x => x.id !== memberId))
-    show(`${name} retire`)
   }
 
   const generatedHtml = buildFieldsSignatureHtml(sig, accentColor)
@@ -369,80 +313,6 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
-        )}
-
-        {/* FAMILLE */}
-        {tab === 'famille' && (
-          <>
-            {!org ? (
-              <div style={card}>
-                <div style={sTitle}>Creer votre organisation famille</div>
-                <div style={sSub}>Regroupez vos boites mail sous une meme organisation pour partager les AO</div>
-                <Field label="Nom de l'organisation" value={orgName} onChange={setOrgName} placeholder="Ex: Nikodex Group" />
-                <Button variant="primary" loading={creatingOrg} onClick={handleCreateOrg}>Creer l'organisation</Button>
-              </div>
-            ) : (
-              <>
-                {/* Arbre organisation */}
-                <div style={card}>
-                  <div style={sTitle}>{org.name}</div>
-                  <div style={sSub}>Arbre de votre organisation — {members.length} membre(s)</div>
-                  
-                  {/* Root node */}
-                  <div style={{ position: 'relative', paddingLeft: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--accent-soft)', borderRadius: 10, border: '1px solid rgba(59,126,246,0.3)', marginBottom: 8 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>👑</div>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>contact@nikodex.fr</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>Admin — Boite principale AO</div>
-                      </div>
-                      <div style={{ marginLeft: 'auto', fontSize: 10, background: 'var(--accent)', color: '#fff', padding: '2px 8px', borderRadius: 10, fontFamily: 'DM Mono, monospace' }}>ADMIN</div>
-                    </div>
-
-                    {/* Members */}
-                    {members.filter((m: any) => m.role !== 'admin').map((member: any, i: number) => (
-                      <div key={member.id} style={{ position: 'relative', marginLeft: 20, marginBottom: 8 }}>
-                        {/* Ligne verticale */}
-                        <div style={{ position: 'absolute', left: -10, top: 0, bottom: 0, width: 1, background: 'var(--border)' }} />
-                        {/* Ligne horizontale */}
-                        <div style={{ position: 'absolute', left: -10, top: '50%', width: 10, height: 1, background: 'var(--border)' }} />
-                        
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--bg-secondary)', borderRadius: 10, border: '1px solid var(--border)' }}>
-                          <div style={{ width: 36, height: 36, borderRadius: '50%', background: member.color ?? '#3b7ef6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-                            {(member.display_name ?? member.email ?? '?')[0].toUpperCase()}
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 13, fontWeight: 500 }}>{member.display_name ?? member.email}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>{member.email} — Membre</div>
-                          </div>
-                          <button onClick={() => handleRemoveMember(member.id, member.display_name ?? member.email)} style={{ background: 'none', border: 'none', color: 'rgba(239,68,68,0.4)', cursor: 'pointer', fontSize: 16 }}
-                            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#f87171'}
-                            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'rgba(239,68,68,0.4)'}>×</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Inviter un membre */}
-                <div style={card}>
-                  <div style={sTitle}>Inviter un membre</div>
-                  <div style={sSub}>Le membre doit avoir cree son compte Operis au prealable</div>
-                  <Field label="Email Operis du membre *" value={inviteEmail} onChange={setInviteEmail} placeholder="membre@nikodex.fr" type="email" />
-                  <Field label="Nom affiche" value={inviteName} onChange={setInviteName} placeholder="Ex: Tiana" />
-                  <div style={{ marginBottom: 14 }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace', marginBottom: 8 }}>Couleur</div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      {MEMBER_COLORS.map(c => (
-                        <button key={c} onClick={() => setInviteColor(c)} style={{ width: 24, height: 24, borderRadius: '50%', border: `3px solid ${inviteColor === c ? 'white' : 'transparent'}`, background: c, cursor: 'pointer' }} />
-                      ))}
-                    </div>
-                  </div>
-                  <Button variant="primary" loading={inviting} onClick={handleInvite}>+ Inviter</Button>
-                </div>
-              </>
-            )}
-          </>
         )}
 
         {/* APPARENCE */}

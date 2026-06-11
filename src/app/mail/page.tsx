@@ -6,7 +6,6 @@ import { supabase } from '@/lib/supabase'
 import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
 import { Email, EmailAttachment, EmailLabel, EmailPriority } from '@/types/database'
-import type { FamilyMember } from '@/lib/family'
 import { PRESET_EMAIL_LABELS } from '@/lib/mail-api'
 import { Spinner } from '@/components/ui'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
@@ -34,26 +33,6 @@ const inputStyle: React.CSSProperties = {
 }
 
 type MailFilter = 'all' | 'unread' | 'ao' | 'attachments'
-type MailboxView = 'mine' | 'team' | 'member'
-
-function getSourceLabel(email: Email, userId: string | undefined, members: FamilyMember[]): string | null {
-  if (email.source_member_name) return email.source_member_name
-  if (email.source_member_id) {
-    const m = members.find(f => f.user_id === email.source_member_id)
-    return m?.display_name?.trim() || m?.email?.split('@')[0] || 'Membre'
-  }
-  if (email.user_id && userId && email.user_id !== userId) {
-    const m = members.find(f => f.user_id === email.user_id)
-    return m?.display_name?.trim() || m?.email?.split('@')[0] || 'Membre'
-  }
-  return null
-}
-
-function getMemberColor(email: Email, userId: string | undefined, members: FamilyMember[]): string {
-  const memberId = email.source_member_id || (email.user_id !== userId ? email.user_id : null)
-  const m = members.find(f => f.user_id === memberId)
-  return m?.color || '#3b7ef6'
-}
 
 const PRIORITY_STYLES: Record<EmailPriority, { label: string; color: string; bg: string }> = {
   urgent: { label: 'Urgent', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
@@ -151,16 +130,10 @@ export default function MailPage() {
   const [tendersForLink, setTendersForLink] = useState<Array<{ id: string; title: string; client: string }>>([])
   const [linkingTender, setLinkingTender] = useState(false)
   const [filter, setFilter] = useState<MailFilter>('all')
-  const [mailboxView, setMailboxView] = useState<MailboxView>('mine')
-  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
-  const [isFamilyOwner, setIsFamilyOwner] = useState(false)
-  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([])
-  const [sendAsUserId, setSendAsUserId] = useState<string>('')
   const [priorityFilter, setPriorityFilter] = useState<EmailPriority | ''>('')
   const [fromFilter, setFromFilter] = useState('')
   const [tenderFilter, setTenderFilter] = useState('')
   const [labelFilter, setLabelFilter] = useState('')
-  const [sourceMemberFilter, setSourceMemberFilter] = useState('')
   const [sinceFilter, setSinceFilter] = useState('')
   const [untilFilter, setUntilFilter] = useState('')
   const [tendersForFilter, setTendersForFilter] = useState<Array<{ id: string; title: string; client: string }>>([])
@@ -234,31 +207,6 @@ export default function MailPage() {
 
   useEffect(() => {
     if (!ready || !userId) return
-    setSendAsUserId(userId)
-    authFetch('/api/organization')
-      .then(r => r.json())
-      .then(data => {
-        if (!data.success || !data.data) return
-        const org = data.data as {
-          owner_id?: string
-          organization_members?: Array<{
-            user_id: string
-            display_name: string | null
-            email: string | null
-            color: string | null
-          }>
-        }
-        if (org.owner_id !== userId) return
-        setIsFamilyOwner(true)
-        const members: FamilyMember[] = (org.organization_members ?? []).map(m => ({
-          user_id: m.user_id,
-          display_name: m.display_name,
-          email: m.email,
-          color: m.color,
-        }))
-        setFamilyMembers(members)
-      })
-      .catch(() => {})
     authFetch('/api/tenders')
       .then(r => r.json())
       .then(data => {
@@ -281,13 +229,10 @@ export default function MailPage() {
       if (filter === 'ao') params.set('ao', 'true')
       if (filter === 'unread') params.set('unread', 'true')
       if (filter === 'attachments') params.set('attachments', 'true')
-      if (mailboxView === 'team') params.set('view', 'team')
-      if (mailboxView === 'member' && selectedMemberId) params.set('member_id', selectedMemberId)
       if (priorityFilter) params.set('priority', priorityFilter)
       if (fromFilter.trim()) params.set('from', fromFilter.trim())
       if (tenderFilter) params.set('tender_id', tenderFilter)
       if (labelFilter) params.set('label', labelFilter)
-      if (sourceMemberFilter) params.set('source_member_id', sourceMemberFilter)
       if (sinceFilter) params.set('since', `${sinceFilter}T00:00:00.000Z`)
       if (untilFilter) params.set('until', `${untilFilter}T23:59:59.999Z`)
       const res = await authFetch(`/api/mail/emails?${params}`)
@@ -311,7 +256,7 @@ export default function MailPage() {
       clearTimeout(safetyTimer)
       if (!silent) setLoading(false)
     }
-  }, [filter, mailboxView, selectedMemberId, priorityFilter, fromFilter, tenderFilter, labelFilter, sourceMemberFilter, sinceFilter, untilFilter])
+  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter])
 
   const loadEmailDetail = useCallback(async (emailId: string, silent = false) => {
     if (!silent) setLoadingDetail(true)
@@ -450,7 +395,7 @@ export default function MailPage() {
       return
     }
     void loadEmails(false)
-  }, [filter, mailboxView, selectedMemberId, priorityFilter, fromFilter, tenderFilter, labelFilter, sourceMemberFilter, sinceFilter, untilFilter, ready, userId, loadEmails])
+  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, ready, userId, loadEmails])
 
   useEffect(() => {
     if (!ready || !userId || initialSyncDoneRef.current) return
@@ -537,7 +482,6 @@ export default function MailPage() {
   const openCompose = (prefill: Partial<typeof compose> = {}) => {
     setCompose({ to: '', cc: '', subject: '', body: '', ...prefill })
     setAttachments([])
-    setSendAsUserId(userId ?? '')
     setComposing(true)
     setSendError(null)
     if (isMobile) setMobileShowDetail(true)
@@ -598,7 +542,6 @@ export default function MailPage() {
           body: bodyWithoutSig,
           signature: signatureHtml,
           attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined,
-          send_as_user_id: sendAsUserId && sendAsUserId !== userId ? sendAsUserId : undefined,
         }),
       })
       const data = await res.json()
@@ -899,58 +842,6 @@ export default function MailPage() {
               </div>
             </div>
 
-            {isFamilyOwner && familyMembers.length > 0 && (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{
-                  display: 'flex', gap: 2, padding: 3, borderRadius: 8,
-                  background: 'var(--bg-card)', border: '1px solid var(--border)',
-                }}>
-                  {([
-                    { key: 'mine' as MailboxView, label: 'Ma boîte' },
-                    { key: 'team' as MailboxView, label: 'Toute l\'équipe' },
-                  ]).map(opt => (
-                    <button
-                      key={opt.key}
-                      type="button"
-                      onClick={() => { setMailboxView(opt.key); setSelectedMemberId(null) }}
-                      style={{
-                        flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: 'none',
-                        background: mailboxView === opt.key ? 'var(--accent)' : 'transparent',
-                        color: mailboxView === opt.key ? '#fff' : 'var(--text-muted)',
-                        fontFamily: 'DM Sans, system-ui', fontWeight: mailboxView === opt.key ? 600 : 400,
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
-                  {familyMembers.filter(m => m.user_id !== userId).map(m => (
-                    <button
-                      key={m.user_id}
-                      type="button"
-                      onClick={() => { setMailboxView('member'); setSelectedMemberId(m.user_id) }}
-                      style={{
-                        padding: '3px 8px', borderRadius: 12, fontSize: 10, cursor: 'pointer',
-                        border: mailboxView === 'member' && selectedMemberId === m.user_id
-                          ? `1px solid ${m.color || '#3b7ef6'}`
-                          : '1px solid var(--border)',
-                        background: mailboxView === 'member' && selectedMemberId === m.user_id
-                          ? `${m.color || '#3b7ef6'}22`
-                          : 'transparent',
-                        color: mailboxView === 'member' && selectedMemberId === m.user_id
-                          ? (m.color || '#3b7ef6')
-                          : 'var(--text-muted)',
-                        fontFamily: 'DM Sans, system-ui',
-                      }}
-                    >
-                      {m.display_name?.trim() || m.email?.split('@')[0] || 'Membre'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
               {filterButtons.map(f => (
                 <button key={f.key} onClick={() => setFilter(f.key)} style={{
@@ -1030,25 +921,6 @@ export default function MailPage() {
                     <option key={l.id} value={l.name}>{l.name}</option>
                   ))}
                 </select>
-                {isFamilyOwner && (
-                  <select
-                    value={sourceMemberFilter}
-                    onChange={e => setSourceMemberFilter(e.target.value)}
-                    style={{
-                      fontSize: 11, padding: '4px 8px', borderRadius: 6,
-                      border: '1px solid var(--border)', background: 'var(--bg-card)',
-                      color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui',
-                    }}
-                  >
-                    <option value="">Source</option>
-                    <option value="owner">Moi (chef)</option>
-                    {familyMembers.filter(m => m.user_id !== userId).map(m => (
-                      <option key={m.user_id} value={m.user_id}>
-                        {m.display_name?.trim() || m.email?.split('@')[0]}
-                      </option>
-                    ))}
-                  </select>
-                )}
                 <input
                   type="date"
                   value={sinceFilter}
@@ -1148,19 +1020,6 @@ export default function MailPage() {
                           {email.subject}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          {(() => {
-                            const sourceLabel = getSourceLabel(email, userId, familyMembers)
-                            if (!sourceLabel) return null
-                            const color = getMemberColor(email, userId, familyMembers)
-                            return (
-                              <span style={{
-                                fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 6px', borderRadius: 4,
-                                background: `${color}18`, color, border: `1px solid ${color}40`,
-                              }}>
-                                Via : {sourceLabel}
-                              </span>
-                            )
-                          })()}
                           {email.priority && email.priority !== 'normal' && (
                             <span style={{
                               fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 5px', borderRadius: 4,
@@ -1289,26 +1148,6 @@ export default function MailPage() {
                 <button onClick={() => { setComposing(false); if (isMobile) setMobileShowDetail(false) }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 20 }}>×</button>
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: isMobile ? '12px 14px' : '16px 20px', gap: 8, overflowY: 'auto' }}>
-                {isFamilyOwner && familyMembers.length > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 8, flexShrink: 0 }}>
-                    <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', width: 32, textTransform: 'uppercase' }}>De</span>
-                    <select
-                      value={sendAsUserId}
-                      onChange={e => setSendAsUserId(e.target.value)}
-                      style={{
-                        flex: 1, fontSize: 13, background: 'transparent', border: 'none', outline: 'none',
-                        color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
-                      }}
-                    >
-                      <option value={userId ?? ''}>Mon compte ({session?.user?.email})</option>
-                      {familyMembers.filter(m => m.user_id !== userId).map(m => (
-                        <option key={m.user_id} value={m.user_id}>
-                          {m.display_name?.trim() || m.email} — {m.email}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
                 {[
                   { label: 'À', key: 'to', type: 'email', placeholder: 'email@exemple.com' },
                   { label: 'Cc', key: 'cc', type: 'text', placeholder: 'copie à (virgules pour plusieurs)' },
