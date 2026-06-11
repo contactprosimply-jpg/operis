@@ -63,7 +63,8 @@ export default function TendersPage() {
   }, [])
 
   const inTeam = !!org?.members?.length
-  const tableColCount = inTeam ? 10 : 9
+  const showCreatorColumn = inTeam || tenders.some(t => !!t.creator_label)
+  const tableColCount = showCreatorColumn ? 10 : 9
 
   const filtered = filter === 'actifs'
     ? tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status))
@@ -146,7 +147,7 @@ export default function TendersPage() {
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
               {[
                 'Titre', 'Client', 'Deadline', 'Budget HT', 'Priorite', 'Statut',
-                ...(inTeam ? ['Créé par'] : []),
+                ...(showCreatorColumn ? ['Créé par'] : []),
                 'Fournisseurs', 'Reponses', 'Devis',
               ].map(h => (
                 <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
@@ -158,6 +159,8 @@ export default function TendersPage() {
               const respPct = t.nb_suppliers > 0 ? Math.round((t.nb_responses / t.nb_suppliers) * 100) : 0
               const priorite = PRIORITE_LABEL[t.priorite ?? 'normale'] ?? PRIORITE_LABEL.normale
               const rowHandlers = tableRowHoverHandlers(t.status)
+              const creatorLabel = t.creator_label ?? getTenderCreatorLabel(t, currentUserId, org)
+              const assigneeLabel = t.assignee_label ?? getTenderAssigneeLabel(t, currentUserId, org)
               return (
                 <tr key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
                   className="animate-fade"
@@ -170,13 +173,13 @@ export default function TendersPage() {
                   {...rowHandlers}>
                   <td style={{ padding: '12px 14px' }}>
                     <div style={{ fontWeight: 600 }}>{t.title}</div>
-                    {(getTenderCreatorLabel(t, currentUserId, org) || getTenderAssigneeLabel(t, currentUserId, org)) && (
-                      <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                        {getTenderCreatorLabel(t, currentUserId, org) && (
-                          <TenderOriginBadge label={getTenderCreatorLabel(t, currentUserId, org)!} type="creator" />
+                    {(creatorLabel || assigneeLabel) && (
+                      <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                        {creatorLabel && (
+                          <TenderOriginBadge label={creatorLabel} type="creator" />
                         )}
-                        {getTenderAssigneeLabel(t, currentUserId, org) && (
-                          <TenderOriginBadge label={getTenderAssigneeLabel(t, currentUserId, org)!} type="assigned" />
+                        {assigneeLabel && (
+                          <TenderOriginBadge label={assigneeLabel} type="assigned" />
                         )}
                       </div>
                     )}
@@ -191,9 +194,9 @@ export default function TendersPage() {
                       {priorite.icon} {priorite.label}
                     </span>
                   </td>
-                  {inTeam && (
+                  {showCreatorColumn && (
                     <td style={{ padding: '12px 14px', fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui' }}>
-                      {creatorColumnLabel(t, currentUserId, org)}
+                      {creatorLabel ?? creatorColumnLabel(t, currentUserId, org)}
                     </td>
                   )}
                   <td style={{ padding: '12px 14px' }} onClick={e => e.stopPropagation()}>

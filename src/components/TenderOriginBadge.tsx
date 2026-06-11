@@ -23,7 +23,7 @@ export default function TenderOriginBadge({
   type?: BadgeType
 }) {
   const s = STYLES[type]
-  const text = type === 'assigned' ? `Assigné à ${label}` : `AO · ${label}`
+  const text = type === 'assigned' ? `Assigné à ${label}` : `Créé par ${label}`
 
   return (
     <span

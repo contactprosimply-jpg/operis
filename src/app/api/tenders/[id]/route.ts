@@ -9,6 +9,7 @@ import {
   canAssignTender,
   getTenderIfAccessible,
 } from '@/lib/tender-access'
+import { buildTenderMemberLabels } from '@/lib/tender-enrich'
 
 export const maxDuration = 60
 
@@ -51,10 +52,17 @@ export async function GET(
     db, tender.user_id as string, id, consultations ?? [], quotes ?? []
   )
 
+  const memberLabels = buildTenderMemberLabels(tender, access.scope)
+  if (!memberLabels.creator_label && tender.user_id && tender.user_id !== userId) {
+    const { data: { user: creator } } = await db.auth.admin.getUserById(tender.user_id)
+    if (creator?.email) memberLabels.creator_label = creator.email.split('@')[0]
+  }
+
   return Response.json({
     success: true,
     data: {
       ...tender,
+      ...memberLabels,
       consultations: consultations ?? [],
       quotes: quotes ?? [],
       documents,

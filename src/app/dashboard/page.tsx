@@ -176,7 +176,9 @@ export default function DashboardPage() {
           <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: '#fbbf24', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Relances a envisager ({relanceCandidates.length})
           </div>
-          {relanceCandidates.slice(0, 5).map(t => (
+            {relanceCandidates.slice(0, 5).map(t => {
+              const creatorLabel = t.creator_label ?? getTenderCreatorLabel(t, currentUserId, org)
+              return (
             <div
               key={t.tender_id}
               onClick={() => router.push(`/tenders/${t.tender_id}`)}
@@ -184,15 +186,16 @@ export default function DashboardPage() {
             >
               <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>
                 {t.title}
-                {getTenderCreatorLabel(t, currentUserId, org) && (
+                {creatorLabel && (
                   <span style={{ marginLeft: 8 }}>
-                    <TenderOriginBadge label={getTenderCreatorLabel(t, currentUserId, org)!} type="creator" />
+                    <TenderOriginBadge label={creatorLabel} type="creator" />
                   </span>
                 )}
               </span>
               <Badge color="amber">{t.nb_responses}/{t.nb_suppliers} reponses</Badge>
             </div>
-          ))}
+            )
+            })}
         </Card>
       )}
 
@@ -219,22 +222,25 @@ export default function DashboardPage() {
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', animation: 'pulse 1.5s ease infinite' }} />
             Urgences — deadline dans moins de 3 jours
           </div>
-          {urgents.map(t => (
+          {urgents.map(t => {
+            const creatorLabel = t.creator_label ?? getTenderCreatorLabel(t, currentUserId, org)
+            return (
             <div key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
               className="animate-slide"
               style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', cursor: 'pointer' }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>
                 {t.title}
-                {getTenderCreatorLabel(t, currentUserId, org) && (
+                {creatorLabel && (
                   <span style={{ marginLeft: 8 }}>
-                    <TenderOriginBadge label={getTenderCreatorLabel(t, currentUserId, org)!} type="creator" />
+                    <TenderOriginBadge label={creatorLabel} type="creator" />
                   </span>
                 )}
               </span>
               <span style={{ fontSize: 12, fontFamily: 'DM Mono, monospace', color: '#f87171', animation: 'pulse 2s ease infinite' }}>{t.days_remaining}j</span>
               <Badge color={t.nb_responses > 0 ? 'amber' : 'red'} glow>{t.nb_responses}/{t.nb_suppliers}</Badge>
             </div>
-          ))}
+            )
+          })}
         </Card>
       )}
 
@@ -256,6 +262,7 @@ export default function DashboardPage() {
             {actifs.slice(0, 7).map((t, i) => {
               const respPct = t.nb_suppliers > 0 ? Math.round((t.nb_responses / t.nb_suppliers) * 100) : 0
               const rowHandlers = tableRowHoverHandlers(t.status)
+              const creatorLabel = t.creator_label ?? getTenderCreatorLabel(t, currentUserId, org)
               return (
                 <tr key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
                   className="animate-slide"
@@ -263,9 +270,9 @@ export default function DashboardPage() {
                   {...rowHandlers}>
                   <td style={{ padding: '12px 14px' }}>
                     <div style={{ fontWeight: 600 }}>{t.title}</div>
-                    {getTenderCreatorLabel(t, currentUserId, org) && (
+                    {creatorLabel && (
                       <div style={{ marginTop: 6 }}>
-                        <TenderOriginBadge label={getTenderCreatorLabel(t, currentUserId, org)!} type="creator" />
+                        <TenderOriginBadge label={creatorLabel} type="creator" />
                       </div>
                     )}
                   </td>

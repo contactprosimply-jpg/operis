@@ -22,14 +22,18 @@ import {
   TenderStats,
   Tender,
 } from '@/types/database'
+import { getTenderAccessScope } from '@/lib/tender-access'
+import { enrichTenderRows, buildTenderMemberLabels } from '@/lib/tender-enrich'
 
 export const tenderService = {
 
   // ── Lister tous les AO ───────────────────────────────────
   async getAll(userId: string): Promise<ApiResponse<TenderStats[]>> {
     try {
+      const scope = await getTenderAccessScope(userId)
       const data = await tenderRepository.findAll(userId)
-      return { success: true, data }
+      const enriched = await enrichTenderRows(data, scope)
+      return { success: true, data: enriched }
     } catch (e: any) {
       return { success: false, error: e.message }
     }

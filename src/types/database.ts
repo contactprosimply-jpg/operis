@@ -148,6 +148,8 @@ export interface TenderStats {
   days_remaining: number | null
   budget_ht?: number | null
   priorite?: string | null
+  creator_label?: string | null
+  assignee_label?: string | null
 }
 
 export interface ConsultationWithSupplier extends ConsultationSupplier {

@@ -670,21 +670,21 @@ export default function TenderDetailPage() {
               )}
             </div>
             <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>{tender.client}</div>
-            {(getTenderCreatorLabel(tender, currentUserId, org) || getTenderAssigneeLabel(tender, currentUserId, org)) && (
-              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                {getTenderCreatorLabel(tender, currentUserId, org) && (
-                  <>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'DM Sans, system-ui' }}>
-                      Appel d&apos;offres de
-                    </span>
-                    <TenderOriginBadge label={getTenderCreatorLabel(tender, currentUserId, org)!} type="creator" />
-                  </>
-                )}
-                {getTenderAssigneeLabel(tender, currentUserId, org) && (
-                  <TenderOriginBadge label={getTenderAssigneeLabel(tender, currentUserId, org)!} type="assigned" />
-                )}
-              </div>
-            )}
+            {(() => {
+              const creatorLabel = tender.creator_label ?? getTenderCreatorLabel(tender, currentUserId, org)
+              const assigneeLabel = tender.assignee_label ?? getTenderAssigneeLabel(tender, currentUserId, org)
+              if (!creatorLabel && !assigneeLabel) return null
+              return (
+                <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {creatorLabel && (
+                    <TenderOriginBadge label={creatorLabel} type="creator" />
+                  )}
+                  {assigneeLabel && (
+                    <TenderOriginBadge label={assigneeLabel} type="assigned" />
+                  )}
+                </div>
+              )
+            })()}
             {tender.access?.can_assign && org?.members && org.members.length > 1 && (
               <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
