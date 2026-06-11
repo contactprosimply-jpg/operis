@@ -31,9 +31,18 @@ export async function GET(req: NextRequest) {
   const since = searchParams.get('since') || undefined
   const until = searchParams.get('until') || undefined
   const labelFilter = searchParams.get('label')?.trim() || undefined
+  const view = searchParams.get('view') || 'personal'
+  const memberId = searchParams.get('member_id') || undefined
   const scope = await getMailUserScope(userId)
   const db = createAdminClient()
   const limit = Math.min(Number(searchParams.get('limit') || 250), 500)
+
+  let targetUserIds = [userId]
+  if (scope.isOwner && view === 'team') {
+    targetUserIds = scope.allowedUserIds
+  } else if (scope.isOwner && memberId && scope.allowedUserIds.includes(memberId)) {
+    targetUserIds = [memberId]
+  }
 
   const applyFilters = (
     query: ReturnType<typeof db.from>,
@@ -45,7 +54,7 @@ export async function GET(req: NextRequest) {
       .order('received_at', { ascending: false })
       .limit(limit)
 
-    q = q.eq('user_id', userId)
+    q = q.in('user_id', targetUserIds)
 
     if (isAo !== undefined) q = q.eq('is_ao', isAo)
     if (isRead !== undefined) q = q.eq('is_read', isRead)

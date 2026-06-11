@@ -10,6 +10,27 @@ import { PRESET_EMAIL_LABELS } from '@/lib/mail-api'
 import { Spinner } from '@/components/ui'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
+import { memberDisplayName } from '@/lib/family'
+
+type MailView = 'personal' | 'team'
+
+interface FamilyMemberRow {
+  user_id: string
+  display_name: string | null
+  email: string | null
+  color: string | null
+}
+
+function getSourceLabel(email: Email, members: FamilyMemberRow[], currentUserId?: string) {
+  if (!currentUserId || email.user_id === currentUserId) return null
+  if (email.source_member_name) return email.source_member_name
+  const member = members.find(m => m.user_id === email.user_id)
+  return member ? memberDisplayName(member) : null
+}
+
+function getMemberColor(userId: string, members: FamilyMemberRow[]) {
+  return members.find(m => m.user_id === userId)?.color ?? '#6366f1'
+}
 
 interface SpeechRecognitionEventLike {
   resultIndex: number
@@ -138,6 +159,11 @@ export default function MailPage() {
   const [untilFilter, setUntilFilter] = useState('')
   const [tendersForFilter, setTendersForFilter] = useState<Array<{ id: string; title: string; client: string }>>([])
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [isFamilyOwner, setIsFamilyOwner] = useState(false)
+  const [familyMembers, setFamilyMembers] = useState<FamilyMemberRow[]>([])
+  const [mailView, setMailView] = useState<MailView>('personal')
+  const [sourceMemberFilter, setSourceMemberFilter] = useState('')
+  const [sendAsUserId, setSendAsUserId] = useState('')
   const [contextMenuEmailId, setContextMenuEmailId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [isListening, setIsListening] = useState(false)
@@ -207,6 +233,20 @@ export default function MailPage() {
 
   useEffect(() => {
     if (!ready || !userId) return
+    authFetch('/api/mail/family')
+      .then(r => r.json())
+      .then(data => {
+        if (!data.success) return
+        const members = (data.data?.members ?? []) as FamilyMemberRow[]
+        setFamilyMembers(members)
+        setIsFamilyOwner(data.data?.is_owner === true)
+        if (data.data?.is_owner) setSendAsUserId(userId)
+      })
+      .catch(() => {})
+  }, [ready, userId])
+
+  useEffect(() => {
+    if (!ready || !userId) return
     authFetch('/api/tenders')
       .then(r => r.json())
       .then(data => {
@@ -235,6 +275,8 @@ export default function MailPage() {
       if (labelFilter) params.set('label', labelFilter)
       if (sinceFilter) params.set('since', `${sinceFilter}T00:00:00.000Z`)
       if (untilFilter) params.set('until', `${untilFilter}T23:59:59.999Z`)
+      if (isFamilyOwner && mailView === 'team') params.set('view', 'team')
+      if (sourceMemberFilter) params.set('member_id', sourceMemberFilter)
       const res = await authFetch(`/api/mail/emails?${params}`)
       const data = await res.json()
       if (data.success) {
@@ -256,7 +298,7 @@ export default function MailPage() {
       clearTimeout(safetyTimer)
       if (!silent) setLoading(false)
     }
-  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter])
+  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, isFamilyOwner, mailView, sourceMemberFilter])
 
   const loadEmailDetail = useCallback(async (emailId: string, silent = false) => {
     if (!silent) setLoadingDetail(true)
@@ -329,6 +371,7 @@ export default function MailPage() {
           duplicates = 0,
           accounts,
         } = data.data ?? {}
+        const accountReports = accounts as Array<{ status: string; email?: string; stored?: number; reason?: string }> | undefined
         const total = stored + updated
         const myReport = accounts?.find((a: { user_id: string }) => a.user_id === userId)
         if (myReport?.status === 'skipped' && myReport.reason === 'compte_mail_non_configure') {
@@ -344,7 +387,10 @@ export default function MailPage() {
           } else if (!silent && total === 0) {
             showToast(`Boîte à jour (${fetched} vérifiés, ${duplicates} déjà en base)`)
           } else if (!silent && total > 0) {
-            showToast(`${total} email(s) synchronisé(s) · ${summary}`)
+            const teamHint = isFamilyOwner && accountReports && accountReports.length > 1
+              ? ` (${accountReports.filter(a => a.status === 'ok').length} boîtes)`
+              : ''
+            showToast(`${total} email(s) synchronisé(s)${teamHint} · ${summary}`)
           } else if (!silent && quickStored > 0) {
             showToast(`${quickStored} nouveau(x) email(s)`)
           }
@@ -386,7 +432,7 @@ export default function MailPage() {
       if (syncAbortRef.current === abortController) syncAbortRef.current = null
       setSyncing(false)
     }
-  }, [loadEmails, loadEmailDetail])
+  }, [loadEmails, loadEmailDetail, isFamilyOwner, userId])
 
   useEffect(() => {
     if (!ready) return
@@ -542,6 +588,7 @@ export default function MailPage() {
           body: bodyWithoutSig,
           signature: signatureHtml,
           attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined,
+          send_as_user_id: sendAsUserId && sendAsUserId !== userId ? sendAsUserId : undefined,
         }),
       })
       const data = await res.json()
@@ -805,6 +852,51 @@ export default function MailPage() {
                     {autoSyncStatus}
                   </div>
                 )}
+                {isFamilyOwner && familyMembers.length > 1 && (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                    {([
+                      { key: 'personal' as MailView, label: 'Ma boîte' },
+                      { key: 'team' as MailView, label: 'Toute l\'équipe' },
+                    ]).map(v => (
+                      <button
+                        key={v.key}
+                        type="button"
+                        onClick={() => {
+                          setMailView(v.key)
+                          setSourceMemberFilter('')
+                        }}
+                        style={{
+                          padding: '4px 10px', borderRadius: 6, fontSize: 10, fontWeight: 600,
+                          cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
+                          border: mailView === v.key ? '1px solid rgba(79,142,247,0.4)' : '1px solid var(--border)',
+                          background: mailView === v.key ? 'var(--accent-soft)' : 'transparent',
+                          color: mailView === v.key ? 'var(--accent)' : 'var(--text-muted)',
+                        }}
+                      >
+                        {v.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {isFamilyOwner && mailView === 'team' && (
+                  <select
+                    value={sourceMemberFilter}
+                    onChange={e => setSourceMemberFilter(e.target.value)}
+                    style={{
+                      marginTop: 8, width: '100%', fontSize: 11, padding: '6px 8px',
+                      borderRadius: 6, border: '1px solid var(--border-hi)',
+                      background: 'var(--bg-card)', color: 'var(--text-primary)',
+                      fontFamily: 'DM Sans, system-ui',
+                    }}
+                  >
+                    <option value="">Tous les membres</option>
+                    {familyMembers.map(m => (
+                      <option key={m.user_id} value={m.user_id}>
+                        {memberDisplayName(m)} ({m.email ?? 'sans email'})
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
                 <button
@@ -1048,6 +1140,16 @@ export default function MailPage() {
                               {label.name}
                             </span>
                           ))}
+                          {mailView === 'team' && getSourceLabel(email, familyMembers, userId) && (
+                            <span style={{
+                              fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 5px', borderRadius: 4,
+                              background: `${getMemberColor(email.user_id, familyMembers)}18`,
+                              color: getMemberColor(email.user_id, familyMembers),
+                              border: `1px solid ${getMemberColor(email.user_id, familyMembers)}40`,
+                            }}>
+                              Via {getSourceLabel(email, familyMembers, userId)}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
@@ -1148,6 +1250,25 @@ export default function MailPage() {
                 <button onClick={() => { setComposing(false); if (isMobile) setMobileShowDetail(false) }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 20 }}>×</button>
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: isMobile ? '12px 14px' : '16px 20px', gap: 8, overflowY: 'auto' }}>
+                {isFamilyOwner && familyMembers.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 8, flexShrink: 0 }}>
+                    <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', width: 32, textTransform: 'uppercase' }}>De</span>
+                    <select
+                      value={sendAsUserId}
+                      onChange={e => setSendAsUserId(e.target.value)}
+                      style={{
+                        flex: 1, fontSize: 13, background: 'transparent', border: 'none', outline: 'none',
+                        color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
+                      }}
+                    >
+                      {familyMembers.map(m => (
+                        <option key={m.user_id} value={m.user_id}>
+                          {memberDisplayName(m)} — {m.email ?? 'sans email'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {[
                   { label: 'À', key: 'to', type: 'email', placeholder: 'email@exemple.com' },
                   { label: 'Cc', key: 'cc', type: 'text', placeholder: 'copie à (virgules pour plusieurs)' },

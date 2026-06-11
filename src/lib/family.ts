@@ -26,14 +26,15 @@ export async function getFamilyContext(userId: string): Promise<FamilyContext> {
 
   let org: { id: string; owner_id: string } | null = null
 
-  const { data: owned } = await db
+  const { data: ownedList } = await db
     .from('organizations')
     .select('id, owner_id')
     .eq('owner_id', userId)
-    .maybeSingle()
+    .order('created_at', { ascending: false })
+    .limit(1)
 
-  if (owned) {
-    org = owned
+  if (ownedList?.[0]) {
+    org = ownedList[0]
   } else {
     const { data: membership } = await db
       .from('organization_members')

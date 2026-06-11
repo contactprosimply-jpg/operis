@@ -1,10 +1,14 @@
-/** Accès messagerie : compte personnel uniquement (Famille désactivée pour les tests). */
+import { getFamilyContext } from '@/lib/family'
+
 export async function getMailUserScope(requestingUserId: string) {
+  const ctx = await getFamilyContext(requestingUserId)
+  const allowedUserIds = [requestingUserId, ...ctx.memberUserIds]
+
   return {
-    isOwner: false,
-    organizationId: null,
-    members: [],
-    memberUserIds: [],
-    allowedUserIds: [requestingUserId],
+    isOwner: ctx.isOwner,
+    organizationId: ctx.organizationId,
+    members: ctx.members,
+    memberUserIds: ctx.memberUserIds,
+    allowedUserIds: [...new Set(allowedUserIds)],
   }
 }

@@ -458,7 +458,7 @@ async function syncOneAccount(
   options: { backfill?: boolean; quick?: boolean },
   source?: MailSourceMeta,
 ): Promise<{ report: MailSyncAccountReport; result: MailSyncResult | null }> {
-  const account = await resolveMailAccount(userId)
+  const account = await resolveMailAccount(userId, { loginEmail: email })
   if (!account) {
     return {
       report: {
@@ -558,7 +558,7 @@ export async function syncUserMailAccounts(
 /** Famille — désactivé côté API pour les tests ; conservé pour réactivation ultérieure. */
 export async function syncFamilyMailAccounts(
   ownerId: string,
-  options: { backfill?: boolean; quick?: boolean } = {},
+  options: { backfill?: boolean; quick?: boolean; loginEmail?: string | null } = {},
 ): Promise<MailSyncResult> {
   const { getFamilyContext, memberDisplayName } = await import('@/lib/family')
   const ctx = await getFamilyContext(ownerId)
