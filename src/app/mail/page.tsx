@@ -327,6 +327,7 @@ export default function MailPage() {
           fetched = 0,
           errors = 0,
           duplicates = 0,
+          skippedOutbound = 0,
           accounts,
         } = data.data ?? {}
         const total = stored + updated
@@ -342,7 +343,8 @@ export default function MailPage() {
           } else if (!silent && total === 0 && fetched === 0) {
             showToast('IMAP : aucun mail récupéré — vérifiez Paramètres → Messagerie')
           } else if (!silent && total === 0) {
-            showToast(`Boîte à jour (${fetched} vérifiés, ${duplicates} déjà en base)`)
+            const skipHint = skippedOutbound > 0 ? `, ${skippedOutbound} envoyés ignorés` : ''
+            showToast(`Boîte à jour (${fetched} vérifiés, ${duplicates} déjà en base${skipHint})`)
           } else if (!silent && total > 0) {
             showToast(`${total} email(s) synchronisé(s) · ${summary}`)
           } else if (!silent && quickStored > 0) {

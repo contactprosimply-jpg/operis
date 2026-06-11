@@ -136,6 +136,8 @@ function mergeEnvelopesByUid(arrays: ImapEnvelopeMeta[][]): ImapEnvelopeMeta[] {
   return Array.from(map.values()).sort((a, b) => a.uid - b.uid)
 }
 
+const UID_FETCH_CHUNK = 80
+
 async function fetchEnvelopeByUidRange(
   client: ImapFlow,
   uids: number[],
@@ -143,21 +145,25 @@ async function fetchEnvelopeByUidRange(
   accountUser: string,
 ): Promise<ImapEnvelopeMeta[]> {
   if (!uids.length) return []
-  const recentUids = uids.slice(-limit)
+  const sorted = [...uids].sort((a, b) => a - b)
+  const targetUids = limit > 0 && sorted.length > limit ? sorted.slice(-limit) : sorted
   const messages: ImapEnvelopeMeta[] = []
-  for await (const message of client.fetch(recentUids, {
-    uid: true,
-    envelope: true,
-    internalDate: true,
-    flags: true,
-  }, { uid: true })) {
-    messages.push(envelopeToMeta(
-      message.uid,
-      message.envelope,
-      message.internalDate,
-      message.flags,
-      accountUser,
-    ))
+  for (let i = 0; i < targetUids.length; i += UID_FETCH_CHUNK) {
+    const chunk = targetUids.slice(i, i + UID_FETCH_CHUNK)
+    for await (const message of client.fetch(chunk, {
+      uid: true,
+      envelope: true,
+      internalDate: true,
+      flags: true,
+    }, { uid: true })) {
+      messages.push(envelopeToMeta(
+        message.uid,
+        message.envelope,
+        message.internalDate,
+        message.flags,
+        accountUser,
+      ))
+    }
   }
   return messages
 }
@@ -241,6 +247,7 @@ export async function fetchRecentEnvelopes(
   try {
     const batches: ImapEnvelopeMeta[][] = []
     const mergeCap = Math.max(limit, 100)
+    const uidFetchLimit = fullScan ? 0 : mergeCap
 
     if (!fullScan) {
       // Fraîcheur : 48 h + non-lus (indépendant du last_sync_uid)
@@ -256,39 +263,40 @@ export async function fetchRecentEnvelopes(
         /* certains serveurs IMAP ne supportent pas seen:false */
       }
 
-      const recentSince = sinceDate(3)
+      // Derniers UIDs absolus — filet de sécurité si la date interne IMAP est incorrecte
       try {
-        const recentUids = await client.search({ since: recentSince }, { uid: true })
-        if (Array.isArray(recentUids) && recentUids.length) {
-          batches.push(await fetchEnvelopeByUidRange(client, recentUids, mergeCap, accountUser))
+        const allUids = await client.search({ all: true }, { uid: true })
+        if (Array.isArray(allUids) && allUids.length) {
+          batches.push(await fetchEnvelopeByUidRange(client, allUids, Math.min(mergeCap, 80), accountUser))
         }
       } catch {
-        /* fallback sur le flux since */
+        /* search all non supporté */
       }
     }
 
     if (minUid > 0 && fullScan) {
       const newUids = await client.search({ uid: `${minUid + 1}:*` }, { uid: true })
       if (Array.isArray(newUids) && newUids.length) {
-        batches.push(await fetchEnvelopeByUidRange(client, newUids, mergeCap, accountUser))
+        batches.push(await fetchEnvelopeByUidRange(client, newUids, uidFetchLimit, accountUser))
       }
     }
 
     batches.push(await fetchEnvelopeBySequence(client, mergeCap, accountUser, since))
 
-    if (!fullScan && batches.some(b => b.length > 0)) {
-      const merged = mergeEnvelopesByUid(batches)
-      if (merged.length) return merged.slice(-mergeCap)
-    }
-
-    const uids = await client.search({ since }, { uid: true })
-    if (Array.isArray(uids) && uids.length) {
-      batches.push(await fetchEnvelopeByUidRange(client, uids, mergeCap, accountUser))
+    try {
+      const uids = await client.search({ since }, { uid: true })
+      if (Array.isArray(uids) && uids.length) {
+        batches.push(await fetchEnvelopeByUidRange(client, uids, uidFetchLimit, accountUser))
+      }
+    } catch {
+      /* fallback sur le flux since */
     }
 
     batches.push(await fetchEnvelopeBySinceStream(client, since, mergeCap, accountUser))
 
-    return mergeEnvelopesByUid(batches).slice(-mergeCap)
+    const merged = mergeEnvelopesByUid(batches)
+    const resultCap = fullScan ? Math.max(limit, merged.length) : mergeCap
+    return merged.slice(-resultCap)
   } finally {
     lock.release()
     try {

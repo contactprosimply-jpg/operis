@@ -143,10 +143,17 @@ async function saveEmailAttachments(
   return meta
 }
 
-function isOwnOutbound(fromAddress: string, accountEmail: string): boolean {
+function isOwnOutbound(fromAddress: string, toAddress: string, accountEmail: string): boolean {
   const from = extractEmailAddress(fromAddress)
   const own = extractEmailAddress(accountEmail) || accountEmail.toLowerCase().trim()
-  return !!from && from === own
+  if (!from || from !== own) return false
+  const toLower = toAddress.toLowerCase()
+  if (own && toLower.includes(own)) return false
+  return true
+}
+
+function envelopeMessageId(userId: string, envelope: ImapEnvelopeMeta): string {
+  return normalizeMessageId(envelope.messageId, `uid-${userId}-${envelope.uid}`)
 }
 
 async function loadExistingMessageIds(
@@ -293,15 +300,19 @@ export async function syncMailAccount(
     result.maxUid = Math.max(result.maxUid, ...envelopes.map(m => m.uid))
   }
 
-  const inbound = envelopes.filter(e => !isOwnOutbound(e.from, account.imap_user))
+  const inbound = envelopes.filter(e => !isOwnOutbound(e.from, e.to, account.imap_user))
   result.skippedOutbound = envelopes.length - inbound.length
-  const existingIds = await loadExistingMessageIds(db, userId, inbound.map(e => e.messageId))
+  const existingIds = await loadExistingMessageIds(
+    db,
+    userId,
+    inbound.map(e => envelopeMessageId(userId, e)),
+  )
 
   const newEnvelopes: ImapEnvelopeMeta[] = []
   const existingEnvelopes: ImapEnvelopeMeta[] = []
 
   for (const envelope of inbound) {
-    const mid = normalizeMessageId(envelope.messageId, `uid-${userId}-${envelope.uid}`)
+    const mid = envelopeMessageId(userId, envelope)
     if (existingIds.has(mid)) {
       existingEnvelopes.push(envelope)
     } else {
@@ -339,7 +350,7 @@ export async function syncMailAccount(
       patch.ao_score = d.score
       if (d.isAo) result.aoDetected++
     }
-    const mid = normalizeMessageId(envelope.messageId, `uid-${userId}-${envelope.uid}`)
+    const mid = envelopeMessageId(userId, envelope)
     await db.from('emails')
       .update(patch)
       .eq('user_id', userId)
