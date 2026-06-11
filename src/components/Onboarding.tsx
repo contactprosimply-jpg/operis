@@ -52,6 +52,16 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) setStep(Math.min(3, Math.max(1, parseInt(saved, 10) || 1)))
+
+    authFetch('/api/mail/accounts')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.data) {
+          setStep(prev => prev === 1 ? 2 : prev)
+          localStorage.setItem(STORAGE_KEY, '2')
+        }
+      })
+      .catch(() => {})
   }, [])
 
   const goStep = (n: number) => {
@@ -197,7 +207,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           Bienvenue sur Operis
         </h2>
         <p style={{ fontSize: 14, color: 'var(--text-secondary)', margin: 0 }}>
-          Configurez votre espace en 3 étapes — messagerie, fournisseurs, premier AO
+          Messagerie obligatoire — fournisseurs et premier AO optionnels (vous pouvez passer)
         </p>
       </div>
 
@@ -257,9 +267,10 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             <Field label="Nom" value={supplierForm.name} onChange={v => setSupplierForm(f => ({ ...f, name: v }))} placeholder="Ex: Technomarket" />
             <Field label="Email" value={supplierForm.email} onChange={v => setSupplierForm(f => ({ ...f, email: v }))} placeholder="contact@fournisseur.fr" />
             <Field label="Spécialité" value={supplierForm.specialty} onChange={v => setSupplierForm(f => ({ ...f, specialty: v }))} placeholder="Électricité, plomberie…" />
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
               <Button variant="ghost" onClick={addSupplier} loading={saving}>+ Ajouter</Button>
-              <Button onClick={() => goStep(3)} disabled={suppliersAdded < 1}>Continuer</Button>
+              <Button onClick={() => goStep(3)}>Continuer</Button>
+              <Button variant="ghost" onClick={() => goStep(3)}>Passer cette étape</Button>
             </div>
           </>
         )}
@@ -272,8 +283,11 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             <Field label="Titre" value={tenderForm.title} onChange={v => setTenderForm(f => ({ ...f, title: v }))} placeholder="Rénovation immeuble…" />
             <Field label="Client" value={tenderForm.client} onChange={v => setTenderForm(f => ({ ...f, client: v }))} placeholder="Nom du client" />
             <Field label="Deadline" value={tenderForm.deadline} onChange={v => setTenderForm(f => ({ ...f, deadline: v }))} type="date" />
-            <div style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
               <Button onClick={createTender} loading={saving}>Créer et commencer</Button>
+              <Button variant="ghost" onClick={() => finishOnboarding()} loading={saving}>
+                Passer cette étape
+              </Button>
             </div>
           </>
         )}

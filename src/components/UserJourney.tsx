@@ -21,24 +21,15 @@ export default function UserJourney() {
 
     const check = async () => {
       try {
-        const [profileRes, mailRes, suppliersRes, tendersRes] = await Promise.all([
+        const [profileRes] = await Promise.all([
           authFetch('/api/profile'),
-          authFetch('/api/mail/accounts'),
-          authFetch('/api/suppliers'),
-          authFetch('/api/tenders'),
         ])
         const profileJson = await profileRes.json()
-        const mailJson = await mailRes.json()
-        const suppliersJson = await suppliersRes.json()
-        const tendersJson = await tendersRes.json()
 
         const profile = profileJson.data
-        const hasMail = mailJson.success && !!mailJson.data
-        const hasSupplier = suppliersJson.success && Array.isArray(suppliersJson.data) && suppliersJson.data.length > 0
-        const hasTender = tendersJson.success && Array.isArray(tendersJson.data) && tendersJson.data.length > 0
         const onboardingDone = profile?.onboarding_done === true
 
-        if (!onboardingDone && (!hasMail || !hasSupplier || !hasTender)) {
+        if (!onboardingDone) {
           setShowOnboarding(true)
         } else if (onboardingDone && profile?.tour_done !== true) {
           requestProductTour()
