@@ -92,8 +92,19 @@ function isDuplicateKeyError(msg) {
   return msg?.includes('duplicate key') || msg?.includes('23505')
 }
 
-async function getFamilySyncTargets(ownerId) {
-  const targets = [{ userId: ownerId, sourceMemberId: null, sourceMemberName: null }]
+async function getSyncTargets(ownerId) {
+  if (process.env.SYNC_USER_ID) {
+    return [{ userId: process.env.SYNC_USER_ID, sourceMemberId: null, sourceMemberName: null }]
+  }
+
+  const targets = []
+  const seen = new Set()
+
+  const addTarget = (userId, sourceMemberId, sourceMemberName) => {
+    if (seen.has(userId)) return
+    seen.add(userId)
+    targets.push({ userId, sourceMemberId, sourceMemberName })
+  }
 
   const { data: org } = await db
     .from('organizations')
@@ -101,23 +112,94 @@ async function getFamilySyncTargets(ownerId) {
     .eq('owner_id', ownerId)
     .maybeSingle()
 
-  if (!org) return targets
+  if (org) {
+    const { data: members } = await db
+      .from('organization_members')
+      .select('user_id, display_name, email')
+      .eq('organization_id', org.id)
 
-  const { data: members } = await db
-    .from('organization_members')
-    .select('user_id, display_name, email')
-    .eq('organization_id', org.id)
+    for (const m of members ?? []) {
+      const { data: acc } = await db
+        .from('mail_accounts')
+        .select('user_id')
+        .eq('user_id', m.user_id)
+        .eq('is_active', true)
+        .maybeSingle()
+      if (!acc) continue
+      const isOwner = m.user_id === ownerId
+      addTarget(
+        m.user_id,
+        isOwner ? null : m.user_id,
+        isOwner ? null : memberDisplayName(m),
+      )
+    }
+  }
 
-  for (const row of members ?? []) {
-    if (row.user_id === ownerId) continue
-    targets.push({
-      userId: row.user_id,
-      sourceMemberId: row.user_id,
-      sourceMemberName: memberDisplayName(row),
-    })
+  const { data: ownerAcc } = await db
+    .from('mail_accounts')
+    .select('user_id')
+    .eq('user_id', ownerId)
+    .eq('is_active', true)
+    .maybeSingle()
+  if (ownerAcc) addTarget(ownerId, null, null)
+
+  if (targets.length === 0 || process.env.SYNC_ALL_ACCOUNTS === 'true') {
+    const { data: accounts } = await db
+      .from('mail_accounts')
+      .select('user_id, imap_user')
+      .eq('is_active', true)
+    for (const a of accounts ?? []) {
+      addTarget(a.user_id, null, a.imap_user)
+    }
   }
 
   return targets
+}
+
+async function printMailAccountDiagnostics() {
+  const { data: accounts } = await db
+    .from('mail_accounts')
+    .select('user_id, imap_user')
+    .eq('is_active', true)
+
+  console.log('\n--- Comptes mail configurés ---')
+  for (const a of accounts ?? []) {
+    const { data: { user } } = await db.auth.admin.getUserById(a.user_id)
+    const { count } = await db
+      .from('emails')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', a.user_id)
+    console.log(
+      `  IMAP ${a.imap_user} → user_id ${a.user_id} (login ${user?.email ?? '?'}) · ${count ?? 0} emails en base`,
+    )
+  }
+  console.log('  → Les mails sont visibles dans Operis uniquement pour le user_id de connexion (Ma boîte).\n')
+}
+
+async function* iterateMailboxMessages(client) {
+  const uids = new Set()
+
+  const since30 = new Date()
+  since30.setDate(since30.getDate() - 30)
+
+  try {
+    const unseen = await client.search({ seen: false }, { uid: true })
+    if (Array.isArray(unseen) && unseen.length) {
+      for await (const message of client.fetch(unseen, { uid: true, source: true }, { uid: true })) {
+        if (!uids.has(message.uid)) {
+          uids.add(message.uid)
+          yield message
+        }
+      }
+    }
+  } catch { /* seen:false non supporté */ }
+
+  for await (const message of client.fetch({ since: since30 }, { uid: true, source: true })) {
+    if (!uids.has(message.uid)) {
+      uids.add(message.uid)
+      yield message
+    }
+  }
 }
 
 async function syncUserMailbox(target) {
@@ -130,7 +212,7 @@ async function syncUserMailbox(target) {
 
   if (!account) {
     console.log(`— Pas de compte mail pour ${target.userId}`)
-    return { count: 0, stored: 0, duplicates: 0, aoCount: 0 }
+    return { count: 0, stored: 0, updated: 0, duplicates: 0, aoCount: 0 }
   }
 
   const client = new ImapFlow({
@@ -144,21 +226,22 @@ async function syncUserMailbox(target) {
   const ownEmail = account.imap_user?.toLowerCase()
   let count = 0
   let stored = 0
+  let updated = 0
   let duplicates = 0
   let aoCount = 0
 
-  console.log(`\nSync ${account.imap_user} (${target.sourceMemberName ?? 'chef'})...`)
+  const { count: dbCount } = await db
+    .from('emails')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', target.userId)
+
+  console.log(`\nSync ${account.imap_user} → user_id ${target.userId} (${target.sourceMemberName ?? 'chef'}) · ${dbCount ?? 0} en base`)
 
   try {
     await client.connect()
     await client.mailboxOpen('INBOX')
 
-    const since = new Date()
-    since.setDate(since.getDate() - 30)
-
-    const messages = client.fetch({ since }, { uid: true, source: true })
-
-    for await (const message of messages) {
+    for await (const message of iterateMailboxMessages(client)) {
       count++
       try {
         const parsed = await simpleParser(message.source)
@@ -177,7 +260,21 @@ async function syncUserMailbox(target) {
           .eq('message_id', messageId)
           .maybeSingle()
 
+        const { isAo, score } = detectAo(parsed.subject, parsed.text)
+        const patch = {
+          subject: parsed.subject ?? '(sans objet)',
+          from_address: parsed.from?.text ?? '',
+          to_address: parsed.to?.text ?? '',
+          body_text: parsed.text ?? '',
+          body_html: parsed.html || '',
+          received_at: (parsed.date ?? new Date()).toISOString(),
+          is_ao: isAo,
+          ao_score: score,
+        }
+
         if (existing) {
+          await db.from('emails').update(patch).eq('id', existing.id)
+          updated++
           duplicates++
           continue
         }
@@ -188,25 +285,22 @@ async function syncUserMailbox(target) {
           .eq('message_id', messageId)
           .maybeSingle()
 
-        if (globalDup && globalDup.user_id !== target.userId) {
+        if (globalDup) {
+          if (globalDup.user_id !== target.userId) {
+            duplicates++
+            continue
+          }
+          await db.from('emails').update(patch).eq('id', globalDup.id)
+          updated++
           duplicates++
           continue
         }
 
-        const { isAo, score } = detectAo(parsed.subject, parsed.text)
-
         const insertPayload = {
           user_id: target.userId,
           message_id: messageId,
-          subject: parsed.subject ?? '(sans objet)',
-          from_address: parsed.from?.text ?? '',
-          to_address: parsed.to?.text ?? '',
-          body_text: parsed.text ?? '',
-          body_html: parsed.html || '',
-          received_at: (parsed.date ?? new Date()).toISOString(),
+          ...patch,
           is_read: false,
-          is_ao: isAo,
-          ao_score: score,
           tender_id: null,
         }
 
@@ -251,8 +345,8 @@ async function syncUserMailbox(target) {
     console.error(`Erreur IMAP ${account.imap_user}:`, err.message)
   }
 
-  console.log(`  Trouvés: ${count} | Stockés: ${stored} | AO: ${aoCount} | Doublons: ${duplicates}`)
-  return { count, stored, duplicates, aoCount }
+  console.log(`  Trouvés: ${count} | Nouveaux: ${stored} | Mis à jour: ${updated} | AO: ${aoCount} | Déjà en base: ${duplicates}`)
+  return { count, stored, updated, duplicates, aoCount }
 }
 
 function supabaseHost() {
@@ -268,20 +362,31 @@ async function main() {
   console.log(`Operis sync — owner ${OWNER_ID}`)
   console.log(`Supabase: ${supabaseHost()} (APP_ENV=${appEnv})`)
   console.log('Contrainte message_id : si erreurs duplicate key → exécuter supabase/migrations/013_fix_emails_message_id_unique.sql')
-  const targets = await getFamilySyncTargets(OWNER_ID)
+  await printMailAccountDiagnostics()
+  const targets = await getSyncTargets(OWNER_ID)
+  if (!targets.length) {
+    console.log('Aucun compte mail actif. Configurez Paramètres → Messagerie dans Operis.')
+    return
+  }
   let totalStored = 0
+  let totalUpdated = 0
   let totalAo = 0
 
   for (const target of targets) {
     const r = await syncUserMailbox(target)
     totalStored += r.stored
+    totalUpdated += r.updated ?? 0
     totalAo += r.aoCount
   }
 
   console.log(`\n--- Résumé global ---`)
   console.log(`Comptes synchronisés : ${targets.length}`)
-  console.log(`Emails stockés       : ${totalStored}`)
+  console.log(`Nouveaux emails      : ${totalStored}`)
+  console.log(`Emails mis à jour    : ${totalUpdated}`)
   console.log(`AO détectés          : ${totalAo}`)
+  if (totalStored === 0 && totalUpdated > 0) {
+    console.log('→ Boîte rafraîchie (contenu existant mis à jour). Rechargez Messagerie dans Operis.')
+  }
 }
 
 main().catch(console.error)
