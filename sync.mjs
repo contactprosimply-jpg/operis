@@ -92,67 +92,90 @@ function isDuplicateKeyError(msg) {
   return msg?.includes('duplicate key') || msg?.includes('23505')
 }
 
-async function getSyncTargets(ownerId) {
-  if (process.env.SYNC_USER_ID) {
-    return [{ userId: process.env.SYNC_USER_ID, sourceMemberId: null, sourceMemberName: null }]
+async function resolveSourceMeta(userId, ownerId) {
+  if (!ownerId || userId === ownerId) {
+    return { sourceMemberId: null, sourceMemberName: null }
   }
-
-  const targets = []
-  const seen = new Set()
-
-  const addTarget = (userId, sourceMemberId, sourceMemberName) => {
-    if (seen.has(userId)) return
-    seen.add(userId)
-    targets.push({ userId, sourceMemberId, sourceMemberName })
-  }
-
   const { data: org } = await db
     .from('organizations')
     .select('id')
     .eq('owner_id', ownerId)
     .maybeSingle()
+  if (!org) return { sourceMemberId: null, sourceMemberName: null }
 
-  if (org) {
-    const { data: members } = await db
-      .from('organization_members')
-      .select('user_id, display_name, email')
-      .eq('organization_id', org.id)
-
-    for (const m of members ?? []) {
-      const { data: acc } = await db
-        .from('mail_accounts')
-        .select('user_id')
-        .eq('user_id', m.user_id)
-        .eq('is_active', true)
-        .maybeSingle()
-      if (!acc) continue
-      const isOwner = m.user_id === ownerId
-      addTarget(
-        m.user_id,
-        isOwner ? null : m.user_id,
-        isOwner ? null : memberDisplayName(m),
-      )
-    }
-  }
-
-  const { data: ownerAcc } = await db
-    .from('mail_accounts')
-    .select('user_id')
-    .eq('user_id', ownerId)
-    .eq('is_active', true)
+  const { data: m } = await db
+    .from('organization_members')
+    .select('display_name, email')
+    .eq('organization_id', org.id)
+    .eq('user_id', userId)
     .maybeSingle()
-  if (ownerAcc) addTarget(ownerId, null, null)
 
-  if (targets.length === 0 || process.env.SYNC_ALL_ACCOUNTS === 'true') {
-    const { data: accounts } = await db
-      .from('mail_accounts')
-      .select('user_id, imap_user')
-      .eq('is_active', true)
-    for (const a of accounts ?? []) {
-      addTarget(a.user_id, null, a.imap_user)
-    }
+  if (!m) return { sourceMemberId: null, sourceMemberName: null }
+  return { sourceMemberId: userId, sourceMemberName: memberDisplayName(m) }
+}
+
+async function getSyncTargets(ownerId) {
+  const { data: accounts } = await db
+    .from('mail_accounts')
+    .select('id, user_id, imap_user')
+    .eq('is_active', true)
+    .order('imap_user')
+
+  if (!accounts?.length) return []
+
+  if (process.env.SYNC_USER_ID) {
+    return accounts
+      .filter(a => a.user_id === process.env.SYNC_USER_ID)
+      .map(a => ({
+        accountId: a.id,
+        userId: a.user_id,
+        imapUser: a.imap_user,
+        sourceMemberId: null,
+        sourceMemberName: null,
+      }))
   }
 
+  if (process.env.SYNC_FAMILY_ONLY === 'true') {
+    const allowed = new Set()
+    const { data: org } = await db
+      .from('organizations')
+      .select('id')
+      .eq('owner_id', ownerId)
+      .maybeSingle()
+    if (org) {
+      allowed.add(ownerId)
+      const { data: members } = await db
+        .from('organization_members')
+        .select('user_id')
+        .eq('organization_id', org.id)
+      for (const m of members ?? []) allowed.add(m.user_id)
+    } else {
+      allowed.add(ownerId)
+    }
+    const familyTargets = []
+    for (const a of accounts.filter(x => allowed.has(x.user_id))) {
+      const meta = await resolveSourceMeta(a.user_id, ownerId)
+      familyTargets.push({
+        accountId: a.id,
+        userId: a.user_id,
+        imapUser: a.imap_user,
+        ...meta,
+      })
+    }
+    return familyTargets
+  }
+
+  // Par défaut : tous les comptes IMAP actifs (un sync par ligne mail_accounts)
+  const targets = []
+  for (const a of accounts) {
+    const meta = await resolveSourceMeta(a.user_id, ownerId)
+    targets.push({
+      accountId: a.id,
+      userId: a.user_id,
+      imapUser: a.imap_user,
+      ...meta,
+    })
+  }
   return targets
 }
 
@@ -161,6 +184,13 @@ async function printMailAccountDiagnostics() {
     .from('mail_accounts')
     .select('user_id, imap_user')
     .eq('is_active', true)
+
+  const imapDupes = new Map()
+  for (const a of accounts ?? []) {
+    const key = (a.imap_user ?? '').toLowerCase()
+    if (!imapDupes.has(key)) imapDupes.set(key, [])
+    imapDupes.get(key).push(a.user_id)
+  }
 
   console.log('\n--- Comptes mail configurés ---')
   for (const a of accounts ?? []) {
@@ -173,7 +203,14 @@ async function printMailAccountDiagnostics() {
       `  IMAP ${a.imap_user} → user_id ${a.user_id} (login ${user?.email ?? '?'}) · ${count ?? 0} emails en base`,
     )
   }
-  console.log('  → Les mails sont visibles dans Operis uniquement pour le user_id de connexion (Ma boîte).\n')
+
+  for (const [imap, userIds] of imapDupes) {
+    if (userIds.length > 1) {
+      console.log(`  ⚠ Doublon IMAP ${imap} sur ${userIds.length} comptes Operis — ne configurez la même boîte qu’une fois`)
+    }
+  }
+
+  console.log('  → Ma boîte = mails du compte Operis avec lequel vous êtes connecté.\n')
 }
 
 async function* iterateMailboxMessages(client) {
@@ -206,12 +243,12 @@ async function syncUserMailbox(target) {
   const { data: account } = await db
     .from('mail_accounts')
     .select('*')
-    .eq('user_id', target.userId)
+    .eq('id', target.accountId)
     .eq('is_active', true)
     .maybeSingle()
 
   if (!account) {
-    console.log(`— Pas de compte mail pour ${target.userId}`)
+    console.log(`— Compte mail introuvable (${target.imapUser ?? target.userId})`)
     return { count: 0, stored: 0, updated: 0, duplicates: 0, aoCount: 0 }
   }
 
@@ -359,7 +396,7 @@ function supabaseHost() {
 
 async function main() {
   const appEnv = process.env.APP_ENV || process.env.NODE_ENV || 'development'
-  console.log(`Operis sync — owner ${OWNER_ID}`)
+  console.log(`Operis sync — tous les comptes IMAP actifs (réf. owner ${OWNER_ID})`)
   console.log(`Supabase: ${supabaseHost()} (APP_ENV=${appEnv})`)
   console.log('Contrainte message_id : si erreurs duplicate key → exécuter supabase/migrations/013_fix_emails_message_id_unique.sql')
   await printMailAccountDiagnostics()
