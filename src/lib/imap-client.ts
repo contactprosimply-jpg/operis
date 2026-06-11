@@ -1,5 +1,5 @@
 import { ImapFlow } from 'imapflow'
-import { extractEmailAddress } from '@/lib/mail-attachments'
+import { accountEmailAliases, isFromAccountAddress } from '@/lib/mail-attachments'
 
 export interface MailAccountConfig {
   imap_host: string
@@ -275,8 +275,8 @@ async function validateSentMailboxOnClient(
     try {
       const envelopes = await fetchEnvelopeBySequence(client, 10, accountUser, sinceDate(365))
       if (!envelopes.length) return true
-      const own = extractEmailAddress(accountUser) || accountUser.toLowerCase().trim()
-      const outbound = envelopes.filter(e => extractEmailAddress(e.from) === own).length
+      const aliases = accountEmailAliases(accountUser)
+      const outbound = envelopes.filter(e => isFromAccountAddress(e.from, aliases)).length
       return outbound >= Math.ceil(envelopes.length / 2)
     } finally {
       lock.release()
@@ -302,9 +302,13 @@ export async function resolveSpecialMailboxes(config: MailAccountConfig): Promis
   await client.connect()
   try {
     const result: ResolvedMailboxes = { inbox: 'INBOX' }
+    let sentFromSpecialUse = false
     const mailboxes = await client.list()
     for (const m of mailboxes) {
-      if (m.specialUse === '\\Sent') result.sent = m.path
+      if (m.specialUse === '\\Sent') {
+        result.sent = m.path
+        sentFromSpecialUse = true
+      }
       if (m.specialUse === '\\Drafts') result.drafts = m.path
       if (m.specialUse === '\\Trash') result.trash = m.path
       if (m.specialUse === '\\Junk') result.spam = m.path
@@ -331,7 +335,7 @@ export async function resolveSpecialMailboxes(config: MailAccountConfig): Promis
         }
       }
     }
-    if (result.sent) {
+    if (result.sent && !sentFromSpecialUse) {
       const accountUser = config.imap_user.trim()
       const valid = await validateSentMailboxOnClient(client, result.sent, accountUser)
       if (!valid) {

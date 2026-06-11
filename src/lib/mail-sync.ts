@@ -9,7 +9,12 @@ import {
   type ImapEnvelopeMeta,
   type ResolvedMailboxes,
 } from '@/lib/imap-client'
-import { parseMailAttachments, extractEmailAddress, type StoredEmailAttachment } from '@/lib/mail-attachments'
+import {
+  parseMailAttachments,
+  accountEmailAliases,
+  isFromAccountAddress,
+  type StoredEmailAttachment,
+} from '@/lib/mail-attachments'
 import { isEmailIncompleteForEnrich } from '@/lib/mail-enrich'
 import { attachmentMetaOnly, persistAttachmentsToStorage } from '@/lib/mail-storage'
 import { createAdminClient } from '@/lib/supabase'
@@ -51,6 +56,7 @@ export interface MailSyncResult {
 
 export type MailAccountWithId = MailAccountConfig & {
   id?: string
+  smtp_user?: string | null
   last_sync_uid?: number | null
 }
 
@@ -77,6 +83,7 @@ function mapMailAccountRow(account: {
   imap_port?: number | null
   imap_user?: string | null
   imap_pass?: string | null
+  smtp_user?: string | null
   last_sync_uid?: number | null
 }): MailAccountWithId | null {
   if (!account.imap_user || !account.imap_pass) return null
@@ -86,8 +93,16 @@ function mapMailAccountRow(account: {
     imap_port: Number(account.imap_port) || 993,
     imap_user: account.imap_user,
     imap_pass: account.imap_pass,
+    smtp_user: account.smtp_user ?? null,
     last_sync_uid: account.last_sync_uid ?? 0,
   }
+}
+
+function accountAliases(
+  account: MailAccountWithId,
+  loginEmail?: string | null,
+): string[] {
+  return accountEmailAliases(account.imap_user, account.smtp_user, loginEmail)
 }
 
 export async function resolveMailAccounts(
@@ -148,39 +163,37 @@ async function saveEmailAttachments(
   return meta
 }
 
-function isOwnOutbound(fromAddress: string, toAddress: string, accountEmail: string): boolean {
-  const from = extractEmailAddress(fromAddress)
-  const own = extractEmailAddress(accountEmail) || accountEmail.toLowerCase().trim()
-  if (!from || from !== own) return false
+/** Courrier sortant pour filtrer l'inbox (pas pour le dossier IMAP Envoyés). */
+function isOwnOutboundForInboxSkip(
+  fromAddress: string,
+  toAddress: string,
+  aliases: string[],
+): boolean {
+  if (!isFromAccountAddress(fromAddress, aliases)) return false
   const toLower = toAddress.toLowerCase()
-  if (own && toLower.includes(own)) return false
-  return true
-}
-
-function isLikelyInbound(fromAddress: string, accountEmail: string): boolean {
-  const from = extractEmailAddress(fromAddress)
-  const own = extractEmailAddress(accountEmail) || accountEmail.toLowerCase().trim()
-  return !!from && from !== own
+  return !aliases.some(a => toLower.includes(a))
 }
 
 /** Corrige les mails reçus classés en Envoyés (ou envoyés bloqués en Inbox). */
 async function reconcileMailFolders(
   db: SupabaseClient,
   userId: string,
-  accountEmail: string,
+  aliases: string[],
 ): Promise<number> {
-  const own = extractEmailAddress(accountEmail) || accountEmail.toLowerCase().trim()
-  if (!own) return 0
+  if (!aliases.length) return 0
 
   let fixed = 0
   const { data: misSent } = await db
     .from('emails')
-    .select('id, from_address')
+    .select('id, from_address, imap_mailbox')
     .eq('user_id', userId)
     .eq('mail_folder', 'sent')
 
   for (const row of misSent ?? []) {
-    if (isLikelyInbound(row.from_address ?? '', accountEmail)) {
+    const inSentMailbox = (row.imap_mailbox ?? '').toLowerCase().includes('sent')
+      || (row.imap_mailbox ?? '').toLowerCase().includes('envoy')
+    if (inSentMailbox) continue
+    if (!isFromAccountAddress(row.from_address ?? '', aliases)) {
       await db.from('emails').update({ mail_folder: 'inbox' }).eq('id', row.id)
       fixed++
     }
@@ -193,7 +206,7 @@ async function reconcileMailFolders(
     .or('mail_folder.eq.inbox,mail_folder.is.null')
 
   for (const row of misInbox ?? []) {
-    if (isOwnOutbound(row.from_address ?? '', '', accountEmail)) {
+    if (isFromAccountAddress(row.from_address ?? '', aliases)) {
       await db.from('emails').update({ mail_folder: 'sent' }).eq('id', row.id)
       fixed++
     }
@@ -345,6 +358,7 @@ async function syncOneMailboxFolder(
   },
   quick: boolean,
   source?: MailSourceMeta,
+  aliases?: string[],
 ) {
   const fetchOpts = {
     sinceDays: job.sinceDays,
@@ -359,12 +373,10 @@ async function syncOneMailboxFolder(
     result.maxUid = Math.max(result.maxUid, ...envelopes.map(m => m.uid))
   }
 
-  let candidates = job.skipOutbound
-    ? envelopes.filter(e => !isOwnOutbound(e.from, e.to, account.imap_user))
+  const addrAliases = aliases ?? accountAliases(account)
+  const candidates = job.skipOutbound
+    ? envelopes.filter(e => !isOwnOutboundForInboxSkip(e.from, e.to, addrAliases))
     : envelopes
-  if (job.folder === 'sent') {
-    candidates = candidates.filter(e => isOwnOutbound(e.from, e.to, account.imap_user))
-  }
   if (job.skipOutbound) {
     result.skippedOutbound = (result.skippedOutbound ?? 0) + (envelopes.length - candidates.length)
   }
@@ -407,10 +419,7 @@ async function syncOneMailboxFolder(
   }
 
   for (const envelope of existingEnvelopes) {
-    if (job.folder === 'sent' && !isOwnOutbound(envelope.from, envelope.to, account.imap_user)) {
-      continue
-    }
-    if (job.folder === 'inbox' && isOwnOutbound(envelope.from, envelope.to, account.imap_user)) {
+    if (job.folder === 'inbox' && isOwnOutboundForInboxSkip(envelope.from, envelope.to, addrAliases)) {
       continue
     }
     const patch: Record<string, unknown> = {
@@ -527,7 +536,7 @@ async function syncOneMailboxFolder(
 export async function syncMailAccount(
   userId: string,
   account: MailAccountWithId,
-  options: { backfill?: boolean; quick?: boolean } = {},
+  options: { backfill?: boolean; quick?: boolean; loginEmail?: string | null } = {},
   source?: MailSourceMeta,
 ): Promise<MailSyncResult> {
   const backfill = options.backfill === true
@@ -547,7 +556,8 @@ export async function syncMailAccount(
     skippedOutbound: 0,
   }
 
-  const reconciled = await reconcileMailFolders(db, userId, account.imap_user)
+  const aliases = accountAliases(account, options.loginEmail)
+  const reconciled = await reconcileMailFolders(db, userId, aliases)
   if (reconciled > 0) result.updated += reconciled
 
   const mailboxes = await resolveSpecialMailboxes(account)
@@ -583,6 +593,7 @@ export async function syncMailAccount(
         { ...job, mailboxPath: job.mailboxPath, fullScan },
         quick,
         source,
+        aliases,
       )
     } catch (err) {
       result.errors++
@@ -700,7 +711,11 @@ export async function syncUserMailAccounts(
 
   for (const account of accounts) {
     try {
-      const result = await syncMailAccount(userId, account, options)
+      const result = await syncMailAccount(userId, account, {
+        backfill: options.backfill,
+        quick: options.quick,
+        loginEmail: options.loginEmail,
+      })
       mergeSyncResults(aggregated, result)
       aggregated.accounts!.push({
         user_id: userId,

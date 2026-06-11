@@ -94,6 +94,31 @@ export function toAttachmentMeta(raw: unknown): EmailAttachment[] {
 export function extractEmailAddress(fromText: string): string {
   const match = fromText.match(/<([^>]+)>/)
   if (match) return match[1].toLowerCase().trim()
-  if (fromText.includes('@')) return fromText.toLowerCase().trim()
+  const bare = fromText.split(',')[0]?.trim() ?? ''
+  if (bare.includes('@')) return bare.toLowerCase()
   return ''
+}
+
+/** Adresses email du compte (IMAP, SMTP, login) pour comparer l'expéditeur. */
+export function accountEmailAliases(
+  imapUser: string,
+  smtpUser?: string | null,
+  loginEmail?: string | null,
+): string[] {
+  const aliases = new Set<string>()
+  for (const raw of [imapUser, smtpUser, loginEmail]) {
+    if (!raw) continue
+    const e = extractEmailAddress(raw) || raw.toLowerCase().trim()
+    if (e.includes('@')) aliases.add(e)
+  }
+  return [...aliases]
+}
+
+/** L'expéditeur correspond à une des adresses du compte (tolérant parsing IMAP). */
+export function isFromAccountAddress(fromAddress: string, aliases: string[]): boolean {
+  if (!aliases.length) return false
+  const from = extractEmailAddress(fromAddress)
+  if (from && aliases.includes(from)) return true
+  const lower = fromAddress.toLowerCase()
+  return aliases.some(a => lower.includes(a))
 }

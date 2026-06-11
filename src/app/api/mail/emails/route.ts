@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
       if (folder === 'inbox' && useFolderColumn) {
         q = q.or('mail_folder.eq.inbox,mail_folder.is.null')
       } else if (folder === 'sent' && useFolderColumn) {
-        q = q.eq('mail_folder', 'sent')
+        q = q.or('mail_folder.eq.sent,imap_mailbox.ilike.%Sent%,imap_mailbox.ilike.%Envoy%')
       } else if (useFolderColumn) {
         q = q.eq('mail_folder', folder)
       }
