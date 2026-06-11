@@ -80,6 +80,18 @@ function memberDisplayName(member) {
   return member.display_name?.trim() || member.email?.split('@')[0] || 'Membre'
 }
 
+function normalizeMessageId(raw, fallback) {
+  const trimmed = raw?.trim()
+  if (!trimmed) return fallback ?? `uid-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const bare = trimmed.replace(/^<|>$/g, '')
+  if (!bare) return trimmed
+  return bare.includes('@') ? `<${bare}>` : bare
+}
+
+function isDuplicateKeyError(msg) {
+  return msg?.includes('duplicate key') || msg?.includes('23505')
+}
+
 async function getFamilySyncTargets(ownerId) {
   const targets = [{ userId: ownerId, sourceMemberId: null, sourceMemberName: null }]
 
@@ -150,7 +162,7 @@ async function syncUserMailbox(target) {
       count++
       try {
         const parsed = await simpleParser(message.source)
-        const messageId = parsed.messageId ?? `msg-${target.userId}-${message.uid}`
+        const messageId = normalizeMessageId(parsed.messageId, `msg-${target.userId}-${message.uid}`)
 
         const fromEmail = parsed.from?.value?.[0]?.address?.toLowerCase() ?? ''
         if (ownEmail && fromEmail === ownEmail) {
@@ -166,6 +178,17 @@ async function syncUserMailbox(target) {
           .maybeSingle()
 
         if (existing) {
+          duplicates++
+          continue
+        }
+
+        const { data: globalDup } = await db
+          .from('emails')
+          .select('id, user_id')
+          .eq('message_id', messageId)
+          .maybeSingle()
+
+        if (globalDup && globalDup.user_id !== target.userId) {
           duplicates++
           continue
         }
@@ -192,8 +215,18 @@ async function syncUserMailbox(target) {
           insertPayload.source_member_name = target.sourceMemberName
         }
 
-        const { error } = await db.from('emails').insert(insertPayload)
+        let { error } = await db.from('emails').insert(insertPayload)
+        if (error && (error.message.includes('source_member') || error.message.includes('does not exist'))) {
+          delete insertPayload.source_member_id
+          delete insertPayload.source_member_name
+          const retry = await db.from('emails').insert(insertPayload)
+          error = retry.error
+        }
         if (error) {
+          if (isDuplicateKeyError(error.message)) {
+            duplicates++
+            continue
+          }
           console.log(`✗ Erreur: ${parsed.subject} — ${error.message}`)
           continue
         }
@@ -234,6 +267,7 @@ async function main() {
   const appEnv = process.env.APP_ENV || process.env.NODE_ENV || 'development'
   console.log(`Operis sync — owner ${OWNER_ID}`)
   console.log(`Supabase: ${supabaseHost()} (APP_ENV=${appEnv})`)
+  console.log('Contrainte message_id : si erreurs duplicate key → exécuter supabase/migrations/013_fix_emails_message_id_unique.sql')
   const targets = await getFamilySyncTargets(OWNER_ID)
   let totalStored = 0
   let totalAo = 0

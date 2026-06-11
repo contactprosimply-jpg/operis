@@ -111,7 +111,11 @@ function envelopeToMeta(
   flags?: Set<string>,
   accountUser?: string,
 ): ImapEnvelopeMeta {
-  const messageId = envelope?.messageId?.trim() || `uid-${accountUser ?? 'user'}-${uid}`
+  const rawMid = envelope?.messageId?.trim()
+  const bare = rawMid?.replace(/^<|>$/g, '') ?? ''
+  const messageId = bare && bare.includes('@')
+    ? `<${bare}>`
+    : (rawMid || `uid-${accountUser ?? 'user'}-${uid}`)
   const internal = normalizeDate(internalDate)
   return {
     uid,

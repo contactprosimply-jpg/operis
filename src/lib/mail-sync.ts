@@ -12,6 +12,7 @@ import { isEmailIncompleteForEnrich } from '@/lib/mail-enrich'
 import { attachmentMetaOnly, persistAttachmentsToStorage } from '@/lib/mail-storage'
 import { createAdminClient } from '@/lib/supabase'
 import { detectAo } from '@/services/aoDetector.service'
+import { isDuplicateKeyError, normalizeMessageId } from '@/lib/mail-message-id'
 import type { AddressObject } from 'mailparser'
 
 function addressObjectText(addr: AddressObject | AddressObject[] | undefined): string {
@@ -157,14 +158,17 @@ async function loadExistingMessageIds(
 ): Promise<Set<string>> {
   const found = new Set<string>()
   if (!messageIds.length) return found
-  for (let i = 0; i < messageIds.length; i += 150) {
-    const chunk = messageIds.slice(i, i + 150)
+  const normalizedChunk = [...new Set(messageIds.map(id => normalizeMessageId(id)))]
+  for (let i = 0; i < normalizedChunk.length; i += 150) {
+    const chunk = normalizedChunk.slice(i, i + 150)
     const { data } = await db
       .from('emails')
       .select('message_id')
       .eq('user_id', userId)
       .in('message_id', chunk)
-    for (const row of data ?? []) found.add(row.message_id)
+    for (const row of data ?? []) {
+      if (row.message_id) found.add(normalizeMessageId(row.message_id))
+    }
   }
   return found
 }
@@ -176,9 +180,10 @@ async function quickInsertFromEnvelope(
   source?: MailSourceMeta,
 ): Promise<string | null> {
   const detection = detectAo(envelope.subject, '')
+  const messageId = normalizeMessageId(envelope.messageId, `uid-${userId}-${envelope.uid}`)
   const insertPayload: Record<string, unknown> = {
     user_id: userId,
-    message_id: envelope.messageId,
+    message_id: messageId,
     subject: envelope.subject,
     from_address: envelope.from,
     to_address: envelope.to,
@@ -213,6 +218,7 @@ async function quickInsertFromEnvelope(
   }
 
   if (error) {
+    if (isDuplicateKeyError(error.message)) return null
     console.error('[Mail sync] quick insert:', error.message, envelope.subject)
     return null
   }
@@ -297,7 +303,8 @@ export async function syncMailAccount(
   const existingEnvelopes: ImapEnvelopeMeta[] = []
 
   for (const envelope of inbound) {
-    if (existingIds.has(envelope.messageId)) {
+    const mid = normalizeMessageId(envelope.messageId, `uid-${userId}-${envelope.uid}`)
+    if (existingIds.has(mid)) {
       existingEnvelopes.push(envelope)
     } else {
       newEnvelopes.push(envelope)
@@ -334,10 +341,11 @@ export async function syncMailAccount(
       patch.ao_score = d.score
       if (d.isAo) result.aoDetected++
     }
+    const mid = normalizeMessageId(envelope.messageId, `uid-${userId}-${envelope.uid}`)
     await db.from('emails')
       .update(patch)
       .eq('user_id', userId)
-      .eq('message_id', envelope.messageId)
+      .eq('message_id', mid)
     result.updated++
   }
 
