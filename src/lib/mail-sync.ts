@@ -207,10 +207,13 @@ async function reconcileMailFolders(
     .or('mail_folder.eq.inbox,mail_folder.is.null')
 
   for (const row of misInbox ?? []) {
-    if (isFromAccountAddress(row.from_address ?? '', aliases)) {
-      await db.from('emails').update({ mail_folder: 'sent' }).eq('id', row.id)
-      fixed++
-    }
+    const from = row.from_address ?? ''
+    if (!isFromAccountAddress(from, aliases)) continue
+    const toLower = (row.to_address ?? '').toLowerCase()
+    const looksOutbound = !aliases.some(a => toLower.includes(a))
+    if (!looksOutbound) continue
+    await db.from('emails').update({ mail_folder: 'sent' }).eq('id', row.id)
+    fixed++
   }
 
   return fixed

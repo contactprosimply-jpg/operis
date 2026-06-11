@@ -265,26 +265,46 @@ function pathMatchesHint(path: string, hint: string): boolean {
   return leaf === h || lower.endsWith(`/${h}`) || lower.endsWith(`.${h}`)
 }
 
-/** Vérifie que le dossier contient bien des envois (pas du courrier entrant). */
+type SentMailboxScore = {
+  path: string
+  total: number
+  outbound: number
+  score: number
+}
+
+/** Score un dossier Envoyés — ne favorise pas les dossiers vides (faux positifs Gandi/Outlook). */
+async function scoreSentMailboxOnClient(
+  client: ImapFlow,
+  mailboxPath: string,
+  accountUser: string,
+): Promise<SentMailboxScore | null> {
+  try {
+    const lock = await client.getMailboxLock(mailboxPath)
+    try {
+      const envelopes = await fetchEnvelopeBySequence(client, 50, accountUser, sinceDate(365))
+      if (!envelopes.length) return { path: mailboxPath, total: 0, outbound: 0, score: 0 }
+      const aliases = accountEmailAliases(accountUser)
+      const outbound = envelopes.filter(e => isFromAccountAddress(e.from, aliases)).length
+      const ratio = outbound / envelopes.length
+      const score = outbound * 100 + ratio * 50 + envelopes.length
+      return { path: mailboxPath, total: envelopes.length, outbound, score }
+    } finally {
+      lock.release()
+    }
+  } catch {
+    return null
+  }
+}
+
 async function validateSentMailboxOnClient(
   client: ImapFlow,
   mailboxPath: string,
   accountUser: string,
 ): Promise<boolean> {
-  try {
-    const lock = await client.getMailboxLock(mailboxPath)
-    try {
-      const envelopes = await fetchEnvelopeBySequence(client, 10, accountUser, sinceDate(365))
-      if (!envelopes.length) return true
-      const aliases = accountEmailAliases(accountUser)
-      const outbound = envelopes.filter(e => isFromAccountAddress(e.from, aliases)).length
-      return outbound >= Math.ceil(envelopes.length / 2)
-    } finally {
-      lock.release()
-    }
-  } catch {
-    return false
-  }
+  const scored = await scoreSentMailboxOnClient(client, mailboxPath, accountUser)
+  if (!scored) return false
+  if (scored.total === 0) return false
+  return scored.outbound >= Math.ceil(scored.total / 2)
 }
 
 /** Chemin sous Courrier indésirable / Junk (faux \\Sent sur Gandi/Thunderbird). */
@@ -355,12 +375,15 @@ export async function resolveSpecialMailboxes(config: MailAccountConfig): Promis
     for (const path of ['Sent', 'INBOX.Sent', 'INBOX/Sent']) {
       if (mailboxes.some(m => m.path === path)) sentCandidates.add(path)
     }
+    let bestSent: SentMailboxScore | null = null
     for (const path of sentCandidates) {
-      if (await validateSentMailboxOnClient(client, path, accountUser)) {
-        result.sent = path
-        sentFromSpecialUse = mailboxes.some(m => m.path === path && m.specialUse === '\\Sent')
-        break
-      }
+      const scored = await scoreSentMailboxOnClient(client, path, accountUser)
+      if (!scored) continue
+      if (!bestSent || scored.score > bestSent.score) bestSent = scored
+    }
+    if (bestSent && bestSent.outbound > 0) {
+      result.sent = bestSent.path
+      sentFromSpecialUse = mailboxes.some(m => m.path === bestSent!.path && m.specialUse === '\\Sent')
     }
     for (const [kind, hints] of Object.entries(MAILBOX_NAME_HINTS) as Array<
       [Exclude<keyof ResolvedMailboxes, 'inbox' | 'custom'>, string[]]
