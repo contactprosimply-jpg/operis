@@ -10,6 +10,9 @@ import ConsultationComposeModal, { type ConsultationComposePayload } from '@/com
 import SpeechMicButton from '@/components/SpeechMicButton'
 import { memberDisplayName } from '@/lib/family'
 import type { OrganizationPayload } from '@/lib/organization'
+import { useAuth } from '@/components/AuthProvider'
+import TenderOriginBadge from '@/components/TenderOriginBadge'
+import { getTenderAssigneeLabel, getTenderCreatorLabel } from '@/lib/tender-member-label'
 
 const STATUS_OPTIONS = [
   { value: 'nouveau', label: 'Nouveau', color: '#60a5fa' },
@@ -109,6 +112,8 @@ function DeadlineBadge({ deadline }: { deadline: string | null }) {
 export default function TenderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const { session } = useAuth()
+  const currentUserId = session?.user?.id
   const { show, ToastComponent } = useToast()
   const showRef = useRef(show)
   const routerRef = useRef(router)
@@ -665,6 +670,21 @@ export default function TenderDetailPage() {
               )}
             </div>
             <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>{tender.client}</div>
+            {(getTenderCreatorLabel(tender, currentUserId, org) || getTenderAssigneeLabel(tender, currentUserId, org)) && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                {getTenderCreatorLabel(tender, currentUserId, org) && (
+                  <>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'DM Sans, system-ui' }}>
+                      Appel d&apos;offres de
+                    </span>
+                    <TenderOriginBadge label={getTenderCreatorLabel(tender, currentUserId, org)!} type="creator" />
+                  </>
+                )}
+                {getTenderAssigneeLabel(tender, currentUserId, org) && (
+                  <TenderOriginBadge label={getTenderAssigneeLabel(tender, currentUserId, org)!} type="assigned" />
+                )}
+              </div>
+            )}
             {tender.access?.can_assign && org?.members && org.members.length > 1 && (
               <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase' }}>

@@ -4,8 +4,14 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTenders } from '@/hooks'
 import { authFetch } from '@/lib/auth-client'
-import { memberDisplayName } from '@/lib/family'
+import { useAuth } from '@/components/AuthProvider'
+import TenderOriginBadge from '@/components/TenderOriginBadge'
 import type { OrganizationPayload } from '@/lib/organization'
+import {
+  creatorColumnLabel,
+  getTenderAssigneeLabel,
+  getTenderCreatorLabel,
+} from '@/lib/tender-member-label'
 import { Button, Modal, Field, Badge, useToast, Card, KpiCard, tableRowHoverHandlers, TableSkeleton } from '@/components/ui'
 import type { TenderStatus } from '@/types/database'
 
@@ -39,6 +45,8 @@ function formatBudget(v?: number | null) {
 
 export default function TendersPage() {
   const router = useRouter()
+  const { session } = useAuth()
+  const currentUserId = session?.user?.id
   const { tenders, loading, refreshing, create, markStatus } = useTenders()
   const { show, ToastComponent } = useToast()
   const [showModal, setShowModal] = useState(false)
@@ -54,11 +62,8 @@ export default function TendersPage() {
       .catch(() => {})
   }, [])
 
-  const memberLabel = (userId?: string | null) => {
-    if (!userId || !org?.members) return '—'
-    const m = org.members.find(x => x.user_id === userId)
-    return m ? memberDisplayName(m) : '—'
-  }
+  const inTeam = !!org?.members?.length
+  const tableColCount = inTeam ? 10 : 9
 
   const filtered = filter === 'actifs'
     ? tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status))
@@ -141,7 +146,7 @@ export default function TendersPage() {
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
               {[
                 'Titre', 'Client', 'Deadline', 'Budget HT', 'Priorite', 'Statut',
-                ...(org?.is_owner ? ['Membre'] : []),
+                ...(inTeam ? ['Créé par'] : []),
                 'Fournisseurs', 'Reponses', 'Devis',
               ].map(h => (
                 <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
@@ -163,7 +168,19 @@ export default function TendersPage() {
                     animationDelay: `${i * 30}ms`, opacity: 0,
                   }}
                   {...rowHandlers}>
-                  <td style={{ padding: '12px 14px', fontWeight: 600 }}>{t.title}</td>
+                  <td style={{ padding: '12px 14px' }}>
+                    <div style={{ fontWeight: 600 }}>{t.title}</div>
+                    {(getTenderCreatorLabel(t, currentUserId, org) || getTenderAssigneeLabel(t, currentUserId, org)) && (
+                      <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                        {getTenderCreatorLabel(t, currentUserId, org) && (
+                          <TenderOriginBadge label={getTenderCreatorLabel(t, currentUserId, org)!} type="creator" />
+                        )}
+                        {getTenderAssigneeLabel(t, currentUserId, org) && (
+                          <TenderOriginBadge label={getTenderAssigneeLabel(t, currentUserId, org)!} type="assigned" />
+                        )}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ padding: '12px 14px', color: 'var(--text-secondary)' }}>{t.client}</td>
                   <td style={{ padding: '12px 14px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: deadlineColor(t.days_remaining), fontWeight: t.days_remaining !== null && t.days_remaining <= 3 ? 600 : 400 }}>
                     {t.days_remaining !== null ? `${t.days_remaining}j` : '—'}
@@ -174,9 +191,9 @@ export default function TendersPage() {
                       {priorite.icon} {priorite.label}
                     </span>
                   </td>
-                  {org?.is_owner && (
-                    <td style={{ padding: '12px 14px', fontSize: 11, color: 'var(--text-secondary)' }}>
-                      {memberLabel(t.assigned_to ?? t.user_id)}
+                  {inTeam && (
+                    <td style={{ padding: '12px 14px', fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui' }}>
+                      {creatorColumnLabel(t, currentUserId, org)}
                     </td>
                   )}
                   <td style={{ padding: '12px 14px' }} onClick={e => e.stopPropagation()}>
@@ -201,7 +218,7 @@ export default function TendersPage() {
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={9} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>Aucun AO</td></tr>
+              <tr><td colSpan={tableColCount} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>Aucun AO</td></tr>
             )}
           </tbody>
         </table>

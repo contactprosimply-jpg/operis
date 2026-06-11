@@ -9,6 +9,9 @@ import { useState, useEffect } from 'react'
 import { authFetch } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
 import { Email } from '@/types/database'
+import TenderOriginBadge from '@/components/TenderOriginBadge'
+import type { OrganizationPayload } from '@/lib/organization'
+import { getTenderCreatorLabel } from '@/lib/tender-member-label'
 
 const IconDoc = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
@@ -58,7 +61,8 @@ export default function DashboardPage() {
   const [quoteEmails, setQuoteEmails] = useState<Email[]>([])
   const [creatingAo, setCreatingAo] = useState<string | null>(null)
   const [notifications, setNotifications] = useState<Array<{ id: string; title: string; message: string; tender_id?: string; is_read: boolean }>>([])
-  const [org, setOrg] = useState<{ is_owner?: boolean; name?: string } | null>(null)
+  const [org, setOrg] = useState<OrganizationPayload | null>(null)
+  const currentUserId = session?.user?.id
 
   useEffect(() => {
     if (!ready || !accessToken) return
@@ -178,7 +182,14 @@ export default function DashboardPage() {
               onClick={() => router.push(`/tenders/${t.tender_id}`)}
               style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0', cursor: 'pointer' }}
             >
-              <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{t.title}</span>
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>
+                {t.title}
+                {getTenderCreatorLabel(t, currentUserId, org) && (
+                  <span style={{ marginLeft: 8 }}>
+                    <TenderOriginBadge label={getTenderCreatorLabel(t, currentUserId, org)!} type="creator" />
+                  </span>
+                )}
+              </span>
               <Badge color="amber">{t.nb_responses}/{t.nb_suppliers} reponses</Badge>
             </div>
           ))}
@@ -212,7 +223,14 @@ export default function DashboardPage() {
             <div key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
               className="animate-slide"
               style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', cursor: 'pointer' }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>{t.title}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>
+                {t.title}
+                {getTenderCreatorLabel(t, currentUserId, org) && (
+                  <span style={{ marginLeft: 8 }}>
+                    <TenderOriginBadge label={getTenderCreatorLabel(t, currentUserId, org)!} type="creator" />
+                  </span>
+                )}
+              </span>
               <span style={{ fontSize: 12, fontFamily: 'DM Mono, monospace', color: '#f87171', animation: 'pulse 2s ease infinite' }}>{t.days_remaining}j</span>
               <Badge color={t.nb_responses > 0 ? 'amber' : 'red'} glow>{t.nb_responses}/{t.nb_suppliers}</Badge>
             </div>
@@ -243,7 +261,14 @@ export default function DashboardPage() {
                   className="animate-slide"
                   style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', borderLeft: '3px solid transparent', animationDelay: `${i * 40}ms`, opacity: 0 }}
                   {...rowHandlers}>
-                  <td style={{ padding: '12px 14px', fontWeight: 600 }}>{t.title}</td>
+                  <td style={{ padding: '12px 14px' }}>
+                    <div style={{ fontWeight: 600 }}>{t.title}</div>
+                    {getTenderCreatorLabel(t, currentUserId, org) && (
+                      <div style={{ marginTop: 6 }}>
+                        <TenderOriginBadge label={getTenderCreatorLabel(t, currentUserId, org)!} type="creator" />
+                      </div>
+                    )}
+                  </td>
                   <td style={{ padding: '12px 14px', color: 'var(--text-secondary)' }}>{t.client}</td>
                   <td style={{ padding: '12px 14px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: t.days_remaining !== null && t.days_remaining <= 3 ? '#f87171' : 'var(--text-secondary)' }}>
                     {t.days_remaining !== null ? `${t.days_remaining}j` : '—'}
