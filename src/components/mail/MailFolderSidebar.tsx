@@ -1,6 +1,13 @@
 'use client'
 
-import type { MailFolder } from '@/lib/mail-folders'
+import {
+  type MailFolderKind,
+  type MailFolderSelection,
+  FOLDER_LABELS,
+  folderSelectionKey,
+  customFolderLabel,
+  type CachedImapFolder,
+} from '@/lib/mail-folders'
 
 function IconInbox({ color }: { color: string }) {
   return (
@@ -48,6 +55,14 @@ function IconTrash({ color }: { color: string }) {
   )
 }
 
+function IconFolder({ color }: { color: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" width="18" height="18">
+      <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+    </svg>
+  )
+}
+
 function IconMailLock({ color }: { color: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" width="16" height="16">
@@ -58,34 +73,103 @@ function IconMailLock({ color }: { color: string }) {
   )
 }
 
-const FOLDER_META: Record<MailFolder, { label: string; color: string; Icon: typeof IconInbox }> = {
-  inbox: { label: 'Courrier entrant', color: '#22c55e', Icon: IconInbox },
-  drafts: { label: 'Brouillons', color: '#22c55e', Icon: IconDraft },
-  sent: { label: 'Envoyés', color: '#22c55e', Icon: IconSent },
-  spam: { label: 'Indésirables', color: '#ef4444', Icon: IconSpam },
-  trash: { label: 'Corbeille', color: '#94a3b8', Icon: IconTrash },
+const FOLDER_ICONS: Record<MailFolderKind, { color: string; Icon: typeof IconInbox }> = {
+  inbox: { color: '#22c55e', Icon: IconInbox },
+  drafts: { color: '#22c55e', Icon: IconDraft },
+  sent: { color: '#22c55e', Icon: IconSent },
+  spam: { color: '#ef4444', Icon: IconSpam },
+  trash: { color: '#94a3b8', Icon: IconTrash },
+  custom: { color: '#60a5fa', Icon: IconFolder },
 }
 
+const STANDARD_ORDER: MailFolderKind[] = ['inbox', 'drafts', 'sent', 'spam', 'trash']
+
 export default function MailFolderSidebar({
+  accounts,
   accountEmail,
-  folder,
-  onFolderChange,
+  selection,
+  onSelectionChange,
   onCompose,
   onSync,
   syncing,
   badges,
+  customFolders,
   collapsed,
 }: {
+  accounts: Array<{ id: string; email: string }>
   accountEmail: string | null
-  folder: MailFolder
-  onFolderChange: (f: MailFolder) => void
+  selection: MailFolderSelection
+  onSelectionChange: (s: MailFolderSelection) => void
   onCompose: () => void
   onSync: () => void
   syncing: boolean
-  badges: Partial<Record<MailFolder, number>>
+  badges: Partial<Record<string, number>>
+  customFolders: CachedImapFolder[]
   collapsed?: boolean
 }) {
-  const folders: MailFolder[] = ['inbox', 'drafts', 'sent', 'spam', 'trash']
+  const activeKey = folderSelectionKey(selection)
+
+  const renderItem = (
+    key: string,
+    label: string,
+    Icon: typeof IconInbox,
+    color: string,
+    onClick: () => void,
+  ) => {
+    const active = activeKey === key
+    const badge = badges[key]
+    return (
+      <button
+        key={key}
+        type="button"
+        onClick={onClick}
+        title={collapsed ? label : undefined}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: collapsed ? '10px 8px' : '10px 12px',
+          marginBottom: 2,
+          borderRadius: 8,
+          border: 'none',
+          cursor: 'pointer',
+          background: active ? 'rgba(59,126,246,0.22)' : 'transparent',
+          color: active ? '#fff' : 'rgba(255,255,255,0.82)',
+          fontSize: 13,
+          fontWeight: active ? 600 : 400,
+          justifyContent: collapsed ? 'center' : 'flex-start',
+        }}
+      >
+        <Icon color={color} />
+        {!collapsed && (
+          <>
+            <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+            {badge != null && badge > 0 && (
+              <span
+                style={{
+                  minWidth: 22,
+                  height: 22,
+                  padding: '0 6px',
+                  borderRadius: 11,
+                  background: '#fff',
+                  color: '#111',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontFamily: 'DM Mono, monospace',
+                }}
+              >
+                {badge}
+              </span>
+            )}
+          </>
+        )}
+      </button>
+    )
+  }
 
   return (
     <aside
@@ -113,12 +197,11 @@ export default function MailFolderSidebar({
             padding: collapsed ? '10px' : '10px 14px',
             borderRadius: 10,
             border: 'none',
-            background: 'linear-gradient(135deg, #3b7ef6 0%, #6366f1 100%)',
+            background: 'linear-gradient(135deg, #021246 0%, #3b7ef6 100%)',
             color: '#fff',
             fontSize: 13,
             fontWeight: 600,
             cursor: 'pointer',
-            boxShadow: '0 4px 14px rgba(59,126,246,0.35)',
           }}
         >
           <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
@@ -126,82 +209,59 @@ export default function MailFolderSidebar({
         </button>
       </div>
 
-      {!collapsed && accountEmail && (
-        <div
-          style={{
-            padding: '8px 14px 12px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 12,
-            color: '#7dd3fc',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
-            marginBottom: 4,
-          }}
-        >
-          <IconMailLock color="#7dd3fc" />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{accountEmail}</span>
+      {!collapsed && (accounts.length > 0 || accountEmail) && (
+        <div style={{ padding: '8px 14px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>
+            Comptes
+          </div>
+          {(accounts.length ? accounts : [{ id: 'primary', email: accountEmail ?? '' }]).map(acc => (
+            <div
+              key={acc.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: 12,
+                color: '#7dd3fc',
+                marginBottom: 4,
+              }}
+            >
+              <IconMailLock color="#7dd3fc" />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acc.email}</span>
+            </div>
+          ))}
         </div>
       )}
 
       <nav style={{ flex: 1, padding: '6px 8px', overflowY: 'auto' }}>
-        {folders.map(id => {
-          const meta = FOLDER_META[id]
-          const active = folder === id
-          const badge = badges[id]
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onFolderChange(id)}
-              title={collapsed ? meta.label : undefined}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: collapsed ? '10px 8px' : '10px 12px',
-                marginBottom: 2,
-                borderRadius: 8,
-                border: 'none',
-                cursor: 'pointer',
-                background: active ? 'rgba(59,126,246,0.22)' : 'transparent',
-                color: active ? '#fff' : 'rgba(255,255,255,0.82)',
-                fontSize: 13,
-                fontWeight: active ? 600 : 400,
-                justifyContent: collapsed ? 'center' : 'flex-start',
-                transition: 'background 0.15s',
-              }}
-            >
-              <meta.Icon color={meta.color} />
-              {!collapsed && (
-                <>
-                  <span style={{ flex: 1, textAlign: 'left' }}>{meta.label}</span>
-                  {badge != null && badge > 0 && (
-                    <span
-                      style={{
-                        minWidth: 22,
-                        height: 22,
-                        padding: '0 6px',
-                        borderRadius: 11,
-                        background: '#fff',
-                        color: '#111',
-                        fontSize: 11,
-                        fontWeight: 700,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontFamily: 'DM Mono, monospace',
-                      }}
-                    >
-                      {badge}
-                    </span>
-                  )}
-                </>
-              )}
-            </button>
+        {STANDARD_ORDER.map(kind => {
+          const meta = FOLDER_ICONS[kind]
+          return renderItem(
+            kind,
+            FOLDER_LABELS[kind],
+            meta.Icon,
+            meta.color,
+            () => onSelectionChange({ kind }),
           )
         })}
+
+        {!collapsed && customFolders.length > 0 && (
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.4)', padding: '4px 12px 6px' }}>
+              Dossiers
+            </div>
+            {customFolders.map(f => {
+              const key = `custom:${f.path}`
+              return renderItem(
+                key,
+                f.name ?? customFolderLabel(f.path),
+                IconFolder,
+                '#60a5fa',
+                () => onSelectionChange({ kind: 'custom', customPath: f.path }),
+              )
+            })}
+          </div>
+        )}
       </nav>
 
       {!collapsed && (
@@ -219,7 +279,6 @@ export default function MailFolderSidebar({
               color: 'rgba(255,255,255,0.65)',
               fontSize: 12,
               cursor: syncing ? 'wait' : 'pointer',
-              fontFamily: 'DM Sans, system-ui',
             }}
           >
             {syncing ? 'Synchronisation…' : '↻ Synchroniser'}

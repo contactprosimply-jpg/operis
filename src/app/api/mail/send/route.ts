@@ -16,13 +16,13 @@ export async function POST(req: NextRequest) {
 
   const rawBody = await req.json()
   const unexpected = rejectUnexpectedFields(rawBody as Record<string, unknown>, [
-    'to', 'subject', 'body', 'cc', 'signature', 'attachments',
+    'to', 'subject', 'body', 'cc', 'bcc', 'signature', 'attachments',
   ])
   if (unexpected) {
     return Response.json({ success: false, error: unexpected }, { status: 400 })
   }
 
-  const { to, subject, body, cc, signature, attachments: rawAttachments } = rawBody
+  const { to, subject, body, cc, bcc, signature, attachments: rawAttachments } = rawBody
 
   const bodyText = clampString(body, 100000) ?? ''
   const signatureText = (clampString(signature, 10000) ?? '').trim()
@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
       from: `"${account.smtp_user.split('@')[0]}" <${account.smtp_user}>`,
       to: toText,
       cc: typeof cc === 'string' ? cc.slice(0, 500) : undefined,
+      bcc: typeof bcc === 'string' ? bcc.slice(0, 500) : undefined,
       subject: subjectText,
       text: finalText,
       html: finalHtml,

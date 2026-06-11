@@ -117,7 +117,23 @@ export interface Email {
   mail_folder?: string | null
   imap_uid?: number | null
   imap_mailbox?: string | null
+  is_starred?: boolean
+  deleted_at?: string | null
+  original_folder?: string | null
   created_at: string
+}
+
+export interface MailDraft {
+  id: string
+  user_id: string
+  to_address: string
+  cc: string
+  bcc: string
+  subject: string
+  body: string
+  attachments?: EmailAttachment[]
+  created_at: string
+  updated_at: string
 }
 
 export interface EmailLog {

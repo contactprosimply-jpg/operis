@@ -20,6 +20,7 @@ import { attachmentMetaOnly, persistAttachmentsToStorage } from '@/lib/mail-stor
 import { createAdminClient } from '@/lib/supabase'
 import { detectAo } from '@/services/aoDetector.service'
 import { isDuplicateKeyError, normalizeMessageId } from '@/lib/mail-message-id'
+import { customFolderLabel } from '@/lib/mail-folders'
 import type { AddressObject } from 'mailparser'
 
 function addressObjectText(addr: AddressObject | AddressObject[] | undefined): string {
@@ -215,7 +216,7 @@ async function reconcileMailFolders(
   return fixed
 }
 
-type DbMailFolder = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam'
+type DbMailFolder = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'custom'
 
 function envelopeMessageId(
   userId: string,
@@ -599,6 +600,39 @@ export async function syncMailAccount(
       result.errors++
       console.error(`[Mail sync] dossier ${job.folder}:`, err)
     }
+  }
+
+  for (const customPath of mailboxes.custom ?? []) {
+    try {
+      await syncOneMailboxFolder(
+        db,
+        userId,
+        account,
+        result,
+        {
+          folder: 'custom',
+          mailboxPath: customPath,
+          sinceDays: fullScan ? 90 : 45,
+          limit: fullScan ? 80 : 40,
+          skipOutbound: false,
+          fullScan,
+        },
+        quick,
+        source,
+        aliases,
+      )
+    } catch (err) {
+      result.errors++
+      console.error(`[Mail sync] dossier custom ${customPath}:`, err)
+    }
+  }
+
+  if (account.id) {
+    const cached = (mailboxes.custom ?? []).map(path => ({
+      path,
+      name: customFolderLabel(path),
+    }))
+    await db.from('mail_accounts').update({ cached_imap_folders: cached }).eq('id', account.id)
   }
 
   if (backfill && !quick) {

@@ -1,5 +1,6 @@
 // ============================================================
-// OPERIS — sync.mjs — Sync IMAP (chef Famille + membres)
+// OPERIS — sync.mjs — LEGACY (INBOX seul)
+// Préférez : npm run sync  → scripts/sync-mail.ts (multi-dossiers)
 // ============================================================
 
 import { ImapFlow } from 'imapflow'

@@ -12,10 +12,12 @@ import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
 import MailFolderSidebar from '@/components/mail/MailFolderSidebar'
 import MailComposePanel from '@/components/mail/MailComposePanel'
+import MailToolbar from '@/components/mail/MailToolbar'
 import {
-  type MailFolder,
-  SPAM_LABEL,
-  TRASH_LABEL,
+  type MailFolderSelection,
+  type CachedImapFolder,
+  folderSelectionKey,
+  FOLDER_LABELS,
 } from '@/lib/mail-folders'
 import {
   loadDrafts,
@@ -129,7 +131,7 @@ export default function MailPage() {
   const [autoSyncStatus, setAutoSyncStatus] = useState<string | null>(null)
   const [selected, setSelected] = useState<Email | null>(null)
   const [composing, setComposing] = useState(false)
-  const [compose, setCompose] = useState({ to: '', cc: '', subject: '', body: '' })
+  const [compose, setCompose] = useState({ to: '', cc: '', bcc: '', subject: '', body: '' })
   const [attachments, setAttachments] = useState<File[]>([])
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
@@ -138,7 +140,13 @@ export default function MailPage() {
   const [linkModalOpen, setLinkModalOpen] = useState(false)
   const [tendersForLink, setTendersForLink] = useState<Array<{ id: string; title: string; client: string }>>([])
   const [linkingTender, setLinkingTender] = useState(false)
-  const [folder, setFolder] = useState<MailFolder>('inbox')
+  const [folderSelection, setFolderSelection] = useState<MailFolderSelection>({ kind: 'inbox' })
+  const folder = folderSelection.kind
+  const [customFolders, setCustomFolders] = useState<CachedImapFolder[]>([])
+  const [mailAccounts, setMailAccounts] = useState<Array<{ id: string; email: string }>>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [serverDraftId, setServerDraftId] = useState<string | null>(null)
+  const [listListFilter, setListListFilter] = useState<'all' | 'unread' | 'attachments'>('all')
   const [allEmails, setAllEmails] = useState<Email[]>([])
   const [drafts, setDrafts] = useState<MailDraft[]>([])
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null)
@@ -232,16 +240,42 @@ export default function MailPage() {
       })
       .catch(() => {})
     setDrafts(loadDrafts(userId))
+    authFetch('/api/mail/folders')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setCustomFolders(data.data?.customFolders ?? [])
+          setMailAccounts(data.data?.accounts ?? [])
+        }
+      })
+      .catch(() => {})
   }, [ready, userId, session?.user?.email])
 
-  const handleFolderChange = (f: MailFolder) => {
-    setFolder(f)
+  const handleSelectionChange = (sel: MailFolderSelection) => {
+    setFolderSelection(sel)
     setSelected(null)
     setComposing(false)
     if (isMobile) setMobileShowDetail(false)
-    if (f === 'drafts' && userId) setDrafts(loadDrafts(userId))
+    if (sel.kind === 'drafts' && userId) {
+      setDrafts(loadDrafts(userId))
+      authFetch('/api/mail/drafts').then(r => r.json()).then(d => {
+        if (d.success && Array.isArray(d.data)) {
+          /* server drafts merged in drafts folder UI later */
+        }
+      }).catch(() => {})
+    }
     loadEmails(false)
-    if (f === 'sent' || f === 'inbox') void runSync(true)
+    if (sel.kind === 'sent' || sel.kind === 'inbox') void runSync(true)
+  }
+
+  const mailAction = async (action: string, payload: Record<string, unknown> = {}) => {
+    const res = await authFetch('/api/mail/actions', {
+      method: 'POST',
+      body: JSON.stringify({ action, ...payload }),
+    })
+    const data = await res.json()
+    if (!data.success) throw new Error(data.error ?? 'Erreur')
+    return data
   }
 
   useEffect(() => {
@@ -265,7 +299,11 @@ export default function MailPage() {
     const safetyTimer = setTimeout(() => { if (!silent) setLoading(false) }, 12000)
     try {
       const params = new URLSearchParams({ limit: '250', folder })
-      const listFilter = folder === 'inbox' ? filter : 'all'
+      if (folderSelection.kind === 'custom' && folderSelection.customPath) {
+        params.set('imap_path', folderSelection.customPath)
+      }
+      if (searchQuery.trim()) params.set('q', searchQuery.trim())
+      const listFilter = folder === 'inbox' ? (listListFilter === 'all' ? filter : listListFilter) : 'all'
       if (listFilter === 'ao') params.set('ao', 'true')
       if (listFilter === 'unread') params.set('unread', 'true')
       if (listFilter === 'attachments') params.set('attachments', 'true')
@@ -300,7 +338,7 @@ export default function MailPage() {
       clearTimeout(safetyTimer)
       if (!silent) setLoading(false)
     }
-  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, folder])
+  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, folder, folderSelection, searchQuery, listListFilter])
 
   const loadEmailDetail = useCallback(async (emailId: string, silent = false) => {
     if (emailId.startsWith('elog-')) {
@@ -537,7 +575,7 @@ export default function MailPage() {
   }, [pendingEmailId, emails, selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCompose = (prefill: Partial<typeof compose> = {}, draftId?: string) => {
-    setCompose({ to: '', cc: '', subject: '', body: '', ...prefill })
+    setCompose({ to: '', cc: '', bcc: '', subject: '', body: '', ...prefill })
     setAttachments([])
     setActiveDraftId(draftId ?? newDraftId())
     setComposing(true)
@@ -557,10 +595,24 @@ export default function MailPage() {
         body: compose.body,
         updatedAt: new Date().toISOString(),
       })
+      authFetch('/api/mail/drafts', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: serverDraftId,
+          to: compose.to,
+          cc: compose.cc,
+          bcc: compose.bcc,
+          subject: compose.subject,
+          body: compose.body,
+        }),
+      })
+        .then(r => r.json())
+        .then(d => { if (d.success && d.data?.id) setServerDraftId(d.data.id) })
+        .catch(() => {})
       if (folder === 'drafts') setDrafts(loadDrafts(userId))
-    }, 800)
+    }, 30000)
     return () => clearTimeout(t)
-  }, [composing, compose, activeDraftId, userId, folder])
+  }, [composing, compose, activeDraftId, userId, folder, serverDraftId])
 
   const openReply = (email: Email) => {
     const originalLines = (email.body_text ?? '').split('\n').slice(0, 8).map(l => `> ${l}`).join('\n')
@@ -613,6 +665,7 @@ export default function MailPage() {
         body: JSON.stringify({
           to: compose.to,
           cc: compose.cc || undefined,
+          bcc: compose.bcc || undefined,
           subject: compose.subject,
           body: bodyWithoutSig,
           signature: signatureHtml,
@@ -828,25 +881,55 @@ export default function MailPage() {
     ? emails.filter(e => !e.is_read).length
     : inboxUnread
   const grouped = groupEmailsByDate(emails)
-  const folderBadges: Partial<Record<MailFolder, number>> = {
+  const folderBadges: Partial<Record<string, number>> = {
     inbox: unreadTotal,
     drafts: drafts.length,
   }
 
   const handleMoveToFolder = async (email: Email, target: 'spam' | 'trash') => {
-    const label = target === 'spam' ? SPAM_LABEL : TRASH_LABEL
-    const current = email.labels ?? []
-    const without = current.filter(l => l.id !== SPAM_LABEL.id && l.id !== TRASH_LABEL.id)
-    const next = [...without, label]
     try {
-      await patchEmail(email.id, { labels: next })
-      applyEmailPatch(email.id, { labels: next })
-      setAllEmails(prev => prev.map(e => e.id === email.id ? { ...e, labels: next } : e))
+      await mailAction('move', { emailId: email.id, target })
+      setEmails(prev => prev.filter(e => e.id !== email.id))
+      setSelected(null)
       showToast(target === 'spam' ? 'Déplacé vers indésirables' : 'Déplacé vers corbeille')
     } catch {
       showToast('Erreur déplacement')
     }
   }
+
+  const handleRestore = async (email: Email) => {
+    try {
+      await mailAction('restore', { emailId: email.id })
+      setEmails(prev => prev.filter(e => e.id !== email.id))
+      setSelected(null)
+      showToast('Mail restauré')
+    } catch {
+      showToast('Erreur restauration')
+    }
+  }
+
+  const handleNotSpam = async (email: Email) => {
+    try {
+      await mailAction('not_spam', { emailId: email.id })
+      setEmails(prev => prev.filter(e => e.id !== email.id))
+      setSelected(null)
+      showToast('Déplacé vers courrier entrant')
+    } catch {
+      showToast('Erreur')
+    }
+  }
+
+  const handleEmptyTrash = async () => {
+    try {
+      const data = await mailAction('empty_trash')
+      showToast(`Corbeille vidée (${data.data?.deleted ?? 0} mail(s))`)
+      loadEmails(false)
+    } catch {
+      showToast('Erreur vidage corbeille')
+    }
+  }
+
+  const lastSyncLabel = autoSyncStatus ?? 'Sync non effectuée'
 
   const showList = !isMobile || !mobileShowDetail
   const showPanel = !isMobile || mobileShowDetail
@@ -878,13 +961,15 @@ export default function MailPage() {
 
       {!isMobile && (
         <MailFolderSidebar
+          accounts={mailAccounts}
           accountEmail={mailAccountEmail}
-          folder={folder}
-          onFolderChange={handleFolderChange}
+          selection={folderSelection}
+          onSelectionChange={handleSelectionChange}
           onCompose={() => openCompose()}
           onSync={handleSync}
           syncing={syncing}
           badges={folderBadges}
+          customFolders={customFolders}
         />
       )}
 
@@ -896,14 +981,32 @@ export default function MailPage() {
           display: 'flex', flexDirection: 'column',
           background: 'var(--bg-secondary)', flexShrink: 0,
         }}>
-          <div style={{ padding: isMobile ? '12px 12px 10px' : '16px 14px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          {!isMobile && (
+            <MailToolbar
+              onNewMail={() => openCompose()}
+              onRefresh={handleSync}
+              syncing={syncing}
+              lastSyncLabel={lastSyncLabel}
+              search={searchQuery}
+              onSearchChange={v => { setSearchQuery(v); loadEmails(false) }}
+              listFilter={listListFilter}
+              onListFilterChange={f => { setListListFilter(f); if (f === 'unread') setFilter('unread'); else if (f === 'attachments') setFilter('attachments'); else setFilter('all') }}
+              showAoFilter={folder === 'inbox'}
+            />
+          )}
+          <div style={{ padding: isMobile ? '12px 12px 10px' : '8px 14px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+            {folder === 'trash' && emails.length > 0 && (
+              <button type="button" onClick={() => void handleEmptyTrash()} style={{ marginBottom: 8, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 11, cursor: 'pointer', color: 'var(--text-muted)' }}>
+                Vider la corbeille
+              </button>
+            )}
             {isMobile && (
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>
-                {(['inbox', 'drafts', 'sent', 'spam', 'trash'] as MailFolder[]).map(f => (
+                {(['inbox', 'drafts', 'sent', 'spam', 'trash'] as const).map(f => (
                   <button
                     key={f}
                     type="button"
-                    onClick={() => handleFolderChange(f)}
+                    onClick={() => handleSelectionChange({ kind: f })}
                     style={{
                       padding: '5px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
                       border: 'none',
@@ -1479,8 +1582,18 @@ export default function MailPage() {
                 ) : (
                   <button onClick={() => handleMarkRead(selected)} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-secondary)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Marquer lu</button>
                 )}
-                <button type="button" onClick={() => handleMoveToFolder(selected, 'spam')} style={{ background: 'transparent', border: '1px solid rgba(239,68,68,0.35)', color: '#f87171', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Indésirable</button>
-                <button type="button" onClick={() => handleMoveToFolder(selected, 'trash')} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-muted)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Corbeille</button>
+                {folder === 'spam' && (
+                  <button type="button" onClick={() => handleNotSpam(selected)} style={{ background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Pas un indésirable</button>
+                )}
+                {folder === 'trash' && (
+                  <button type="button" onClick={() => handleRestore(selected)} style={{ background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Restaurer</button>
+                )}
+                {folder !== 'spam' && folder !== 'trash' && (
+                  <>
+                    <button type="button" onClick={() => handleMoveToFolder(selected, 'spam')} style={{ background: 'transparent', border: '1px solid rgba(239,68,68,0.35)', color: '#f87171', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Indésirable</button>
+                    <button type="button" onClick={() => handleMoveToFolder(selected, 'trash')} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-muted)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Corbeille</button>
+                  </>
+                )}
               </div>
 
               {(selected.attachments?.length ?? 0) > 0 && (

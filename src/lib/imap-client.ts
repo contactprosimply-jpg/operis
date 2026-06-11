@@ -235,9 +235,10 @@ export interface ResolvedMailboxes {
   drafts?: string
   trash?: string
   spam?: string
+  custom: string[]
 }
 
-const MAILBOX_NAME_HINTS: Record<Exclude<keyof ResolvedMailboxes, 'inbox'>, string[]> = {
+const MAILBOX_NAME_HINTS: Record<Exclude<keyof ResolvedMailboxes, 'inbox' | 'custom'>, string[]> = {
   sent: [
     'sent', 'envoyés', 'envoyes', 'éléments envoyés', 'elements envoyes',
     'sent items', 'sent messages',
@@ -247,7 +248,7 @@ const MAILBOX_NAME_HINTS: Record<Exclude<keyof ResolvedMailboxes, 'inbox'>, stri
   spam: ['junk', 'spam', 'indésirables', 'indesirables'],
 }
 
-const PROBE_MAILBOX_PATHS: Record<Exclude<keyof ResolvedMailboxes, 'inbox'>, string[]> = {
+const PROBE_MAILBOX_PATHS: Record<Exclude<keyof ResolvedMailboxes, 'inbox' | 'custom'>, string[]> = {
   sent: [
     'Sent', 'INBOX.Sent', 'INBOX/Sent', 'Envoyés', 'INBOX.Envoyés', 'INBOX/Envoyés',
     'Sent Messages', 'INBOX/Sent Messages', 'INBOX.Sent Messages',
@@ -301,7 +302,7 @@ export async function resolveSpecialMailboxes(config: MailAccountConfig): Promis
   const client = createImapClient(config)
   await client.connect()
   try {
-    const result: ResolvedMailboxes = { inbox: 'INBOX' }
+    const result: ResolvedMailboxes = { inbox: 'INBOX', custom: [] }
     let sentFromSpecialUse = false
     const mailboxes = await client.list()
     for (const m of mailboxes) {
@@ -314,7 +315,7 @@ export async function resolveSpecialMailboxes(config: MailAccountConfig): Promis
       if (m.specialUse === '\\Junk') result.spam = m.path
     }
     for (const [kind, hints] of Object.entries(MAILBOX_NAME_HINTS) as Array<
-      [Exclude<keyof ResolvedMailboxes, 'inbox'>, string[]]
+      [Exclude<keyof ResolvedMailboxes, 'inbox' | 'custom'>, string[]]
     >) {
       if (result[kind]) continue
       for (const m of mailboxes) {
@@ -325,7 +326,7 @@ export async function resolveSpecialMailboxes(config: MailAccountConfig): Promis
       }
     }
     for (const [kind, paths] of Object.entries(PROBE_MAILBOX_PATHS) as Array<
-      [Exclude<keyof ResolvedMailboxes, 'inbox'>, string[]]
+      [Exclude<keyof ResolvedMailboxes, 'inbox' | 'custom'>, string[]]
     >) {
       if (result[kind]) continue
       for (const path of paths) {
@@ -343,6 +344,20 @@ export async function resolveSpecialMailboxes(config: MailAccountConfig): Promis
         delete result.sent
       }
     }
+
+    const standard = new Set(
+      [result.inbox, result.sent, result.drafts, result.trash, result.spam].filter(Boolean) as string[],
+    )
+    result.custom = mailboxes
+      .filter(m => {
+        const p = m.path
+        if (standard.has(p) || p.toUpperCase() === 'INBOX') return false
+        if (m.specialUse && ['\\Sent', '\\Drafts', '\\Trash', '\\Junk'].includes(m.specialUse)) return false
+        return true
+      })
+      .map(m => m.path)
+      .slice(0, 20)
+
     return result
   } finally {
     try {

@@ -33,8 +33,8 @@ export default function MailComposePanel({
   SignaturePreview,
 }: {
   isMobile: boolean
-  compose: { to: string; cc: string; subject: string; body: string }
-  onChange: (patch: Partial<{ to: string; cc: string; subject: string; body: string }>) => void
+  compose: { to: string; cc: string; bcc: string; subject: string; body: string }
+  onChange: (patch: Partial<{ to: string; cc: string; bcc: string; subject: string; body: string }>) => void
   onSend: () => void
   onCancel: () => void
   onAttach: () => void
@@ -78,6 +78,7 @@ export default function MailComposePanel({
           {[
             { label: 'À', key: 'to' as const, type: 'email', placeholder: 'email@exemple.com' },
             { label: 'Cc', key: 'cc' as const, type: 'text', placeholder: 'copies (virgules)' },
+            { label: 'Bcc', key: 'bcc' as const, type: 'text', placeholder: 'cci (virgules)' },
             { label: 'Objet', key: 'subject' as const, type: 'text', placeholder: 'Sujet du message' },
           ].map(field => (
             <div

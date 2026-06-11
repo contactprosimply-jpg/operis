@@ -12,7 +12,8 @@
     "lint": "eslint",
     "desktop:icon": "node scripts/generate-icon.mjs",
     "desktop": "electron .",
-    "desktop:build": "npm run desktop:icon && electron-builder --win --x64"
+    "desktop:build": "npm run desktop:icon && electron-builder --win --x64",
+    "sync": "npx tsx scripts/sync-mail.ts"
   },
   "build": {
     "appId": "fr.nikodex.operis",
@@ -92,6 +93,7 @@
     "eslint-config-next": "16.2.4",
     "sharp": "^0.33.5",
     "to-ico": "^1.1.5",
+    "tsx": "^4.19.4",
     "typescript": "^5"
   }
 }

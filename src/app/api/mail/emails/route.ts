@@ -64,6 +64,8 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   const limit = Math.min(Number(searchParams.get('limit') || 250), 500)
   const folder = searchParams.get('folder')
+  const imapPath = searchParams.get('imap_path') || undefined
+  const searchQ = searchParams.get('q')?.trim() || undefined
   const sentFolder = folder === 'sent'
   const mailAccount = sentFolder ? await resolveMailAccount(userId) : null
 
@@ -80,14 +82,22 @@ export async function GET(req: NextRequest) {
 
     q = q.eq('user_id', userId)
 
-    if (folder && ['inbox', 'sent', 'drafts', 'trash', 'spam'].includes(folder)) {
+    if (folder === 'custom' && imapPath && useFolderColumn) {
+      q = q.eq('mail_folder', 'custom').eq('imap_mailbox', imapPath).is('deleted_at', null)
+    } else if (folder && ['inbox', 'sent', 'drafts', 'trash', 'spam'].includes(folder)) {
       if (folder === 'inbox' && useFolderColumn) {
-        q = q.or('mail_folder.eq.inbox,mail_folder.is.null')
+        q = q.or('mail_folder.eq.inbox,mail_folder.is.null').is('deleted_at', null)
       } else if (folder === 'sent' && useFolderColumn) {
-        q = q.or('mail_folder.eq.sent,imap_mailbox.ilike.%Sent%,imap_mailbox.ilike.%Envoy%')
+        q = q.or('mail_folder.eq.sent,imap_mailbox.ilike.%Sent%,imap_mailbox.ilike.%Envoy%').is('deleted_at', null)
+      } else if (folder === 'trash' && useFolderColumn) {
+        q = q.eq('mail_folder', 'trash')
       } else if (useFolderColumn) {
-        q = q.eq('mail_folder', folder)
+        q = q.eq('mail_folder', folder).is('deleted_at', null)
       }
+    }
+
+    if (searchQ) {
+      q = q.or(`subject.ilike.%${searchQ}%,from_address.ilike.%${searchQ}%,to_address.ilike.%${searchQ}%`)
     }
 
     if (isAo !== undefined) q = q.eq('is_ao', isAo)
