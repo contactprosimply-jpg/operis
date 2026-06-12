@@ -265,7 +265,7 @@ export default function MailPage() {
         }
       }).catch(() => {})
     }
-    loadEmails(false)
+    loadEmails(false, sel)
     if (sel.kind === 'sent' || sel.kind === 'inbox') void runSync(true)
   }
 
@@ -295,16 +295,18 @@ export default function MailPage() {
       .catch(() => {})
   }, [ready, userId])
 
-  const loadEmails = useCallback(async (silent = false) => {
+  const loadEmails = useCallback(async (silent = false, selectionOverride?: MailFolderSelection) => {
     if (!silent) setLoading(true)
     const safetyTimer = setTimeout(() => { if (!silent) setLoading(false) }, 12000)
     try {
-      const params = new URLSearchParams({ limit: '250', folder })
-      if (folderSelection.kind === 'custom' && folderSelection.customPath) {
-        params.set('imap_path', folderSelection.customPath)
+      const activeSelection = selectionOverride ?? folderSelection
+      const activeFolder = activeSelection.kind
+      const params = new URLSearchParams({ limit: '250', folder: activeFolder })
+      if (activeSelection.kind === 'custom' && activeSelection.customPath) {
+        params.set('imap_path', activeSelection.customPath)
       }
       if (searchQuery.trim()) params.set('q', searchQuery.trim())
-      const listFilter = folder === 'inbox' ? (listListFilter === 'all' ? filter : listListFilter) : 'all'
+      const listFilter = activeFolder === 'inbox' ? (listListFilter === 'all' ? filter : listListFilter) : 'all'
       if (listFilter === 'ao') params.set('ao', 'true')
       if (listFilter === 'unread') params.set('unread', 'true')
       if (listFilter === 'attachments') params.set('attachments', 'true')
@@ -325,7 +327,7 @@ export default function MailPage() {
         emailCountRef.current = newEmails.length
         setAllEmails(newEmails)
         setEmails(newEmails)
-        if (folder === 'inbox') {
+        if (activeFolder === 'inbox') {
           setInboxUnread(newEmails.filter((e: Email) => !e.is_read).length)
         }
         const sid = selectedIdRef.current

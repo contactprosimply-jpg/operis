@@ -202,7 +202,7 @@ async function reconcileMailFolders(
 
   const { data: misInbox } = await db
     .from('emails')
-    .select('id, from_address')
+    .select('id, from_address, to_address')
     .eq('user_id', userId)
     .or('mail_folder.eq.inbox,mail_folder.is.null')
 
