@@ -20,9 +20,12 @@ export const TENDER_STATUS_COLORS: Record<string, string> = {
 }
 
 export const PRESET_EMAIL_LABELS: EmailLabel[] = [
+  { id: 'urgent-label', name: 'Urgent', color: '#ef4444' },
   { id: 'a-traiter', name: 'À traiter', color: '#f59e0b' },
   { id: 'repondu', name: 'Répondu', color: '#4ade80' },
   { id: 'en-attente', name: 'En attente', color: '#60a5fa' },
+  { id: 'transfere', name: 'Transféré', color: '#8b5cf6' },
+  { id: 'en-retard', name: 'En retard', color: '#f97316' },
   { id: 'archive', name: 'Archivé', color: '#6b7280' },
   { id: 'indesirable', name: 'Indésirable', color: '#ef4444' },
   { id: 'corbeille', name: 'Corbeille', color: '#94a3b8' },

@@ -91,6 +91,9 @@ export interface EmailLabel {
   id: string
   name: string
   color: string
+  /** manual = ajout utilisateur, auto = règle Operis */
+  source?: 'manual' | 'auto'
+  autoReason?: string
 }
 
 export interface Email {

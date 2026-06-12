@@ -7,6 +7,12 @@ import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
 import { Email, EmailAttachment, EmailLabel, EmailPriority } from '@/types/database'
 import { PRESET_EMAIL_LABELS } from '@/lib/mail-api'
+import {
+  applySmartLabelsToLabels,
+  labelBadgeStyle,
+  labelTooltip,
+  manualLabel,
+} from '@/lib/mail-smart-labels'
 import { Spinner } from '@/components/ui'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
@@ -140,6 +146,10 @@ export default function MailPage() {
   const [drafts, setDrafts] = useState<MailDraft[]>([])
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null)
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false)
+  const [composeSource, setComposeSource] = useState<{
+    emailId: string
+    action: 'reply' | 'forward'
+  } | null>(null)
   const [folderActionLoading, setFolderActionLoading] = useState(false)
   const [mailAccountEmail, setMailAccountEmail] = useState<string | null>(null)
   const [inboxUnread, setInboxUnread] = useState(0)
@@ -780,6 +790,7 @@ export default function MailPage() {
 
   const closeCompose = () => {
     setCloseConfirmOpen(false)
+    setComposeSource(null)
     setComposing(false)
     setComposeMinimized(false)
     setSendError(null)
@@ -805,11 +816,16 @@ export default function MailPage() {
     closeCompose()
   }
 
-  const openCompose = (prefill: Partial<typeof compose> = {}, draftId?: string) => {
+  const openCompose = (
+    prefill: Partial<typeof compose> = {},
+    draftId?: string,
+    source?: { emailId: string; action: 'reply' | 'forward' },
+  ) => {
     setCompose({ to: '', cc: '', bcc: '', subject: '', body: '', ...prefill })
     setAttachments([])
     setActiveDraftId(draftId ?? newDraftId())
     setServerDraftId(null)
+    setComposeSource(source ?? null)
     setComposing(true)
     setComposeMinimized(false)
     setSendError(null)
@@ -876,18 +892,26 @@ export default function MailPage() {
 
   const openReply = (email: Email) => {
     const originalLines = (email.body_text ?? '').split('\n').slice(0, 8).map(l => `> ${l}`).join('\n')
-    openCompose({
-      to: email.from_address ?? '',
-      subject: email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`,
-      body: originalLines ? `\n\n--- Message original ---\n${originalLines}` : '',
-    })
+    openCompose(
+      {
+        to: email.from_address ?? '',
+        subject: email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`,
+        body: originalLines ? `\n\n--- Message original ---\n${originalLines}` : '',
+      },
+      undefined,
+      { emailId: email.id, action: 'reply' },
+    )
   }
 
   const openForward = (email: Email) => {
-    openCompose({
-      subject: `Fwd: ${email.subject}`,
-      body: `\n\n--- Message transféré ---\nDe : ${email.from_address}\nObjet : ${email.subject}\n\n${email.body_text ?? ''}`,
-    })
+    openCompose(
+      {
+        subject: `Fwd: ${email.subject}`,
+        body: `\n\n--- Message transféré ---\nDe : ${email.from_address}\nObjet : ${email.subject}\n\n${email.body_text ?? ''}`,
+      },
+      undefined,
+      { emailId: email.id, action: 'forward' },
+    )
   }
 
   const signaturePreview = composing ? getSignatureData() : { text: '', html: '' }
@@ -909,6 +933,20 @@ export default function MailPage() {
       setSendError('Message ou signature requis')
       return
     }
+    const composeSourceLabelsBefore = composeSource
+      ? (emails.find(e => e.id === composeSource.emailId)?.labels ?? [])
+      : null
+
+    if (composeSource) {
+      const sourceEmail = emails.find(e => e.id === composeSource.emailId)
+      if (sourceEmail) {
+        const smartAction = composeSource.action === 'reply' ? 'replied' : 'forwarded'
+        applyEmailPatch(sourceEmail.id, {
+          labels: applySmartLabelsToLabels(sourceEmail.labels, smartAction),
+        })
+      }
+    }
+
     setSending(true); setSendError(null)
     try {
       const attachmentPayload = await Promise.all(
@@ -933,18 +971,36 @@ export default function MailPage() {
           bcc: compose.bcc || undefined,
           subject: compose.subject,
           body: bodyForSend,
+          replyToEmailId: composeSource?.action === 'reply' ? composeSource.emailId : undefined,
+          forwardFromEmailId: composeSource?.action === 'forward' ? composeSource.emailId : undefined,
           attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined,
         }),
       })
       const data = await res.json()
       if (data.success) {
+        const updates = data.data?.smartLabelUpdates as Array<{ emailId: string; labels: EmailLabel[] }> | undefined
+        if (updates?.length) {
+          for (const u of updates) {
+            applyEmailPatch(u.emailId, { labels: u.labels })
+          }
+        }
         if (userId && activeDraftId) removeDraft(userId, activeDraftId)
         setActiveDraftId(null)
         closeCompose()
         void runSync(true, true)
         showToast('Email envoyé ✓')
-      } else setSendError(data.error)
-    } catch (e: any) { setSendError(e.message) }
+      } else {
+        setSendError(data.error)
+        if (composeSource && composeSourceLabelsBefore) {
+          applyEmailPatch(composeSource.emailId, { labels: composeSourceLabelsBefore })
+        }
+      }
+    } catch (e: any) {
+      setSendError(e.message)
+      if (composeSource && composeSourceLabelsBefore) {
+        applyEmailPatch(composeSource.emailId, { labels: composeSourceLabelsBefore })
+      }
+    }
     setSending(false)
   }
 
@@ -1111,7 +1167,7 @@ export default function MailPage() {
   const handleToggleLabel = (email: Email, label: EmailLabel) => {
     const previous = email.labels ?? []
     const has = previous.some(l => l.id === label.id)
-    const next = has ? previous.filter(l => l.id !== label.id) : [...previous, label]
+    const next = has ? previous.filter(l => l.id !== label.id) : [...previous, manualLabel(label)]
     applyEmailPatch(email.id, { labels: next })
     void patchEmail(email.id, { labels: next }).catch(() => {
       applyEmailPatch(email.id, { labels: previous })
@@ -1145,12 +1201,15 @@ export default function MailPage() {
   }
 
   const handleMoveToFolder = async (email: Email, target: 'spam' | 'trash') => {
+    const labelsBefore = email.labels ?? []
+    applyEmailPatch(email.id, { labels: applySmartLabelsToLabels(email.labels, 'moved') })
     try {
       await mailAction('move', { emailId: email.id, target })
       setEmails(prev => prev.filter(e => e.id !== email.id))
       setSelected(null)
       showToast(target === 'spam' ? 'Déplacé vers indésirables' : 'Déplacé vers corbeille')
     } catch {
+      applyEmailPatch(email.id, { labels: labelsBefore })
       showToast('Erreur déplacement')
     }
   }
@@ -1574,15 +1633,26 @@ export default function MailPage() {
                           {email.has_attachments && (
                             <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>📎</span>
                           )}
-                          {(email.labels ?? []).map(label => (
-                            <span key={label.id} style={{
-                              fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 5px', borderRadius: 4,
-                              background: `${label.color}18`, color: label.color,
-                              border: `1px solid ${label.color}40`,
-                            }}>
-                              {label.name}
-                            </span>
-                          ))}
+                          {(email.labels ?? []).map(label => {
+                            const badge = labelBadgeStyle(label)
+                            return (
+                              <span
+                                key={label.id}
+                                title={labelTooltip(label)}
+                                style={{
+                                  fontSize: 9,
+                                  fontFamily: 'DM Mono, monospace',
+                                  padding: '1px 5px',
+                                  borderRadius: 4,
+                                  background: badge.background,
+                                  color: badge.color,
+                                  border: badge.border,
+                                }}
+                              >
+                                {label.source === 'auto' ? '⚡ ' : ''}{label.name}
+                              </span>
+                            )
+                          })}
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>

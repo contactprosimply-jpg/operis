@@ -7,6 +7,8 @@ import nodemailer from 'nodemailer'
 import { clampString, rejectUnexpectedFields } from '@/lib/api-validation'
 import { resolveMailAccount } from '@/lib/mail-sync'
 import { normalizeMessageId } from '@/lib/mail-message-id'
+import { applySmartLabels } from '@/lib/mail-smart-labels'
+import { isValidUuid } from '@/lib/api-validation'
 export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
@@ -17,12 +19,23 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.json()
   const unexpected = rejectUnexpectedFields(rawBody as Record<string, unknown>, [
     'to', 'subject', 'body', 'cc', 'bcc', 'signature', 'attachments',
+    'replyToEmailId', 'forwardFromEmailId',
   ])
   if (unexpected) {
     return Response.json({ success: false, error: unexpected }, { status: 400 })
   }
 
-  const { to, subject, body, cc, bcc, signature, attachments: rawAttachments } = rawBody
+  const {
+    to,
+    subject,
+    body,
+    cc,
+    bcc,
+    signature,
+    attachments: rawAttachments,
+    replyToEmailId,
+    forwardFromEmailId,
+  } = rawBody
 
   const bodyText = clampString(body, 100000) ?? ''
   const signatureText = (clampString(signature, 100000) ?? '').trim()
@@ -100,6 +113,35 @@ export async function POST(req: NextRequest) {
         }))
     : []
 
+  let inReplyToHeader: string | undefined
+  let resolvedReplyId = typeof replyToEmailId === 'string' && isValidUuid(replyToEmailId)
+    ? replyToEmailId
+    : undefined
+
+  if (!resolvedReplyId && /^re:/i.test(subjectText.trim())) {
+    const baseSubject = subjectText.replace(/^re:\s*/i, '').trim()
+    const { data: bySubject } = await db
+      .from('emails')
+      .select('id, message_id, subject')
+      .eq('user_id', userId)
+      .eq('mail_folder', 'inbox')
+      .ilike('subject', baseSubject)
+      .order('received_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (bySubject?.id) resolvedReplyId = bySubject.id
+  }
+
+  if (resolvedReplyId) {
+    const { data: orig } = await db
+      .from('emails')
+      .select('message_id')
+      .eq('id', resolvedReplyId)
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (orig?.message_id) inReplyToHeader = orig.message_id
+  }
+
   try {
     const info = await transporter.sendMail({
       from: `"${account.smtp_user.split('@')[0]}" <${account.smtp_user}>`,
@@ -109,6 +151,8 @@ export async function POST(req: NextRequest) {
       subject: subjectText,
       text: finalText,
       html: finalHtml,
+      inReplyTo: inReplyToHeader,
+      references: inReplyToHeader,
       attachments: mailAttachments.length > 0 ? mailAttachments : undefined,
     })
 
@@ -152,7 +196,23 @@ export async function POST(req: NextRequest) {
     })
     if (logError) console.error('[Mail] Log envoi:', logError.message)
 
-    return Response.json({ success: true, data: { sent: true, from: account.smtp_user } })
+    const smartLabelUpdates: Array<{ emailId: string; labels: unknown }> = []
+    if (resolvedReplyId) {
+      const labels = await applySmartLabels(db, userId, resolvedReplyId, 'replied')
+      if (labels) smartLabelUpdates.push({ emailId: resolvedReplyId, labels })
+    }
+    const forwardId = typeof forwardFromEmailId === 'string' && isValidUuid(forwardFromEmailId)
+      ? forwardFromEmailId
+      : undefined
+    if (forwardId) {
+      const labels = await applySmartLabels(db, userId, forwardId, 'forwarded')
+      if (labels) smartLabelUpdates.push({ emailId: forwardId, labels })
+    }
+
+    return Response.json({
+      success: true,
+      data: { sent: true, from: account.smtp_user, smartLabelUpdates },
+    })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Erreur inconnue'
     return Response.json({ success: false, error: `Erreur envoi: ${message}` }, { status: 500 })

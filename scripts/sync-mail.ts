@@ -65,10 +65,14 @@ async function main() {
     return
   }
 
+  const { runSmartLabelPeriodicChecks } = await import('../src/lib/mail-smart-labels')
+
   console.log('\n── Sync multi-dossiers (inbox, sent, drafts, trash, spam, custom) ──')
   for (const userId of userIds) {
     console.log(`\n── Sync user ${userId} ──`)
     try {
+      const smartBefore = await runSmartLabelPeriodicChecks(db, userId)
+      if (smartBefore > 0) console.log(`Smart labels (pré-sync): ${smartBefore} mail(s) mis à jour`)
       const result = await syncUserMailAccounts(userId, { backfill: true, quick: false })
       console.log(
         `fetched=${result.fetched} stored=${result.stored} updated=${result.updated} errors=${result.errors}`,

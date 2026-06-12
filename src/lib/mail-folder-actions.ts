@@ -6,6 +6,8 @@ import {
 import { imapDeleteMessages, imapMoveMessage, imapSetSeen } from '@/lib/mail-imap-actions'
 import type { MailAccountWithId } from '@/lib/mail-sync'
 import type { MailFolderKind } from '@/lib/mail-folders'
+import { applySmartLabelsToLabels } from '@/lib/mail-smart-labels'
+import type { EmailLabel } from '@/types/database'
 
 export type FolderTarget =
   | { kind: Exclude<MailFolderKind, 'custom'> }
@@ -39,7 +41,7 @@ export async function moveEmailOnServer(
 ): Promise<{ success: boolean; error?: string }> {
   const { data: email, error } = await db
     .from('emails')
-    .select('id, mail_folder, imap_uid, imap_mailbox, original_folder')
+    .select('id, mail_folder, imap_uid, imap_mailbox, original_folder, labels')
     .eq('id', emailId)
     .eq('user_id', userId)
     .single()
@@ -70,6 +72,10 @@ export async function moveEmailOnServer(
   }
   if (nextFolder === 'inbox' || nextFolder === 'sent' || nextFolder === 'custom') {
     patch.original_folder = null
+  }
+
+  if (nextFolder !== 'inbox') {
+    patch.labels = applySmartLabelsToLabels(email.labels as EmailLabel[] | undefined, 'moved')
   }
 
   await db.from('emails').update(patch).eq('id', emailId)

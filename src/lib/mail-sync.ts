@@ -687,6 +687,14 @@ export async function syncMailAccount(
       .eq('id', account.id)
   }
 
+  try {
+    const { runSmartLabelPeriodicChecks } = await import('@/lib/mail-smart-labels')
+    const smartUpdated = await runSmartLabelPeriodicChecks(db, userId)
+    if (smartUpdated > 0) result.updated += smartUpdated
+  } catch (err) {
+    console.error('[Mail sync] smart labels:', err)
+  }
+
   return result
 }
 
