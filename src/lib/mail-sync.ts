@@ -164,15 +164,13 @@ async function saveEmailAttachments(
   return meta
 }
 
-/** Courrier sortant pour filtrer l'inbox (pas pour le dossier IMAP Envoyés). */
+/** Courrier sortant : expéditeur = compte utilisateur (copie Gandi dans INBOX). */
 function isOwnOutboundForInboxSkip(
   fromAddress: string,
-  toAddress: string,
+  _toAddress: string,
   aliases: string[],
 ): boolean {
-  if (!isFromAccountAddress(fromAddress, aliases)) return false
-  const toLower = toAddress.toLowerCase()
-  return !aliases.some(a => toLower.includes(a))
+  return isFromAccountAddress(fromAddress, aliases)
 }
 
 /** Corrige les mails reçus classés en Envoyés (ou envoyés bloqués en Inbox). */
@@ -209,9 +207,6 @@ async function reconcileMailFolders(
   for (const row of misInbox ?? []) {
     const from = row.from_address ?? ''
     if (!isFromAccountAddress(from, aliases)) continue
-    const toLower = (row.to_address ?? '').toLowerCase()
-    const looksOutbound = !aliases.some(a => toLower.includes(a))
-    if (!looksOutbound) continue
     await db.from('emails').update({ mail_folder: 'sent' }).eq('id', row.id)
     fixed++
   }
@@ -285,7 +280,7 @@ async function quickInsertFromEnvelope(
     insertPayload.source_member_name = source.sourceMemberName ?? null
   }
 
-  let { data: inserted, error } = await db.from('emails').insert(insertPayload).select('id').single()
+  let { data: inserted, error } = await db.from('emails').insert(insertPayload).select('id, mail_folder').single()
 
   if (error) {
     const fallback: Record<string, unknown> = { ...insertPayload }
@@ -298,17 +293,50 @@ async function quickInsertFromEnvelope(
     delete fallback.mail_folder
     delete fallback.imap_uid
     delete fallback.imap_mailbox
-    const retry = await db.from('emails').insert(fallback).select('id').single()
+    const retry = await db.from('emails').insert(fallback).select('id, mail_folder').single()
     inserted = retry.data
     error = retry.error
   }
 
   if (error) {
-    if (isDuplicateKeyError(error.message)) return null
+    if (isDuplicateKeyError(error.message)) {
+      const { data: existing } = await db
+        .from('emails')
+        .select('id, mail_folder')
+        .eq('user_id', userId)
+        .eq('message_id', messageId)
+        .maybeSingle()
+      if (existing?.id) {
+        return await mergeDuplicateEnvelopeRow(db, existing, mailFolder, envelope, mailboxPath)
+      }
+      return null
+    }
     console.error('[Mail sync] quick insert:', error.message, envelope.subject)
     return null
   }
   return inserted?.id ?? null
+}
+
+async function mergeDuplicateEnvelopeRow(
+  db: SupabaseClient,
+  existing: { id: string; mail_folder?: string | null },
+  mailFolder: DbMailFolder,
+  envelope: ImapEnvelopeMeta,
+  mailboxPath: string,
+): Promise<string> {
+  if (existing.mail_folder === 'sent' && mailFolder === 'inbox') {
+    return existing.id
+  }
+  const patch: Record<string, unknown> = {
+    is_read: envelope.isRead,
+    imap_uid: envelope.uid,
+    imap_mailbox: mailboxPath,
+  }
+  if (mailFolder === 'sent' || existing.mail_folder !== 'sent') {
+    patch.mail_folder = mailFolder
+  }
+  await db.from('emails').update(patch).eq('id', existing.id)
+  return existing.id
 }
 
 async function enrichEmailFromSource(
@@ -395,11 +423,18 @@ async function syncOneMailboxFolder(
   }
 
   const addrAliases = aliases ?? accountAliases(account)
-  const candidates = job.skipOutbound
-    ? envelopes.filter(e => !isOwnOutboundForInboxSkip(e.from, e.to, addrAliases))
-    : envelopes
+  const candidates: ImapEnvelopeMeta[] = []
   if (job.skipOutbound) {
-    result.skippedOutbound = (result.skippedOutbound ?? 0) + (envelopes.length - candidates.length)
+    for (const envelope of envelopes) {
+      if (isOwnOutboundForInboxSkip(envelope.from, envelope.to, addrAliases)) {
+        result.skippedOutbound = (result.skippedOutbound ?? 0) + 1
+        console.log(`[Mail sync/inbox] Mail ignoré (expéditeur = moi) : ${envelope.subject}`)
+        continue
+      }
+      candidates.push(envelope)
+    }
+  } else {
+    candidates.push(...envelopes)
   }
 
   const existingIds = await loadExistingMessageIds(
@@ -464,6 +499,16 @@ async function syncOneMailboxFolder(
       .eq('user_id', userId)
       .eq('message_id', mid)
       .maybeSingle()
+
+    // Ne pas reclasser Envoyés → Inbox (copie Gandi dans INBOX)
+    if (job.folder === 'inbox' && existingRow?.mail_folder === 'sent') {
+      await db.from('emails')
+        .update({ is_read: envelope.isRead })
+        .eq('user_id', userId)
+        .eq('message_id', mid)
+      result.updated++
+      continue
+    }
 
     // Ne pas reclasser un mail inbox reçu via collision Message-ID
     if (
