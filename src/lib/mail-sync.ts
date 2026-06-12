@@ -347,8 +347,9 @@ async function enrichEmailFromSource(
 
   try {
     const { processEmailTenderLink } = await import('@/lib/tender-documents')
-    const inReplyTo = parsed.inReplyTo
-      ? (typeof parsed.inReplyTo === 'string' ? parsed.inReplyTo : parsed.inReplyTo.text ?? '')
+    const rawInReplyTo = parsed.inReplyTo as string | { text?: string } | undefined
+    const inReplyTo = rawInReplyTo
+      ? (typeof rawInReplyTo === 'string' ? rawInReplyTo : rawInReplyTo.text ?? '')
       : null
     await processEmailTenderLink(db, userId, emailId, { inReplyTo })
   } catch (err) {
