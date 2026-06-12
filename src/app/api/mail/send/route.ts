@@ -59,7 +59,11 @@ export async function POST(req: NextRequest) {
     auth: { user: account.smtp_user, pass: account.smtp_pass },
   })
 
-  const bodyHtml = bodyText.replace(/\n/g, '<br>')
+  const looksLikeHtml = /<[a-z][\s\S]*>/i.test(bodyText.trim())
+  const bodyHtml = looksLikeHtml ? bodyText : bodyText.replace(/\n/g, '<br>')
+  const bodyPlain = looksLikeHtml
+    ? bodyText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+    : bodyText
 
   let finalHtml: string
   let finalText: string
@@ -67,21 +71,23 @@ export async function POST(req: NextRequest) {
   if (signatureText) {
     const isHtmlSignature = signatureText.includes('<') && signatureText.includes('>')
     const bodyBlock = bodyText.trim()
-      ? `<div style="font-family: DM Sans, Arial, sans-serif; font-size: 14px; color: #374151; line-height: 1.6;">${bodyHtml}</div>`
+      ? looksLikeHtml
+        ? `<div style="font-family: DM Sans, Arial, sans-serif; font-size: 14px; color: #374151; line-height: 1.6;">${bodyHtml}</div>`
+        : `<div style="font-family: DM Sans, Arial, sans-serif; font-size: 14px; color: #374151; line-height: 1.6;">${bodyHtml}</div>`
       : ''
 
     if (isHtmlSignature) {
       finalHtml = `${bodyBlock}${bodyBlock ? '<br>' : ''}<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;">${signatureText}`
-      finalText = bodyText.trim()
-        ? `${bodyText}\n\n--\n${signatureText.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`
+      finalText = bodyPlain.trim()
+        ? `${bodyPlain}\n\n--\n${signatureText.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`
         : signatureText.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
     } else {
       finalHtml = `${bodyBlock}${bodyBlock ? '<br>' : ''}<hr style="border: none; border-top: 1px solid var(--border); margin: 16px 0;"><div style="font-family: DM Sans, Arial, sans-serif; font-size: 12px; color: #6b7280; line-height: 1.6;">${signatureText.replace(/\n/g, '<br>')}</div>`
-      finalText = bodyText.trim() ? `${bodyText}\n\n--\n${signatureText}` : signatureText
+      finalText = bodyPlain.trim() ? `${bodyPlain}\n\n--\n${signatureText}` : signatureText
     }
   } else {
     finalHtml = `<div style="font-family: DM Sans, Arial, sans-serif; font-size: 14px; color: #374151; line-height: 1.6;">${bodyHtml}</div>`
-    finalText = bodyText
+    finalText = bodyPlain
   }
 
   const mailAttachments = Array.isArray(rawAttachments)

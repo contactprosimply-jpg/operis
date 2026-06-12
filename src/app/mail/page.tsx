@@ -11,7 +11,7 @@ import { Spinner } from '@/components/ui'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
 import MailFolderSidebar from '@/components/mail/MailFolderSidebar'
-import MailComposePanel from '@/components/mail/MailComposePanel'
+import MailComposePopup from '@/components/mail/MailComposePopup'
 import MailToolbar from '@/components/mail/MailToolbar'
 import { MailListSkeleton, MailBodySkeleton } from '@/components/mail/MailSkeletons'
 import {
@@ -145,6 +145,8 @@ export default function MailPage() {
   const [autoSyncStatus, setAutoSyncStatus] = useState<string | null>(null)
   const [selected, setSelected] = useState<Email | null>(null)
   const [composing, setComposing] = useState(false)
+  const [composeMinimized, setComposeMinimized] = useState(false)
+  const [draftSavedLabel, setDraftSavedLabel] = useState<string | null>(null)
   const [compose, setCompose] = useState({ to: '', cc: '', bcc: '', subject: '', body: '' })
   const [attachments, setAttachments] = useState<File[]>([])
   const [sending, setSending] = useState(false)
@@ -181,8 +183,6 @@ export default function MailPage() {
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [mobileShowDetail, setMobileShowDetail] = useState(false)
-  const bodyRef = useRef<HTMLTextAreaElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const emailCountRef = useRef(0)
   const selectedIdRef = useRef<string | null>(null)
   const syncInProgressRef = useRef(false)
@@ -695,19 +695,40 @@ export default function MailPage() {
     if (target && selected?.id !== target.id) selectEmail(target)
   }, [pendingEmailId, emails, selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const closeCompose = () => {
+    setComposing(false)
+    setComposeMinimized(false)
+    setSendError(null)
+    setDraftSavedLabel(null)
+  }
+
   const openCompose = (prefill: Partial<typeof compose> = {}, draftId?: string) => {
     setCompose({ to: '', cc: '', bcc: '', subject: '', body: '', ...prefill })
     setAttachments([])
     setActiveDraftId(draftId ?? newDraftId())
+    setServerDraftId(null)
     setComposing(true)
+    setComposeMinimized(false)
     setSendError(null)
-    setSelected(null)
-    if (isMobile) setMobileShowDetail(true)
+    setDraftSavedLabel(null)
+  }
+
+  const handleDeleteDraft = () => {
+    if (userId && activeDraftId) removeDraft(userId, activeDraftId)
+    if (serverDraftId) {
+      void authFetch(`/api/mail/drafts?id=${encodeURIComponent(serverDraftId)}`, {
+        method: 'DELETE',
+      }).catch(() => {})
+    }
+    setActiveDraftId(null)
+    setServerDraftId(null)
+    closeCompose()
+    if (folder === 'drafts' && userId) setDrafts(loadDrafts(userId))
   }
 
   useEffect(() => {
     if (!composing || !userId || !activeDraftId) return
-    const t = setTimeout(() => {
+    const interval = setInterval(() => {
       upsertDraft(userId, {
         id: activeDraftId,
         to: compose.to,
@@ -716,7 +737,7 @@ export default function MailPage() {
         body: compose.body,
         updatedAt: new Date().toISOString(),
       })
-      authFetch('/api/mail/drafts', {
+      void authFetch('/api/mail/drafts', {
         method: 'POST',
         body: JSON.stringify({
           id: serverDraftId,
@@ -728,11 +749,14 @@ export default function MailPage() {
         }),
       })
         .then(r => r.json())
-        .then(d => { if (d.success && d.data?.id) setServerDraftId(d.data.id) })
+        .then(d => {
+          if (d.success && d.data?.id) setServerDraftId(d.data.id)
+          setDraftSavedLabel('Brouillon enregistré')
+        })
         .catch(() => {})
       if (folder === 'drafts') setDrafts(loadDrafts(userId))
     }, 30000)
-    return () => clearTimeout(t)
+    return () => clearInterval(interval)
   }, [composing, compose, activeDraftId, userId, folder, serverDraftId])
 
   const openReply = (email: Email) => {
@@ -755,7 +779,10 @@ export default function MailPage() {
 
   const handleSend = async () => {
     const sig = getSignatureData()
-    const bodyWithoutSig = stripSignatureFromBody(compose.body, sig.text)
+    const isHtmlBody = compose.body.includes('<') && compose.body.includes('>')
+    const bodyWithoutSig = isHtmlBody
+      ? compose.body.trim()
+      : stripSignatureFromBody(compose.body, sig.text)
     if (!compose.to || !compose.subject) {
       setSendError('Destinataire et sujet requis')
       return
@@ -797,8 +824,7 @@ export default function MailPage() {
       if (data.success) {
         if (userId && activeDraftId) removeDraft(userId, activeDraftId)
         setActiveDraftId(null)
-        setComposing(false)
-        if (isMobile) setMobileShowDetail(false)
+        closeCompose()
         void runSync(true, true)
         showToast('Email envoyé ✓')
       } else setSendError(data.error)
@@ -1535,31 +1561,8 @@ export default function MailPage() {
 
       {/* Panel détail / compositeur */}
       {showPanel && (
-        <div style={{ flex: 1, overflow: composing ? 'hidden' : 'auto', background: 'var(--bg-primary)', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          {composing ? (
-            <MailComposePanel
-              isMobile={isMobile}
-              compose={compose}
-              onChange={patch => setCompose(c => ({ ...c, ...patch }))}
-              onSend={handleSend}
-              onCancel={() => {
-                setComposing(false)
-                if (isMobile) setMobileShowDetail(false)
-              }}
-              onAttach={() => fileInputRef.current?.click()}
-              attachments={attachments}
-              onRemoveAttachment={i => setAttachments(a => a.filter((_, j) => j !== i))}
-              sending={sending}
-              sendError={sendError}
-              isListening={isListening}
-              onToggleSpeech={toggleSpeech}
-              bodyRef={bodyRef}
-              fileInputRef={fileInputRef}
-              onFilesSelected={files => setAttachments(a => [...a, ...Array.from(files)])}
-              signaturePreview={signaturePreview}
-              SignaturePreview={SignaturePreview}
-            />
-          ) : selected ? (
+        <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg-primary)', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {selected ? (
             <div style={{ padding: isMobile ? '12px 14px' : '20px 24px' }}>
               {isMobile && (
                 <button onClick={() => { setMobileShowDetail(false); setSelected(null) }} style={{
@@ -1778,6 +1781,29 @@ export default function MailPage() {
       )}
 
       </div>
+
+      {composing && (
+        <MailComposePopup
+          compose={compose}
+          onChange={patch => setCompose(c => ({ ...c, ...patch }))}
+          onSend={handleSend}
+          onClose={closeCompose}
+          onMinimize={() => setComposeMinimized(true)}
+          onRestore={() => setComposeMinimized(false)}
+          onDelete={handleDeleteDraft}
+          attachments={attachments}
+          onRemoveAttachment={i => setAttachments(a => a.filter((_, j) => j !== i))}
+          onAddAttachments={files => setAttachments(a => [...a, ...files])}
+          sending={sending}
+          sendError={sendError}
+          draftSavedLabel={draftSavedLabel}
+          isListening={isListening}
+          onToggleSpeech={toggleSpeech}
+          minimized={composeMinimized}
+          signaturePreview={signaturePreview}
+          SignaturePreview={SignaturePreview}
+        />
+      )}
 
       {linkModalOpen && (
         <div

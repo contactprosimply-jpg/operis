@@ -57,6 +57,19 @@
 .animate-scale { animation: scaleIn 0.22s ease forwards; }
 .animate-slide-up { animation: slideUp 0.35s ease forwards; }
 
+.mail-compose-body:empty::before {
+  content: attr(data-placeholder);
+  color: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+
+.mail-compose-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 8px 0;
+}
+
 * { box-sizing: border-box; }
 
 html, body {
