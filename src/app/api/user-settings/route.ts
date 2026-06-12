@@ -23,20 +23,7 @@ const PATCH_KEYS: Array<keyof UserSettings> = [
   'mail_signature_enabled',
 ]
 
-export async function GET(req: NextRequest) {
-  const userId = await getUserFromRequest(req)
-  if (!userId) return unauthorized()
-
-  const db = createAdminClient()
-  const settings = await getUserSettings(db, userId)
-  return Response.json({ success: true, data: settings })
-}
-
-export async function PATCH(req: NextRequest) {
-  const userId = await getUserFromRequest(req)
-  if (!userId) return unauthorized()
-
-  const body = await req.json() as Record<string, unknown>
+function parsePatch(body: Record<string, unknown>): Partial<UserSettings> {
   const patch: Partial<UserSettings> = {}
 
   for (const key of PATCH_KEYS) {
@@ -54,22 +41,58 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  return patch
+}
+
+export async function GET(req: NextRequest) {
+  const userId = await getUserFromRequest(req)
+  if (!userId) return unauthorized()
+
+  const db = createAdminClient()
+  const settings = await getUserSettings(db, userId)
+  return Response.json({ success: true, data: settings })
+}
+
+export async function PATCH(req: NextRequest) {
+  const userId = await getUserFromRequest(req)
+  if (!userId) return unauthorized()
+
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null
+  if (!body || typeof body !== 'object') {
+    return Response.json({ success: false, error: 'Corps JSON requis' }, { status: 400 })
+  }
+
+  const patch = parsePatch(body)
   if (!Object.keys(patch).length) {
     return Response.json({ success: false, error: 'Aucun champ à mettre à jour' }, { status: 400 })
   }
 
   const db = createAdminClient()
-  const settings = await upsertUserSettings(db, userId, patch)
-  return Response.json({ success: true, data: settings })
+  try {
+    const result = await upsertUserSettings(db, userId, patch)
+    return Response.json({
+      success: true,
+      data: result.settings,
+      persisted: result.persisted,
+      warning: result.warning,
+    })
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Erreur sauvegarde'
+    console.error('[user-settings] PATCH:', message)
+    return Response.json({ success: false, error: message }, { status: 500 })
+  }
 }
 
 export async function PUT(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
-  const body = await req.json() as Record<string, unknown>
-  const patch: Partial<UserSettings> = { ...DEFAULT_USER_SETTINGS }
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null
+  if (!body || typeof body !== 'object') {
+    return Response.json({ success: false, error: 'Corps JSON requis' }, { status: 400 })
+  }
 
+  const patch: Partial<UserSettings> = { ...DEFAULT_USER_SETTINGS }
   for (const key of PATCH_KEYS) {
     if (body[key] === undefined) continue
     if (key === 'mail_signature') {
@@ -82,6 +105,17 @@ export async function PUT(req: NextRequest) {
   }
 
   const db = createAdminClient()
-  const settings = await upsertUserSettings(db, userId, patch)
-  return Response.json({ success: true, data: settings })
+  try {
+    const result = await upsertUserSettings(db, userId, patch)
+    return Response.json({
+      success: true,
+      data: result.settings,
+      persisted: result.persisted,
+      warning: result.warning,
+    })
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Erreur sauvegarde'
+    console.error('[user-settings] PUT:', message)
+    return Response.json({ success: false, error: message }, { status: 500 })
+  }
 }

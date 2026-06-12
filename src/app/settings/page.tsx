@@ -545,7 +545,10 @@ function SettingsPageContent() {
         )}
 
         {tab === 'mail-relaunch' && (
-          <MailRelancesSection onSaved={() => show('✓ Paramètres enregistrés')} />
+          <MailRelancesSection
+            onSaved={() => show('✓ Paramètres enregistrés')}
+            onError={msg => show(`Erreur : ${msg}`)}
+          />
         )}
 
         {/* SIGNATURE */}
