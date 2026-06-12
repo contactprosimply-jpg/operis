@@ -21,6 +21,8 @@ import type { OrganizationPayload } from '@/lib/organization'
 import { useAuth } from '@/components/AuthProvider'
 import TenderOriginBadge from '@/components/TenderOriginBadge'
 import { getTenderAssigneeLabel, getTenderCreatorLabel } from '@/lib/tender-member-label'
+import { groupEmailsByThread, computeThreadStatus, THREAD_STATUS_META } from '@/lib/email-threading'
+import { AO_CATEGORY_BADGE, type AoKeywordCategory } from '@/lib/ao-email-analysis'
 
 const STATUS_OPTIONS = [
   { value: 'nouveau', label: 'Nouveau', color: '#60a5fa' },
@@ -1257,7 +1259,7 @@ export default function TenderDetailPage() {
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-            Fil de mails ({linkedEmails.length})
+            Fils de conversation ({groupEmailsByThread(linkedEmails as Email[]).length})
           </div>
           <Button variant="ghost" onClick={openTenderMailCompose}>✉️ Envoyer un mail</Button>
         </div>
@@ -1266,69 +1268,109 @@ export default function TenderDetailPage() {
             Aucun mail lié — liez un email ou envoyez un message depuis cet AO
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-            {[...linkedEmails]
-              .sort((a: { received_at?: string }, b: { received_at?: string }) =>
-                new Date(a.received_at ?? 0).getTime() - new Date(b.received_at ?? 0).getTime(),
-              )
-              .map((em: Email & { attachments?: Array<{ filename: string }> }, idx: number) => {
-                const isSent = em.mail_folder === 'sent'
-                const party = isSent ? em.to_address : em.from_address
-                const attCount = em.has_attachments
-                  ? (Array.isArray(em.attachments) ? em.attachments.length : 1)
-                  : 0
-                return (
-                  <div
-                    key={em.id}
-                    style={{
-                      padding: '14px 16px',
-                      background: 'var(--bg-secondary)',
-                      borderTop: idx > 0 ? '1px solid var(--border)' : 'none',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#021246' }}>
-                        {isSent ? '📤 Envoyé' : '📥 Reçu'}
-                      </span>
-                      <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
-                        {em.received_at ? new Date(em.received_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                      </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {groupEmailsByThread(linkedEmails as Email[]).map(thread => {
+              const threadStatus = computeThreadStatus(thread.emails, 5)
+              const statusMeta = THREAD_STATUS_META[threadStatus]
+              return (
+                <div
+                  key={thread.threadId}
+                  style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}
+                >
+                  <div style={{
+                    padding: '12px 16px', background: 'rgba(2,18,70,0.06)',
+                    borderBottom: '1px solid var(--border)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap',
+                  }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#021246' }}>
+                      {statusMeta.emoji} FIL — {thread.title}
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                      {isSent ? 'À :' : 'De :'} <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{party ?? '—'}</span>
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>
-                      {em.subject || '(sans objet)'}
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <button
-                        type="button"
-                        onClick={() => openMailViewer(em.id)}
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, padding: '3px 10px', borderRadius: 12,
+                      background: `${statusMeta.color}18`, color: statusMeta.color,
+                      border: `1px solid ${statusMeta.color}40`,
+                    }}>
+                      {statusMeta.label}
+                    </span>
+                  </div>
+                  {thread.emails.map((em: Email & { attachments?: Array<{ filename: string }> }, idx: number) => {
+                    const isSent = em.mail_folder === 'sent'
+                    const party = isSent ? em.to_address : em.from_address
+                    const attCount = em.has_attachments
+                      ? (Array.isArray(em.attachments) ? em.attachments.length : 1)
+                      : 0
+                    const cat = em.ao_detection_category as AoKeywordCategory | undefined
+                    const catBadge = cat && AO_CATEGORY_BADGE[cat]
+                    return (
+                      <div
+                        key={em.id}
                         style={{
-                          fontSize: 11, color: '#021246', background: 'rgba(2,18,70,0.08)',
-                          border: '1px solid rgba(2,18,70,0.2)', borderRadius: 6, padding: '4px 12px',
-                          cursor: 'pointer', fontFamily: 'DM Sans, system-ui', fontWeight: 600,
+                          padding: '14px 16px', background: 'var(--bg-secondary)',
+                          borderTop: idx > 0 ? '1px solid var(--border)' : 'none',
                         }}
                       >
-                        Voir le mail
-                      </button>
-                      {attCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => openMailViewer(em.id)}
-                          style={{
-                            fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)',
-                            border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6, padding: '4px 10px',
-                            cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
-                          }}
-                        >
-                          📎 {attCount > 1 ? `${attCount} pièces jointes` : (em.attachments?.[0]?.filename ?? 'Pièce jointe')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: '#021246' }}>
+                            {isSent ? '📤' : '📥'}
+                            {em.received_at ? new Date(em.received_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '—'}
+                          </span>
+                          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{party ?? '—'}</span>
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
+                          {em.subject || '(sans objet)'}
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                          {(em.is_ao_related || em.is_ao) && (
+                            <span style={{
+                              fontSize: 9, padding: '2px 8px', borderRadius: 4,
+                              background: 'rgba(59,127,246,0.12)', color: '#3B7FE8',
+                              border: '1px solid rgba(59,127,246,0.25)',
+                            }}>
+                              🏷️ Détecté : AO
+                              {em.ao_detection_score ? ` [Score: ${em.ao_detection_score}]` : ''}
+                            </span>
+                          )}
+                          {catBadge && cat !== 'detection' && (
+                            <span style={{
+                              fontSize: 9, padding: '2px 8px', borderRadius: 4,
+                              background: `${catBadge.color}18`, color: catBadge.color,
+                            }}>
+                              {catBadge.emoji} {catBadge.label}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            onClick={() => openMailViewer(em.id)}
+                            style={{
+                              fontSize: 11, color: '#021246', background: 'rgba(2,18,70,0.08)',
+                              border: '1px solid rgba(2,18,70,0.2)', borderRadius: 6, padding: '4px 12px',
+                              cursor: 'pointer', fontWeight: 600,
+                            }}
+                          >
+                            Voir
+                          </button>
+                          {attCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => openMailViewer(em.id)}
+                              style={{
+                                fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)',
+                                border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6, padding: '4px 10px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              📎 {em.attachments?.[0]?.filename ?? `${attCount} PJ`}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

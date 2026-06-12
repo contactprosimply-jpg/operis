@@ -49,6 +49,7 @@ export interface UserSettings {
   label_en_retard_delay_days: number
   mail_signature: string
   mail_signature_enabled: boolean
+  ao_detection_threshold: number
   updated_at?: string
 }
 
@@ -137,6 +138,13 @@ export interface Email {
   is_read: boolean
   is_ao: boolean
   ao_score: number
+  is_ao_related?: boolean
+  ao_detection_score?: number
+  ao_detection_category?: string | null
+  ao_detection_keywords?: string[]
+  thread_id?: string | null
+  in_reply_to?: string | null
+  references_ids?: string[]
   tender_id: string | null
   attachments?: EmailAttachment[]
   has_attachments?: boolean

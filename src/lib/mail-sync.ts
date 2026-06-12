@@ -18,6 +18,15 @@ import {
 import { isEmailIncompleteForEnrich } from '@/lib/mail-enrich'
 import { attachmentMetaOnly, persistAttachmentsToStorage } from '@/lib/mail-storage'
 import { createAdminClient } from '@/lib/supabase'
+import { analyzeEmailWithKeywords, aoDetectionDisplayScore } from '@/lib/ao-email-analysis'
+import type { AoKeyword } from '@/lib/ao-keywords'
+import { listAoKeywords } from '@/lib/ao-keywords'
+import { autoLinkEmailToTender, applyTenderStatusFromDetection } from '@/lib/ao-tender-auto-link'
+import {
+  parseInReplyToHeader,
+  parseReferencesHeader,
+  resolveEmailThreadId,
+} from '@/lib/email-threading'
 import { detectAo } from '@/services/aoDetector.service'
 import { isDuplicateKeyError, normalizeMessageId } from '@/lib/mail-message-id'
 import { customFolderLabel } from '@/lib/mail-folders'
@@ -339,6 +348,62 @@ async function mergeDuplicateEnvelopeRow(
   return existing.id
 }
 
+type AoSyncContext = {
+  keywords: AoKeyword[]
+  threshold: number
+}
+
+async function applyKeywordDetectionToEmail(
+  db: SupabaseClient,
+  userId: string,
+  emailId: string,
+  subject: string,
+  body: string,
+  ctx: AoSyncContext,
+  messageId: string,
+  parsedHeaders?: { inReplyTo?: string; references?: string[] },
+): Promise<{ tenderId: string | null; isAo: boolean }> {
+  const analysis = analyzeEmailWithKeywords(subject, body, ctx.keywords, ctx.threshold)
+  const displayScore = aoDetectionDisplayScore(analysis.score)
+
+  const thread = await resolveEmailThreadId(db, userId, {
+    messageId,
+    subject,
+    inReplyTo: parsedHeaders?.inReplyTo ?? null,
+    referencesIds: parsedHeaders?.references ?? [],
+  })
+
+  const updates: Record<string, unknown> = {
+    is_ao_related: analysis.isAO,
+    ao_detection_score: analysis.score,
+    ao_detection_category: analysis.dominantCategory,
+    ao_detection_keywords: analysis.matchedKeywords,
+    is_ao: analysis.isAO,
+    ao_score: displayScore,
+    thread_id: thread.threadId,
+    in_reply_to: thread.inReplyTo,
+    references_ids: thread.referencesIds,
+  }
+
+  await db.from('emails').update(updates).eq('id', emailId)
+
+  const { data: row } = await db
+    .from('emails')
+    .select('tender_id')
+    .eq('id', emailId)
+    .maybeSingle()
+
+  let tenderId = row?.tender_id as string | null
+  if (!tenderId && analysis.isAO) {
+    tenderId = await autoLinkEmailToTender(db, userId, emailId, subject)
+  }
+  if (tenderId && analysis.dominantCategory) {
+    await applyTenderStatusFromDetection(db, userId, tenderId, analysis.dominantCategory)
+  }
+
+  return { tenderId, isAo: analysis.isAO }
+}
+
 async function enrichEmailFromSource(
   db: SupabaseClient,
   userId: string,
@@ -347,26 +412,43 @@ async function enrichEmailFromSource(
   envelope: ImapEnvelopeMeta,
   account: MailAccountWithId,
   result: MailSyncResult,
+  aoCtx?: AoSyncContext,
+  mailboxPath?: string,
 ) {
   const parsed = await simpleParser(source)
-  const detection = detectAo(parsed.subject ?? envelope.subject, parsed.text ?? '')
+  const subject = parsed.subject ?? envelope.subject
+  const bodyText = parsed.text ?? ''
   const { attachments, hasAttachments } = parseMailAttachments(parsed.attachments)
+  const messageId = envelopeMessageId(userId, envelope, mailboxPath ?? 'INBOX')
+  const inReplyTo = parseInReplyToHeader(parsed.inReplyTo ?? undefined)
+  const referencesIds = parseReferencesHeader(parsed.references as string | string[] | undefined)
 
   const updates: Record<string, unknown> = {
-    subject: parsed.subject ?? envelope.subject,
+    subject,
     from_address: addressObjectText(parsed.from) || envelope.from,
     to_address: addressObjectText(parsed.to) || envelope.to,
-    body_text: parsed.text ?? '',
+    body_text: bodyText,
     body_html: parsed.html || '',
     received_at: (parsed.date ?? envelope.date).toISOString(),
-    is_ao: detection.isAo,
-    ao_score: detection.score,
     is_read: envelope.isRead,
   }
 
   await db.from('emails').update(updates).eq('id', emailId)
 
-  if (detection.isAo) result.aoDetected++
+  if (aoCtx) {
+    const { isAo } = await applyKeywordDetectionToEmail(
+      db, userId, emailId, subject, bodyText, aoCtx, messageId,
+      { inReplyTo: inReplyTo ?? undefined, references: referencesIds },
+    )
+    if (isAo) result.aoDetected++
+  } else {
+    const detection = detectAo(subject, bodyText)
+    await db.from('emails').update({
+      is_ao: detection.isAo,
+      ao_score: detection.score,
+    }).eq('id', emailId)
+    if (detection.isAo) result.aoDetected++
+  }
 
   let savedAttachments = attachments
   if (hasAttachments) {
@@ -408,6 +490,7 @@ async function syncOneMailboxFolder(
   quick: boolean,
   source?: MailSourceMeta,
   aliases?: string[],
+  aoCtx?: AoSyncContext,
 ) {
   const fetchOpts = {
     sinceDays: job.sinceDays,
@@ -544,7 +627,7 @@ async function syncOneMailboxFolder(
         const emailId = newEmailMap.get(uid)
         if (!envelope || !emailId) continue
         try {
-          await enrichEmailFromSource(db, userId, emailId, raw, envelope, account, result)
+          await enrichEmailFromSource(db, userId, emailId, raw, envelope, account, result, aoCtx, job.mailboxPath)
         } catch (err) {
           result.errors++
           console.error(`[Mail sync/${job.folder}] enrich:`, err)
@@ -606,7 +689,7 @@ async function syncOneMailboxFolder(
             const item = byUid.get(uid)
             if (!item) continue
             try {
-              await enrichEmailFromSource(db, userId, item.emailId, raw, item.envelope, account, result)
+              await enrichEmailFromSource(db, userId, item.emailId, raw, item.envelope, account, result, aoCtx, item.mailboxPath)
               result.updated++
             } catch (err) {
               result.errors++
@@ -647,6 +730,22 @@ export async function syncMailAccount(
   const reconciled = await reconcileMailFolders(db, userId, aliases)
   if (reconciled > 0) result.updated += reconciled
 
+  const { getUserSettings } = await import('@/lib/user-settings')
+  const userSettings = await getUserSettings(db, userId)
+  let keywords = await listAoKeywords(db)
+  if (!keywords.length) {
+    const { DEFAULT_AO_KEYWORDS } = await import('@/lib/ao-keywords')
+    keywords = DEFAULT_AO_KEYWORDS.map((k, i) => ({
+      ...k,
+      id: `default-${i}`,
+      created_at: new Date().toISOString(),
+    }))
+  }
+  const aoCtx: AoSyncContext = {
+    keywords,
+    threshold: userSettings.ao_detection_threshold ?? 5,
+  }
+
   const mailboxes = await resolveSpecialMailboxes(account)
   result.mailboxes = mailboxes
   if (!mailboxes.sent) {
@@ -681,6 +780,7 @@ export async function syncMailAccount(
         quick,
         source,
         aliases,
+        aoCtx,
       )
     } catch (err) {
       result.errors++
@@ -706,6 +806,7 @@ export async function syncMailAccount(
         quick,
         source,
         aliases,
+        aoCtx,
       )
     } catch (err) {
       result.errors++
@@ -724,18 +825,23 @@ export async function syncMailAccount(
   if (backfill && !quick) {
     const { data: recentEmails } = await db
       .from('emails')
-      .select('id, subject, body_text, is_ao, ao_score')
+      .select('id, subject, body_text, message_id, is_ao, ao_score, is_ao_related')
       .eq('user_id', userId)
       .order('received_at', { ascending: false })
       .limit(150)
 
     for (const em of recentEmails ?? []) {
-      const d = detectAo(em.subject ?? '', em.body_text ?? '')
-      if (d.isAo !== em.is_ao || d.score !== em.ao_score) {
-        await db.from('emails').update({ is_ao: d.isAo, ao_score: d.score }).eq('id', em.id)
-        if (d.isAo && !em.is_ao) result.aoDetected++
-        result.updated++
-      }
+      const subject = em.subject ?? ''
+      const body = em.body_text ?? ''
+      const analysis = analyzeEmailWithKeywords(subject, body, aoCtx.keywords, aoCtx.threshold)
+      const displayScore = aoDetectionDisplayScore(analysis.score)
+      const changed = analysis.isAO !== em.is_ao_related || displayScore !== em.ao_score
+      if (!changed && em.is_ao === analysis.isAO) continue
+
+      const mid = em.message_id ?? `backfill-${em.id}`
+      await applyKeywordDetectionToEmail(db, userId, em.id, subject, body, aoCtx, mid)
+      if (analysis.isAO && !em.is_ao_related) result.aoDetected++
+      result.updated++
     }
   }
 

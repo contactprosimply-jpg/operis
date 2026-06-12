@@ -12,6 +12,7 @@ export interface UserSettings {
   label_en_retard_delay_days: number
   mail_signature: string
   mail_signature_enabled: boolean
+  ao_detection_threshold: number
   updated_at?: string
 }
 
@@ -26,6 +27,7 @@ export const DEFAULT_USER_SETTINGS: Omit<UserSettings, 'user_id'> = {
   label_en_retard_delay_days: 3,
   mail_signature: '',
   mail_signature_enabled: true,
+  ao_detection_threshold: 5,
 }
 
 export type UserSettingsSaveResult = {
@@ -81,6 +83,7 @@ function normalizeSettings(userId: string, raw: Partial<UserSettings> | null): U
     label_en_retard_delay_days: Number(raw?.label_en_retard_delay_days ?? DEFAULT_USER_SETTINGS.label_en_retard_delay_days),
     mail_signature: raw?.mail_signature ?? DEFAULT_USER_SETTINGS.mail_signature,
     mail_signature_enabled: raw?.mail_signature_enabled ?? DEFAULT_USER_SETTINGS.mail_signature_enabled,
+    ao_detection_threshold: Number(raw?.ao_detection_threshold ?? DEFAULT_USER_SETTINGS.ao_detection_threshold),
     updated_at: raw?.updated_at,
   }
 }
@@ -98,6 +101,7 @@ function settingsRow(userId: string, settings: UserSettings, updatedAt: string) 
     label_en_retard_delay_days: settings.label_en_retard_delay_days,
     mail_signature: settings.mail_signature,
     mail_signature_enabled: settings.mail_signature_enabled,
+    ao_detection_threshold: settings.ao_detection_threshold,
     updated_at: updatedAt,
   }
 }

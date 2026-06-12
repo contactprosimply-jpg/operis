@@ -21,6 +21,7 @@ const PATCH_KEYS: Array<keyof UserSettings> = [
   'label_en_retard_delay_days',
   'mail_signature',
   'mail_signature_enabled',
+  'ao_detection_threshold',
 ]
 
 function parsePatch(body: Record<string, unknown>): Partial<UserSettings> {

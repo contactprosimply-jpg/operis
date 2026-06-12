@@ -16,6 +16,7 @@ import {
 import { Spinner } from '@/components/ui'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
+import { AO_CATEGORY_BADGE, type AoKeywordCategory } from '@/lib/ao-email-analysis'
 import MailFolderSidebar from '@/components/mail/MailFolderSidebar'
 import MailComposePopup from '@/components/mail/MailComposePopup'
 import MailToolbar from '@/components/mail/MailToolbar'
@@ -1756,8 +1757,25 @@ export default function MailPage() {
                               {PRIORITY_STYLES[email.priority].label}
                             </span>
                           )}
-                          {email.is_ao && (
-                            <span style={{ fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 5px', borderRadius: 4, background: 'rgba(245,158,11,0.1)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.2)' }}>AO</span>
+                          {(email.is_ao_related || email.is_ao) && (
+                            <span style={{
+                              fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 5px', borderRadius: 4,
+                              background: 'rgba(59,127,246,0.12)', color: '#3B7FE8',
+                              border: '1px solid rgba(59,127,246,0.25)',
+                            }}>
+                              📋 AO détecté
+                            </span>
+                          )}
+                          {email.ao_detection_category && email.ao_detection_category !== 'detection' && (
+                            <span style={{
+                              fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 5px', borderRadius: 4,
+                              background: `${AO_CATEGORY_BADGE[email.ao_detection_category as AoKeywordCategory]?.color ?? '#3B7FE8'}18`,
+                              color: AO_CATEGORY_BADGE[email.ao_detection_category as AoKeywordCategory]?.color ?? '#3B7FE8',
+                              border: `1px solid ${AO_CATEGORY_BADGE[email.ao_detection_category as AoKeywordCategory]?.color ?? '#3B7FE8'}40`,
+                            }}>
+                              {AO_CATEGORY_BADGE[email.ao_detection_category as AoKeywordCategory]?.emoji ?? '⚡'}
+                              {AO_CATEGORY_BADGE[email.ao_detection_category as AoKeywordCategory]?.label ?? email.ao_detection_category}
+                            </span>
                           )}
                           {email.tender_id && (
                             <span style={{ fontSize: 9, fontFamily: 'DM Mono, monospace', padding: '1px 5px', borderRadius: 4, background: 'rgba(34,197,94,0.1)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)' }}>Lié</span>
