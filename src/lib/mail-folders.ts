@@ -59,3 +59,62 @@ export interface CachedImapFolder {
   path: string
   name: string
 }
+
+export interface FolderTreeNode {
+  path: string
+  name: string
+  children: FolderTreeNode[]
+}
+
+export function detectPathDelimiter(paths: string[]): '.' | '/' {
+  let slashCount = 0
+  let dotCount = 0
+  for (const p of paths) {
+    slashCount += (p.match(/\//g) ?? []).length
+    dotCount += (p.match(/\./g) ?? []).length
+  }
+  return slashCount > dotCount ? '/' : '.'
+}
+
+function parentPath(path: string, delimiter: string): string | null {
+  const idx = path.lastIndexOf(delimiter)
+  if (idx <= 0) return null
+  return path.slice(0, idx)
+}
+
+export function buildFolderTree(folders: CachedImapFolder[]): FolderTreeNode[] {
+  if (!folders.length) return []
+  const paths = folders.map(f => f.path)
+  const delimiter = detectPathDelimiter(paths)
+  const pathSet = new Set(paths)
+  const nodeMap = new Map<string, FolderTreeNode>()
+
+  for (const f of folders) {
+    nodeMap.set(f.path, { path: f.path, name: f.name, children: [] })
+  }
+
+  const roots: FolderTreeNode[] = []
+  for (const f of folders) {
+    const node = nodeMap.get(f.path)!
+    const parent = parentPath(f.path, delimiter)
+    if (parent && pathSet.has(parent) && nodeMap.has(parent)) {
+      nodeMap.get(parent)!.children.push(node)
+    } else {
+      roots.push(node)
+    }
+  }
+
+  const sortNodes = (nodes: FolderTreeNode[]) => {
+    nodes.sort((a, b) => a.name.localeCompare(b.name, 'fr'))
+    nodes.forEach(n => sortNodes(n.children))
+  }
+  sortNodes(roots)
+  return roots
+}
+
+export function joinMailboxPath(parent: string | undefined, name: string, delimiter: string): string {
+  const safeName = name.trim().replace(/[./\\]/g, '_')
+  if (!parent?.trim()) return safeName
+  const delim = parent.endsWith(delimiter) ? '' : delimiter
+  return `${parent}${delim}${safeName}`
+}

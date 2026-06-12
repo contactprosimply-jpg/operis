@@ -48,6 +48,53 @@ export async function imapDeleteMessages(
   }
 }
 
+export async function imapCreateMailbox(
+  config: MailAccountConfig,
+  path: string,
+): Promise<{ path: string; created: boolean } | null> {
+  const client = createImapClient(config)
+  await client.connect()
+  try {
+    const result = await client.mailboxCreate(path)
+    return { path: result.path, created: result.created }
+  } catch (e) {
+    console.error('[IMAP create mailbox]', e)
+    return null
+  } finally {
+    try { await client.logout() } catch { /* ignore */ }
+  }
+}
+
+export async function imapDeleteMailbox(
+  config: MailAccountConfig,
+  path: string,
+): Promise<boolean> {
+  const client = createImapClient(config)
+  await client.connect()
+  try {
+    await client.mailboxDelete(path)
+    return true
+  } catch (e) {
+    console.error('[IMAP delete mailbox]', e)
+    return false
+  } finally {
+    try { await client.logout() } catch { /* ignore */ }
+  }
+}
+
+export async function imapGetMailboxDelimiter(config: MailAccountConfig): Promise<string> {
+  const client = createImapClient(config)
+  await client.connect()
+  try {
+    const mailboxes = await client.list()
+    return mailboxes[0]?.delimiter ?? '.'
+  } catch {
+    return '.'
+  } finally {
+    try { await client.logout() } catch { /* ignore */ }
+  }
+}
+
 export async function imapSetSeen(
   config: MailAccountConfig,
   mailboxPath: string,

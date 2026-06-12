@@ -168,6 +168,7 @@ export default function MailPage() {
   const [drafts, setDrafts] = useState<MailDraft[]>([])
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null)
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false)
+  const [folderActionLoading, setFolderActionLoading] = useState(false)
   const [mailAccountEmail, setMailAccountEmail] = useState<string | null>(null)
   const [inboxUnread, setInboxUnread] = useState(0)
   const [filter, setFilter] = useState<MailFilter>('all')
@@ -249,6 +250,18 @@ export default function MailPage() {
     return () => document.removeEventListener('click', close)
   }, [contextMenuEmailId])
 
+  const refreshFolders = useCallback(() => {
+    authFetch('/api/mail/folders')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setCustomFolders(data.data?.customFolders ?? [])
+          setMailAccounts(data.data?.accounts ?? [])
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     if (!ready || !userId) return
     authFetch('/api/mail/accounts')
@@ -261,16 +274,31 @@ export default function MailPage() {
       })
       .catch(() => {})
     setDrafts(loadDrafts(userId))
-    authFetch('/api/mail/folders')
-      .then(r => r.json())
-      .then(data => {
-        if (data.success) {
-          setCustomFolders(data.data?.customFolders ?? [])
-          setMailAccounts(data.data?.accounts ?? [])
-        }
+    refreshFolders()
+  }, [ready, userId, session?.user?.email, refreshFolders])
+
+  const handleCreateFolder = useCallback(async (name: string, parentPath?: string) => {
+    setFolderActionLoading(true)
+    try {
+      const res = await authFetch('/api/mail/folders', {
+        method: 'POST',
+        body: JSON.stringify({ name, parentPath }),
       })
-      .catch(() => {})
-  }, [ready, userId, session?.user?.email])
+      const data = await res.json()
+      if (data.success) {
+        setCustomFolders(data.data?.customFolders ?? [])
+        showToast(`Dossier « ${name} » créé`)
+        return true
+      }
+      showToast(data.error ?? 'Erreur création dossier')
+      return false
+    } catch {
+      showToast('Erreur création dossier')
+      return false
+    } finally {
+      setFolderActionLoading(false)
+    }
+  }, [])
 
   const handleSelectionChange = (sel: MailFolderSelection) => {
     setFolderSelection(sel)
@@ -477,6 +505,31 @@ export default function MailPage() {
     }
   }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, folder, folderSelection, searchQuery, listListFilter])
 
+  const handleDeleteFolder = useCallback(async (path: string) => {
+    setFolderActionLoading(true)
+    try {
+      const res = await authFetch(`/api/mail/folders?path=${encodeURIComponent(path)}`, {
+        method: 'DELETE',
+      })
+      const data = await res.json()
+      if (data.success) {
+        setCustomFolders(data.data?.customFolders ?? [])
+        if (folderSelection.kind === 'custom' && folderSelection.customPath === path) {
+          handleSelectionChange({ kind: 'inbox' })
+        }
+        showToast('Dossier supprimé')
+        return true
+      }
+      showToast(data.error ?? 'Erreur suppression dossier')
+      return false
+    } catch {
+      showToast('Erreur suppression dossier')
+      return false
+    } finally {
+      setFolderActionLoading(false)
+    }
+  }, [folderSelection])
+
   const runSync = useCallback(async (silent = true, force = false) => {
     if (syncInProgressRef.current && !force) return
     if (force && syncAbortRef.current) {
@@ -537,6 +590,7 @@ export default function MailPage() {
             setAutoSyncStatus(`Synchro : ${syncTime}`)
           }
         }
+        refreshFolders()
         await loadEmails(true)
         const sid = selectedIdRef.current
         if (sid && (updated > 0 || stored > 0)) await loadEmailDetail(sid, true)
@@ -573,7 +627,7 @@ export default function MailPage() {
       if (syncAbortRef.current === abortController) syncAbortRef.current = null
       setSyncing(false)
     }
-  }, [loadEmails, loadEmailDetail])
+  }, [loadEmails, loadEmailDetail, refreshFolders, folder, userId])
 
   useEffect(() => {
     if (!ready) return
@@ -1217,6 +1271,9 @@ export default function MailPage() {
           onSelectionChange={handleSelectionChange}
           badges={folderBadges}
           customFolders={customFolders}
+          onCreateFolder={handleCreateFolder}
+          onDeleteFolder={handleDeleteFolder}
+          folderActionLoading={folderActionLoading}
         />
       )}
 
