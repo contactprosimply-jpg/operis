@@ -34,6 +34,8 @@ import {
   htmlToPlainText,
   type MailDraft,
 } from '@/lib/mail-drafts'
+import { extractEmailAddress } from '@/lib/mail-attachments'
+import type { OperisContact } from '@/lib/contacts'
 
 const MAIL_LIST_PAGE_SIZE = 30
 
@@ -183,6 +185,8 @@ export default function MailPage() {
   const listScrollRef = useRef<HTMLDivElement>(null)
   const listHasMoreRef = useRef(false)
   const loadingMoreRef = useRef(false)
+  const contactsRef = useRef<OperisContact[] | null>(null)
+  const [senderFavorite, setSenderFavorite] = useState(false)
   selectedIdRef.current = selected?.id ?? null
   emailsRef.current = emails
 
@@ -840,6 +844,78 @@ export default function MailPage() {
     setComposeMinimized(false)
     setSendError(null)
     setDraftSavedLabel(null)
+  }
+
+  useEffect(() => {
+    if (!composing || !userId) return
+    if (contactsRef.current?.length) return
+    void authFetch('/api/contacts')
+      .then(r => r.json())
+      .then(d => { if (d.success) contactsRef.current = d.data ?? [] })
+      .catch(() => {})
+  }, [composing, userId])
+
+  useEffect(() => {
+    const isSentView = folder === 'sent' || selected?.mail_folder === 'sent'
+    if (!selected || isSentView) {
+      setSenderFavorite(false)
+      return
+    }
+    const senderEmail = extractEmailAddress(selected.from_address ?? '')
+    if (!senderEmail) {
+      setSenderFavorite(false)
+      return
+    }
+    const fromCache = contactsRef.current?.find(c => c.email === senderEmail)
+    if (fromCache) {
+      setSenderFavorite(fromCache.is_favorite)
+      return
+    }
+    void authFetch('/api/contacts')
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          contactsRef.current = d.data ?? []
+          const c = contactsRef.current?.find(x => x.email === senderEmail)
+          setSenderFavorite(c?.is_favorite ?? false)
+        }
+      })
+      .catch(() => {})
+  }, [selected, folder])
+
+  const toggleSenderFavorite = async () => {
+    const isSentView = folder === 'sent' || selected?.mail_folder === 'sent'
+    if (!selected || isSentView) return
+    const senderEmail = extractEmailAddress(selected.from_address ?? '')
+    if (!senderEmail) return
+    const next = !senderFavorite
+    setSenderFavorite(next)
+    if (contactsRef.current) {
+      const c = contactsRef.current.find(x => x.email === senderEmail)
+      if (c) c.is_favorite = next
+    }
+    try {
+      const res = await authFetch('/api/contacts', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          email: senderEmail,
+          is_favorite: next,
+          from_address: selected.from_address,
+        }),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        setSenderFavorite(!next)
+        if (contactsRef.current) {
+          const c = contactsRef.current.find(x => x.email === senderEmail)
+          if (c) c.is_favorite = !next
+        }
+        showToast('Erreur favori')
+      }
+    } catch {
+      setSenderFavorite(!next)
+      showToast('Erreur favori')
+    }
   }
 
   const pendingComposeDoneRef = useRef(false)
@@ -1905,10 +1981,26 @@ export default function MailPage() {
                 return (
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
-                      <div style={{ fontSize: isMobile ? 14 : 15, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.35, minWidth: 0, flex: 1 }}>
-                        <span style={{ color: '#021246', fontWeight: 700 }}>{party}</span>
-                        <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> — </span>
-                        <span>{selected.subject || '(sans objet)'}</span>
+                      <div style={{ fontSize: isMobile ? 14 : 15, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.35, minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {!isSentView && (
+                          <button
+                            type="button"
+                            title={senderFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                            onClick={() => void toggleSenderFavorite()}
+                            style={{
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              fontSize: 18, lineHeight: 1, padding: 0, flexShrink: 0,
+                              color: senderFavorite ? '#fbbf24' : 'var(--text-muted)',
+                            }}
+                          >
+                            {senderFavorite ? '★' : '☆'}
+                          </button>
+                        )}
+                        <span style={{ minWidth: 0 }}>
+                          <span style={{ color: '#021246', fontWeight: 700 }}>{party}</span>
+                          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> — </span>
+                          <span>{selected.subject || '(sans objet)'}</span>
+                        </span>
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                         <button type="button" title="Répondre" onClick={() => openReply(selected)} style={detailIconBtn}>↩</button>
@@ -2039,6 +2131,8 @@ export default function MailPage() {
           onToggleSpeech={toggleSpeech}
           minimized={composeMinimized}
           signaturePreview={signaturePreview}
+          contactsRef={contactsRef}
+          tenderId={composeTenderId}
         />
       )}
 

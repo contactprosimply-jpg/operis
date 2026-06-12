@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Spinner } from '@/components/ui'
 import { getSignatureData } from '@/lib/email-signature'
+import ContactRecipientField from '@/components/mail/ContactRecipientField'
+import type { OperisContact } from '@/lib/contacts'
 
 const POPUP_WIDTH = 560
 const POPUP_HEIGHT = 520
@@ -54,6 +56,9 @@ export default function MailComposePopup({
   onToggleSpeech,
   minimized,
   signaturePreview,
+  contactsRef,
+  tenderId,
+  suggestedTenderContacts,
 }: {
   compose: { to: string; cc: string; bcc: string; subject: string; body: string }
   onChange: (patch: Partial<{ to: string; cc: string; bcc: string; subject: string; body: string }>) => void
@@ -78,6 +83,9 @@ export default function MailComposePopup({
   onToggleSpeech: () => void
   minimized: boolean
   signaturePreview: { html: string }
+  contactsRef?: React.RefObject<OperisContact[] | null>
+  tenderId?: string | null
+  suggestedTenderContacts?: OperisContact[]
 }) {
   const [showCc, setShowCc] = useState(false)
   const [showBcc, setShowBcc] = useState(false)
@@ -521,13 +529,25 @@ export default function MailComposePopup({
 
       <div style={{ padding: '0 14px', flexShrink: 0 }}>
           <FieldRow label="À">
-            <input
-              type="text"
-              value={compose.to}
-              onChange={e => onChange({ to: e.target.value })}
-              placeholder="email@exemple.com, plusieurs…"
-              style={inputStyle}
-            />
+            {contactsRef ? (
+              <ContactRecipientField
+                value={compose.to}
+                onChange={v => onChange({ to: v })}
+                placeholder="email@exemple.com, plusieurs…"
+                contactsRef={contactsRef}
+                tenderId={tenderId}
+                suggestedTenderContacts={suggestedTenderContacts}
+                inputStyle={inputStyle}
+              />
+            ) : (
+              <input
+                type="text"
+                value={compose.to}
+                onChange={e => onChange({ to: e.target.value })}
+                placeholder="email@exemple.com, plusieurs…"
+                style={inputStyle}
+              />
+            )}
           </FieldRow>
           {!showCc && !showBcc && (
             <div style={{ padding: '4px 0 8px', display: 'flex', gap: 12 }}>
@@ -537,24 +557,46 @@ export default function MailComposePopup({
           )}
           {showCc && (
             <FieldRow label="Cc">
-              <input
-                type="text"
-                value={compose.cc}
-                onChange={e => onChange({ cc: e.target.value })}
-                placeholder="copies (virgules)"
-                style={inputStyle}
-              />
+              {contactsRef ? (
+                <ContactRecipientField
+                  value={compose.cc}
+                  onChange={v => onChange({ cc: v })}
+                  placeholder="copies (virgules)"
+                  contactsRef={contactsRef}
+                  tenderId={tenderId}
+                  inputStyle={inputStyle}
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={compose.cc}
+                  onChange={e => onChange({ cc: e.target.value })}
+                  placeholder="copies (virgules)"
+                  style={inputStyle}
+                />
+              )}
             </FieldRow>
           )}
           {showBcc && (
             <FieldRow label="Cci">
-              <input
-                type="text"
-                value={compose.bcc}
-                onChange={e => onChange({ bcc: e.target.value })}
-                placeholder="cci (virgules)"
-                style={inputStyle}
-              />
+              {contactsRef ? (
+                <ContactRecipientField
+                  value={compose.bcc}
+                  onChange={v => onChange({ bcc: v })}
+                  placeholder="cci (virgules)"
+                  contactsRef={contactsRef}
+                  tenderId={tenderId}
+                  inputStyle={inputStyle}
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={compose.bcc}
+                  onChange={e => onChange({ bcc: e.target.value })}
+                  placeholder="cci (virgules)"
+                  style={inputStyle}
+                />
+              )}
             </FieldRow>
           )}
           <FieldRow label="Objet">

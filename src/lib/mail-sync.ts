@@ -355,6 +355,13 @@ async function enrichEmailFromSource(
   } catch (err) {
     console.error('[mail-sync] tender link after enrich', emailId, err)
   }
+
+  try {
+    const { upsertContactsFromSyncedEmail } = await import('@/lib/contacts')
+    await upsertContactsFromSyncedEmail(db, userId, emailId)
+  } catch (err) {
+    console.error('[mail-sync] contacts upsert after enrich', emailId, err)
+  }
 }
 
 async function syncOneMailboxFolder(

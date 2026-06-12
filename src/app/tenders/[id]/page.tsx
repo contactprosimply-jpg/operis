@@ -10,6 +10,11 @@ import ConsultationComposeModal, { type ConsultationComposePayload } from '@/com
 import MailComposePopup from '@/components/mail/MailComposePopup'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import type { Email } from '@/types/database'
+import {
+  type OperisContact,
+  formatContactAddress,
+  pickPrimaryTenderContact,
+} from '@/lib/contacts'
 import SpeechMicButton from '@/components/SpeechMicButton'
 import { memberDisplayName } from '@/lib/family'
 import type { OrganizationPayload } from '@/lib/organization'
@@ -199,6 +204,8 @@ export default function TenderDetailPage() {
   const [mailAttachments, setMailAttachments] = useState<File[]>([])
   const [mailSending, setMailSending] = useState(false)
   const [mailSendError, setMailSendError] = useState<string | null>(null)
+  const contactsRef = useRef<OperisContact[] | null>(null)
+  const [suggestedTenderContacts, setSuggestedTenderContacts] = useState<OperisContact[]>([])
   const [exportingPdf, setExportingPdf] = useState(false)
   const [retainingQuote, setRetainingQuote] = useState<string | null>(null)
   const [linkedEmails, setLinkedEmails] = useState<any[]>([])
@@ -333,8 +340,30 @@ export default function TenderDetailPage() {
     return inbound?.from_address ?? ''
   }
 
-  const openTenderMailCompose = () => {
-    const recipient = guessTenderMailRecipient()
+  const loadContactsForTender = useCallback(async () => {
+    if (contactsRef.current?.length) return
+    try {
+      const res = await authFetch('/api/contacts')
+      const data = await res.json()
+      if (data.success) contactsRef.current = data.data ?? []
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => {
+    void loadContactsForTender()
+  }, [loadContactsForTender])
+
+  const openTenderMailCompose = async () => {
+    await loadContactsForTender()
+    const all = contactsRef.current ?? []
+    const linked = all.filter(c => c.ao_ids?.includes(id))
+    const primary = pickPrimaryTenderContact(all, id)
+    const recipient = primary
+      ? formatContactAddress(primary)
+      : guessTenderMailRecipient()
+    setSuggestedTenderContacts(
+      primary ? linked.filter(c => c.id !== primary.id) : linked,
+    )
     const subjectPrefix = tender?.title ? `Re: ${tender.title}` : ''
     setMailCompose({ to: recipient, cc: '', bcc: '', subject: subjectPrefix, body: '' })
     setMailAttachments([])
@@ -1754,6 +1783,9 @@ export default function TenderDetailPage() {
           onToggleSpeech={() => {}}
           minimized={mailComposeMinimized}
           signaturePreview={getSignatureData()}
+          contactsRef={contactsRef}
+          tenderId={id}
+          suggestedTenderContacts={suggestedTenderContacts}
         />
       )}
     </div>

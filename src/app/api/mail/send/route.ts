@@ -14,6 +14,7 @@ import {
   persistMailLinkedDocuments,
   resolveTenderIdFromSubject,
 } from '@/lib/tender-documents'
+import { upsertContactsFromOutboundSend } from '@/lib/contacts'
 export const maxDuration = 30
 
 async function resolveTenderIdForSend(
@@ -281,6 +282,22 @@ export async function POST(req: NextRequest) {
         await persistMailLinkedDocuments(db, userId, resolvedTenderId, sentEmailId)
       } catch (docErr) {
         console.error('[Mail] persist tender docs from sent:', docErr)
+      }
+    }
+
+    if (!sentEmailError) {
+      try {
+        await upsertContactsFromOutboundSend(
+          db,
+          userId,
+          toText,
+          typeof cc === 'string' ? cc : undefined,
+          typeof bcc === 'string' ? bcc : undefined,
+          resolvedTenderId,
+          sentAt,
+        )
+      } catch (contactErr) {
+        console.error('[Mail] contacts upsert outbound:', contactErr)
       }
     }
 

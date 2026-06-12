@@ -24,6 +24,19 @@ export interface Profile {
   created_at: string
 }
 
+export interface Contact {
+  id: string
+  user_id: string
+  email: string
+  name: string | null
+  company: string | null
+  is_favorite: boolean
+  ao_ids: string[]
+  email_count: number
+  last_contacted_at: string | null
+  created_at: string
+}
+
 export interface Tender {
   id: string
   user_id: string
