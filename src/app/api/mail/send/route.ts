@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   const { to, subject, body, cc, bcc, signature, attachments: rawAttachments } = rawBody
 
   const bodyText = clampString(body, 100000) ?? ''
-  const signatureText = (clampString(signature, 10000) ?? '').trim()
+  const signatureText = (clampString(signature, 100000) ?? '').trim()
   const subjectText = clampString(subject, 200) ?? ''
   const toText = typeof to === 'string' ? to.slice(0, 500) : ''
 

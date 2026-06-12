@@ -79,57 +79,29 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function isEmptyComposeHtml(html: string): boolean {
+  const text = html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\s/g, '')
+  return !text
+}
+
+function appendSignatureToBody(body: string, signatureHtml: string, signatureText: string): string {
+  if (!signatureHtml.trim()) return body
+  const isHtml = (body.includes('<') && body.includes('>')) || signatureHtml.includes('<')
+  if (isHtml) {
+    const block = body.trim()
+    const hr = '<hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0">'
+    return block ? `${block}${hr}${signatureHtml}` : signatureHtml
+  }
+  const plainSig = signatureText.replace(/^\n\n--\n/, '').trim()
+  return body.trim() ? `${body.trim()}\n\n--\n${plainSig}` : plainSig
+}
+
 async function fileToBase64(file: File): Promise<string> {
   const buffer = await file.arrayBuffer()
   const bytes = new Uint8Array(buffer)
   let binary = ''
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
   return btoa(binary)
-}
-
-function SignaturePreview({ html }: { html: string }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null)
-
-  useEffect(() => {
-    const iframe = iframeRef.current
-    if (!iframe) return
-    const doc = iframe.contentDocument
-    if (!doc) return
-    doc.open()
-    doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-      body { margin: 0; padding: 16px 20px; background: #fff; }
-      img { max-width: 100%; height: auto; }
-      table { max-width: 100%; }
-    </style></head><body>${html}</body></html>`)
-    doc.close()
-    const resize = () => {
-      const h = doc.documentElement.scrollHeight || doc.body.scrollHeight
-      iframe.style.height = `${Math.max(100, h + 8)}px`
-    }
-    resize()
-    const t = setTimeout(resize, 150)
-    return () => clearTimeout(t)
-  }, [html])
-
-  return (
-    <div style={{ flexShrink: 0 }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
-        fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase',
-        letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace',
-      }}>
-        <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-        <span>Signature</span>
-        <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-      </div>
-      <div style={{
-        background: '#fff', borderRadius: 10, border: '1px solid var(--border-hi)',
-        overflow: 'hidden', boxShadow: 'var(--shadow-sm)',
-      }}>
-        <iframe ref={iframeRef} title="Aperçu signature" style={{ width: '100%', border: 'none', display: 'block', minHeight: 100 }} />
-      </div>
-    </div>
-  )
 }
 
 export default function MailPage() {
@@ -922,21 +894,23 @@ export default function MailPage() {
 
   const handleSend = async () => {
     const sig = getSignatureData()
+    const signatureHtml = sig.html.trim()
     const isHtmlBody = compose.body.includes('<') && compose.body.includes('>')
-    const bodyWithoutSig = isHtmlBody
+    let bodyWithoutSig = isHtmlBody
       ? compose.body.trim()
       : stripSignatureFromBody(compose.body, sig.text)
+    if (isHtmlBody && isEmptyComposeHtml(bodyWithoutSig)) bodyWithoutSig = ''
+    const bodyForSend = appendSignatureToBody(bodyWithoutSig, signatureHtml, sig.text)
     if (!compose.to || !compose.subject) {
       setSendError('Destinataire et sujet requis')
       return
     }
-    if (!bodyWithoutSig.trim() && !sig.html.trim()) {
+    if (!bodyForSend.trim()) {
       setSendError('Message ou signature requis')
       return
     }
     setSending(true); setSendError(null)
     try {
-      const signatureHtml = sig.html.trim()
       const attachmentPayload = await Promise.all(
         attachments.map(async f => ({
           filename: f.name,
@@ -958,8 +932,7 @@ export default function MailPage() {
           cc: compose.cc || undefined,
           bcc: compose.bcc || undefined,
           subject: compose.subject,
-          body: bodyWithoutSig,
-          signature: signatureHtml,
+          body: bodyForSend,
           attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined,
         }),
       })
@@ -1946,7 +1919,6 @@ export default function MailPage() {
           onToggleSpeech={toggleSpeech}
           minimized={composeMinimized}
           signaturePreview={signaturePreview}
-          SignaturePreview={SignaturePreview}
         />
       )}
 

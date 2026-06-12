@@ -54,7 +54,6 @@ export default function MailComposePopup({
   onToggleSpeech,
   minimized,
   signaturePreview,
-  SignaturePreview,
 }: {
   compose: { to: string; cc: string; bcc: string; subject: string; body: string }
   onChange: (patch: Partial<{ to: string; cc: string; bcc: string; subject: string; body: string }>) => void
@@ -79,7 +78,6 @@ export default function MailComposePopup({
   onToggleSpeech: () => void
   minimized: boolean
   signaturePreview: { html: string }
-  SignaturePreview: React.ComponentType<{ html: string }>
 }) {
   const [showCc, setShowCc] = useState(false)
   const [showBcc, setShowBcc] = useState(false)
@@ -87,7 +85,7 @@ export default function MailComposePopup({
   const [fileChoice, setFileChoice] = useState<FileChoiceState>(null)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [expanded, setExpanded] = useState(false)
-  const [signatureExpanded, setSignatureExpanded] = useState(false)
+  const [signatureExpanded, setSignatureExpanded] = useState(true)
   const [customSize, setCustomSize] = useState<{ w: number; h: number } | null>(null)
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
   const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null)
@@ -656,11 +654,9 @@ export default function MailComposePopup({
                 {signatureExpanded ? '▲' : '▼'}
               </span>
             </button>
-            {signatureExpanded && (
-              <div style={{ maxHeight: 120, overflow: 'auto', padding: '0 8px 8px' }}>
-                <SignaturePreview html={signaturePreview.html} />
-              </div>
-            )}
+            <div style={{ padding: '0 8px 8px' }}>
+              <ComposeSignaturePreview html={signaturePreview.html} expanded={signatureExpanded} />
+            </div>
           </div>
         )}
       </div>
@@ -757,6 +753,25 @@ export default function MailComposePopup({
       {closeConfirmDialog}
     </>,
     document.body,
+  )
+}
+
+function ComposeSignaturePreview({ html, expanded }: { html: string; expanded: boolean }) {
+  return (
+    <div
+      style={{
+        background: '#ffffff',
+        borderRadius: 8,
+        border: '1px solid rgba(255,255,255,0.12)',
+        padding: '8px 12px',
+        maxHeight: expanded ? 140 : 60,
+        overflow: expanded ? 'auto' : 'hidden',
+        fontSize: 12,
+        color: '#374151',
+        lineHeight: 1.5,
+      }}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   )
 }
 
