@@ -114,6 +114,8 @@ export default function MailPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const pendingEmailId = searchParams.get('email')
+  const pendingCompose = searchParams.get('compose') === '1'
+  const pendingTenderId = searchParams.get('tender_id') ?? ''
   const { session, ready } = useAuth()
   const [emails, setEmails] = useState<Email[]>([])
   const [loading, setLoading] = useState(true)
@@ -150,6 +152,8 @@ export default function MailPage() {
     emailId: string
     action: 'reply' | 'forward'
   } | null>(null)
+  const [composeTenderId, setComposeTenderId] = useState<string | null>(null)
+  const [linkTenderSearch, setLinkTenderSearch] = useState('')
   const [folderActionLoading, setFolderActionLoading] = useState(false)
   const [mailAccountEmail, setMailAccountEmail] = useState<string | null>(null)
   const [inboxUnread, setInboxUnread] = useState(0)
@@ -791,6 +795,7 @@ export default function MailPage() {
   const closeCompose = () => {
     setCloseConfirmOpen(false)
     setComposeSource(null)
+    setComposeTenderId(null)
     setComposing(false)
     setComposeMinimized(false)
     setSendError(null)
@@ -820,17 +825,38 @@ export default function MailPage() {
     prefill: Partial<typeof compose> = {},
     draftId?: string,
     source?: { emailId: string; action: 'reply' | 'forward' },
+    tenderId?: string | null,
   ) => {
+    const inheritedTenderId = tenderId
+      ?? (source ? emails.find(e => e.id === source.emailId)?.tender_id : null)
+      ?? composeTenderId
     setCompose({ to: '', cc: '', bcc: '', subject: '', body: '', ...prefill })
     setAttachments([])
     setActiveDraftId(draftId ?? newDraftId())
     setServerDraftId(null)
     setComposeSource(source ?? null)
+    setComposeTenderId(inheritedTenderId ?? null)
     setComposing(true)
     setComposeMinimized(false)
     setSendError(null)
     setDraftSavedLabel(null)
   }
+
+  const pendingComposeDoneRef = useRef(false)
+  useEffect(() => {
+    if (!pendingCompose || !ready || pendingComposeDoneRef.current) return
+    pendingComposeDoneRef.current = true
+    const toParam = searchParams.get('to')
+    openCompose(
+      {
+        to: toParam ?? '',
+        subject: searchParams.get('subject') ?? '',
+      },
+      undefined,
+      undefined,
+      pendingTenderId || null,
+    )
+  }, [pendingCompose, pendingTenderId, ready, searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDeleteDraft = () => {
     if (userId && activeDraftId) removeDraft(userId, activeDraftId)
@@ -973,6 +999,7 @@ export default function MailPage() {
           body: bodyForSend,
           replyToEmailId: composeSource?.action === 'reply' ? composeSource.emailId : undefined,
           forwardFromEmailId: composeSource?.action === 'forward' ? composeSource.emailId : undefined,
+          tenderId: composeTenderId ?? undefined,
           attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined,
         }),
       })
@@ -1099,6 +1126,7 @@ export default function MailPage() {
 
   const openLinkTenderModal = async (email?: Email) => {
     if (email) setSelected(email)
+    setLinkTenderSearch('')
     setLinkModalOpen(true)
     try {
       const res = await authFetch('/api/tenders')
@@ -1117,6 +1145,16 @@ export default function MailPage() {
   const handleLinkToTender = async (tenderId: string, email?: Email) => {
     const target = email ?? selected
     if (!target) return
+    const previousTenderId = target.tender_id
+    const previousLabels = target.labels
+    const optimisticPatch = {
+      tender_id: tenderId,
+      is_ao: true,
+      ao_score: Math.max(target.ao_score ?? 0, 60),
+    }
+    setEmails(prev => prev.map(e => e.id === target.id ? { ...e, ...optimisticPatch } : e))
+    if (selected?.id === target.id) setSelected(prev => prev ? { ...prev, ...optimisticPatch } : prev)
+    setLinkModalOpen(false)
     setLinkingTender(true)
     try {
       const res = await authFetch('/api/mail/emails', {
@@ -1132,10 +1170,19 @@ export default function MailPage() {
         }
         setEmails(prev => prev.map(e => e.id === target.id ? { ...e, ...patch } : e))
         if (selected?.id === target.id) setSelected(prev => prev ? { ...prev, ...patch } : prev)
-        setLinkModalOpen(false)
         showToast('Email lié à l\'AO')
-      } else showToast(`Erreur : ${data.error}`)
-    } catch { showToast('Erreur liaison') }
+      } else {
+        const rollback = { tender_id: previousTenderId, labels: previousLabels }
+        setEmails(prev => prev.map(e => e.id === target.id ? { ...e, ...rollback } : e))
+        if (selected?.id === target.id) setSelected(prev => prev ? { ...prev, ...rollback } : prev)
+        showToast(`Erreur : ${data.error}`)
+      }
+    } catch {
+      const rollback = { tender_id: previousTenderId, labels: previousLabels }
+      setEmails(prev => prev.map(e => e.id === target.id ? { ...e, ...rollback } : e))
+      if (selected?.id === target.id) setSelected(prev => prev ? { ...prev, ...rollback } : prev)
+      showToast('Erreur liaison')
+    }
     setLinkingTender(false)
   }
 
@@ -1777,7 +1824,7 @@ export default function MailPage() {
                 }}>← Retour</button>
               )}
 
-              {folder !== 'sent' && selected.mail_folder !== 'sent' && !selected.tender_id && (
+              {!selected.tender_id && folder !== 'sent' && selected.mail_folder !== 'sent' && (
                 <div style={{
                   background: selected.is_ao ? 'rgba(59,126,246,0.08)' : 'var(--bg-card)',
                   border: selected.is_ao ? '1px solid rgba(59,126,246,0.2)' : '1px solid var(--border)',
@@ -1803,7 +1850,7 @@ export default function MailPage() {
                     </button>
                   )}
                   <button type="button" onClick={() => openLinkTenderModal()} style={{
-                    background: 'transparent', color: 'var(--accent)', border: '1px solid rgba(59,126,246,0.35)',
+                    background: 'transparent', color: '#021246', border: '1px solid rgba(2,18,70,0.35)',
                     borderRadius: 7, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
                   }}>
                     Lier à un AO
@@ -1820,6 +1867,9 @@ export default function MailPage() {
                   </span>
                   <button type="button" onClick={() => router.push(`/tenders/${selected.tender_id}`)} style={{ background: 'rgba(34,197,94,0.1)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
                     Voir l&apos;AO →
+                  </button>
+                  <button type="button" onClick={() => openLinkTenderModal()} style={{ background: 'transparent', color: '#021246', border: '1px solid rgba(2,18,70,0.25)', borderRadius: 7, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
+                    Changer d&apos;AO
                   </button>
                   <button type="button" onClick={() => handleUnlinkTender(selected)} style={{ background: 'transparent', color: '#f87171', border: '1px solid rgba(248,113,113,0.35)', borderRadius: 7, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
                     Délier
@@ -2002,11 +2052,28 @@ export default function MailPage() {
             onClick={e => e.stopPropagation()}
           >
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: 'var(--text-primary)' }}>Lier à un appel d&apos;offres</div>
+            <input
+              type="search"
+              placeholder="Rechercher un AO…"
+              value={linkTenderSearch}
+              onChange={e => setLinkTenderSearch(e.target.value)}
+              style={{
+                width: '100%', marginBottom: 12, padding: '8px 10px', borderRadius: 8,
+                border: '1px solid var(--border)', background: 'var(--bg-secondary)',
+                fontSize: 13, fontFamily: 'DM Sans, system-ui', color: 'var(--text-primary)',
+              }}
+            />
             {tendersForLink.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucun AO disponible</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {tendersForLink.map(t => (
+                {tendersForLink
+                  .filter(t => {
+                    const q = linkTenderSearch.trim().toLowerCase()
+                    if (!q) return true
+                    return t.title.toLowerCase().includes(q) || t.client.toLowerCase().includes(q)
+                  })
+                  .map(t => (
                   <button
                     key={t.id}
                     type="button"

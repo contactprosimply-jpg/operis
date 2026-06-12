@@ -13,6 +13,8 @@ export type TenderDocumentCategory =
   | 'relance_sent'
   | 'document_sent'
 
+export type TenderDocumentMailSource = 'manual' | 'mail_sent' | 'mail_received' | null
+
 export interface TenderDocumentItem {
   id: string
   kind: 'received' | 'sent'
@@ -28,6 +30,7 @@ export interface TenderDocumentItem {
   email_id?: string
   attachment_index?: number
   document_id?: string
+  mail_source?: TenderDocumentMailSource
 }
 
 function titleAoInbound(fromLabel: string) {
@@ -77,8 +80,23 @@ export type QuoteRow = {
 }
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i
-const OUTBOUND_DOC_SOURCES = new Set(['outbound', 'consultation'])
-const INBOUND_DOC_SOURCES = new Set(['ao_request', 'inbound'])
+const OUTBOUND_DOC_SOURCES = new Set(['outbound', 'consultation', 'mail_sent'])
+const INBOUND_DOC_SOURCES = new Set(['ao_request', 'inbound', 'mail_received'])
+function titleMailDocument(
+  direction: 'sent' | 'received',
+  partyLabel: string,
+) {
+  const who = partyLabel.trim() || 'contact'
+  return direction === 'sent'
+    ? { category: 'document_sent' as const, display_title: `Envoyé par mail · ${who}` }
+    : { category: 'ao_inbound' as const, display_title: `Reçu par mail · ${who}` }
+}
+
+function mailDocSourceLabel(source: string | null | undefined): TenderDocumentMailSource {
+  if (source === 'mail_sent' || source === 'mail_received') return source
+  if (source === 'upload' || !source) return 'manual'
+  return null
+}
 
 function supplierAddr(email: string): string | null {
   return extractEmailAddress(email)?.toLowerCase() ?? null
@@ -153,6 +171,184 @@ function isInboundTenderDocSource(
   if (INBOUND_DOC_SOURCES.has(source ?? '')) return true
   if (OUTBOUND_DOC_SOURCES.has(source ?? '')) return false
   return sourceInboundKeys.has(inboundFilenameKey(filename))
+}
+
+/** Cherche un AO dont le titre apparaît dans le sujet du mail. */
+export async function resolveTenderIdFromSubject(
+  db: SupabaseClient,
+  userId: string,
+  subject: string | null | undefined,
+): Promise<string | null> {
+  const subj = (subject ?? '').trim()
+  if (subj.length < 8) return null
+
+  const { data: tenders } = await db
+    .from('tenders')
+    .select('id, title')
+    .eq('user_id', userId)
+    .in('status', ['nouveau', 'en_cours', 'urgence', 'gagne'])
+    .order('updated_at', { ascending: false })
+    .limit(80)
+
+  const subjLower = subj.toLowerCase()
+  for (const t of tenders ?? []) {
+    const title = (t.title ?? '').trim()
+    if (title.length < 6) continue
+    const titleLower = title.toLowerCase()
+    if (subjLower.includes(titleLower)) return t.id
+    const short = titleLower.slice(0, Math.min(24, titleLower.length))
+    if (short.length >= 10 && subjLower.includes(short)) return t.id
+  }
+  return null
+}
+
+async function resolveTenderIdFromInReplyTo(
+  db: SupabaseClient,
+  userId: string,
+  inReplyTo: string | null | undefined,
+): Promise<string | null> {
+  const mid = (inReplyTo ?? '').trim()
+  if (!mid) return null
+  const { data: parent } = await db
+    .from('emails')
+    .select('tender_id')
+    .eq('user_id', userId)
+    .eq('message_id', mid)
+    .maybeSingle()
+  return parent?.tender_id ?? null
+}
+
+/** Lie un email à un AO et copie ses PJ dans tender_documents. */
+export async function linkEmailToTenderWithDocuments(
+  db: SupabaseClient,
+  userId: string,
+  emailId: string,
+  tenderId: string,
+): Promise<void> {
+  await db
+    .from('emails')
+    .update({ tender_id: tenderId })
+    .eq('id', emailId)
+    .eq('user_id', userId)
+
+  await persistMailLinkedDocuments(db, userId, tenderId, emailId)
+}
+
+/** Détection auto : in-reply-to ou sujet → liaison + PJ. */
+export async function processEmailTenderLink(
+  db: SupabaseClient,
+  userId: string,
+  emailId: string,
+  options?: { inReplyTo?: string | null },
+): Promise<string | null> {
+  const { data: email } = await db
+    .from('emails')
+    .select('id, tender_id, subject, mail_folder, from_address, to_address, attachments, has_attachments')
+    .eq('id', emailId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (!email) return null
+
+  let tenderId = email.tender_id as string | null
+
+  if (!tenderId && options?.inReplyTo) {
+    tenderId = await resolveTenderIdFromInReplyTo(db, userId, options.inReplyTo)
+    if (tenderId) {
+      await db.from('emails').update({ tender_id: tenderId }).eq('id', emailId)
+    }
+  }
+
+  if (!tenderId) {
+    tenderId = await resolveTenderIdFromSubject(db, userId, email.subject)
+    if (tenderId) {
+      await db.from('emails').update({ tender_id: tenderId }).eq('id', emailId)
+    }
+  }
+
+  if (tenderId) {
+    try {
+      await persistMailLinkedDocuments(db, userId, tenderId, emailId)
+    } catch (err) {
+      console.error('[tender-documents] processEmailTenderLink persist', emailId, err)
+    }
+  }
+
+  return tenderId
+}
+
+/** Copie PJ d'un email lié → tender_documents (mail_sent / mail_received). */
+export async function persistMailLinkedDocuments(
+  db: SupabaseClient,
+  userId: string,
+  tenderId: string,
+  emailId: string,
+): Promise<void> {
+  const { data: em } = await db
+    .from('emails')
+    .select('attachments, mail_folder, from_address, to_address, received_at')
+    .eq('id', emailId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (!em) return
+
+  const attachments = normalizeAttachments(em.attachments)
+  if (!attachments.length) return
+
+  const isSent = em.mail_folder === 'sent'
+  const docSource = isSent ? 'mail_sent' : 'mail_received'
+  const partyLabel = isSent
+    ? clientLabelFromAddress(em.to_address)
+    : clientLabelFromAddress(em.from_address)
+
+  const { data: existing } = await db
+    .from('tender_documents')
+    .select('filename, size, email_id')
+    .eq('tender_id', tenderId)
+    .eq('user_id', userId)
+
+  const existingFp = new Set((existing ?? []).map(d => fileFingerprint(d.filename, d.size)))
+  const existingMailFp = new Set(
+    (existing ?? [])
+      .filter(d => d.email_id === emailId)
+      .map(d => fileFingerprint(d.filename, d.size)),
+  )
+
+  for (const att of attachments) {
+    if (!isNonImageAttachment(att.filename, att.contentType)) continue
+    const fp = fileFingerprint(att.filename, att.size)
+    if (existingMailFp.has(fp)) continue
+    if (existingFp.has(fp)) continue
+
+    const buffer = await downloadAttachmentBuffer(db, att)
+    if (!buffer?.length) continue
+
+    try {
+      const docId = crypto.randomUUID()
+      const storagePath = await uploadTenderDocument(db, userId, tenderId, {
+        filename: att.filename,
+        contentType: att.contentType || 'application/octet-stream',
+        buffer,
+      }, docId)
+
+      await db.from('tender_documents').insert({
+        tender_id: tenderId,
+        user_id: userId,
+        filename: att.filename,
+        content_type: att.contentType || 'application/octet-stream',
+        size: buffer.length,
+        storage_path: storagePath,
+        bucket: DEVIS_BUCKET,
+        source: docSource,
+        email_id: emailId,
+      })
+      existingFp.add(fp)
+      existingMailFp.add(fp)
+    } catch (err) {
+      console.error('[tender-documents] persist mail doc', att.filename, err)
+    }
+  }
 }
 
 /** Email d'origine de l'AO. */
@@ -692,7 +888,7 @@ export async function collectTenderDocuments(
 
   const { data: tenderDocs } = await db
     .from('tender_documents')
-    .select('id, filename, content_type, size, source, created_at, supplier:suppliers(name)')
+    .select('id, filename, content_type, size, source, created_at, email_id, supplier:suppliers(name)')
     .eq('tender_id', tenderId)
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
@@ -706,6 +902,11 @@ export async function collectTenderDocuments(
     const outboundTitles = doc.source === 'consultation'
       ? titleSentToSupplier(supplierName, 'consultation')
       : titleDocumentSent(supplierName)
+    const mailTitles = doc.source === 'mail_sent'
+      ? titleMailDocument('sent', inboundClientLabel)
+      : doc.source === 'mail_received'
+        ? titleMailDocument('received', inboundClientLabel)
+        : null
 
     const item: TenderDocumentItem = {
       id: doc.id,
@@ -716,10 +917,12 @@ export async function collectTenderDocuments(
       date: doc.created_at,
       label: inbound ? 'Demande AO' : 'Document envoyé',
       supplier_name: inbound ? inboundClientLabel : supplierName,
-      category: inbound ? inboundTitles.category : outboundTitles.category,
-      display_title: inbound ? inboundTitles.display_title : outboundTitles.display_title,
+      category: mailTitles?.category ?? (inbound ? inboundTitles.category : outboundTitles.category),
+      display_title: mailTitles?.display_title ?? (inbound ? inboundTitles.display_title : outboundTitles.display_title),
       download_type: 'tender_doc',
       document_id: doc.id,
+      email_id: doc.email_id ?? undefined,
+      mail_source: mailDocSourceLabel(doc.source),
     }
 
     if (inbound) {

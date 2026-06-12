@@ -345,6 +345,15 @@ async function enrichEmailFromSource(
     savedAttachments = await saveEmailAttachments(db, userId, emailId, attachments)
   }
 
+  try {
+    const { processEmailTenderLink } = await import('@/lib/tender-documents')
+    const inReplyTo = parsed.inReplyTo
+      ? (typeof parsed.inReplyTo === 'string' ? parsed.inReplyTo : parsed.inReplyTo.text ?? '')
+      : null
+    await processEmailTenderLink(db, userId, emailId, { inReplyTo })
+  } catch (err) {
+    console.error('[mail-sync] tender link after enrich', emailId, err)
+  }
 }
 
 async function syncOneMailboxFolder(

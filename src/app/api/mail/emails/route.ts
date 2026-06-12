@@ -14,6 +14,7 @@ import {
 import type { Email, EmailLabel } from '@/types/database'
 import { getMailUserScope } from '@/lib/mail-access'
 import { resolveMailAccount } from '@/lib/mail-sync'
+import { linkEmailToTenderWithDocuments } from '@/lib/tender-documents'
 
 function sentListKey(subject: string | null | undefined, to: string | null | undefined, at: string | null | undefined): string {
   return `${subject ?? ''}|${to ?? ''}|${(at ?? '').slice(0, 16)}`
@@ -275,5 +276,14 @@ export async function PATCH(req: NextRequest) {
     .single()
 
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
+
+  if (tender_id && typeof tender_id === 'string') {
+    try {
+      await linkEmailToTenderWithDocuments(db, userId, id, tender_id)
+    } catch (docErr) {
+      console.error('[emails PATCH] persist mail docs:', docErr)
+    }
+  }
+
   return Response.json({ success: true, data })
 }

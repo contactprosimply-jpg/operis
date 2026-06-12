@@ -7,6 +7,9 @@ import { useParams, useRouter } from 'next/navigation'
 import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast, Card } from '@/components/ui'
 import ConsultationComposeModal, { type ConsultationComposePayload } from '@/components/ConsultationComposeModal'
+import MailComposePopup from '@/components/mail/MailComposePopup'
+import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
+import type { Email } from '@/types/database'
 import SpeechMicButton from '@/components/SpeechMicButton'
 import { memberDisplayName } from '@/lib/family'
 import type { OrganizationPayload } from '@/lib/organization'
@@ -30,6 +33,26 @@ const PRIORITE_OPTIONS = [
   { value: 'urgente', label: '⚡ Urgente', color: '#f87171' },
 ]
 
+function appendSignatureToBody(body: string, signatureHtml: string, signatureText: string): string {
+  if (!signatureHtml.trim()) return body
+  const isHtml = (body.includes('<') && body.includes('>')) || signatureHtml.includes('<')
+  if (isHtml) {
+    const block = body.trim()
+    const hr = '<hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0">'
+    return block ? `${block}${hr}${signatureHtml}` : signatureHtml
+  }
+  const plainSig = signatureText.replace(/^\n\n--\n/, '').trim()
+  return body.trim() ? `${body.trim()}\n\n--\n${plainSig}` : plainSig
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  return btoa(binary)
+}
+
 function documentCategoryStyle(category?: string) {
   switch (category) {
     case 'ao_inbound':
@@ -45,9 +68,17 @@ function documentCategoryStyle(category?: string) {
   }
 }
 
+function mailSourceBadge(source?: string | null) {
+  if (source === 'mail_received') return { label: '📧 Reçu par mail', color: '#60a5fa' }
+  if (source === 'mail_sent') return { label: '📤 Envoyé par mail', color: '#fbbf24' }
+  if (source === 'manual') return { label: '📁 Manuel', color: 'var(--text-muted)' }
+  return null
+}
+
 function TenderDocumentRow({
   doc,
   onDownload,
+  onOpenMail,
 }: {
   doc: {
     id: string
@@ -57,12 +88,16 @@ function TenderDocumentRow({
     category?: string
     supplier_name?: string
     label?: string
+    mail_source?: string | null
+    email_id?: string
   }
   onDownload: () => void
+  onOpenMail?: (emailId: string) => void
 }) {
   const title = doc.display_title
     ?? (doc.supplier_name ? `${doc.supplier_name}` : doc.label ?? 'Document')
   const badgeStyle = documentCategoryStyle(doc.category)
+  const sourceBadge = mailSourceBadge(doc.mail_source)
 
   return (
     <div style={{
@@ -70,6 +105,22 @@ function TenderDocumentRow({
       display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
     }}>
       <div style={{ minWidth: 0 }}>
+        {sourceBadge && (
+          <button
+            type="button"
+            disabled={!doc.email_id}
+            onClick={() => doc.email_id && onOpenMail?.(doc.email_id)}
+            style={{
+              fontSize: 10, fontWeight: 600, fontFamily: 'DM Sans, system-ui',
+              padding: '2px 8px', borderRadius: 4, marginBottom: 6,
+              display: 'inline-block', border: '1px solid var(--border)',
+              background: 'var(--bg-tertiary)', color: sourceBadge.color,
+              cursor: doc.email_id ? 'pointer' : 'default',
+            }}
+          >
+            {sourceBadge.label}
+          </button>
+        )}
         <div style={{
           fontSize: 10, fontWeight: 600, fontFamily: 'DM Sans, system-ui',
           padding: '2px 8px', borderRadius: 4, marginBottom: 6,
@@ -138,7 +189,16 @@ export default function TenderDetailPage() {
   const [editingPriceSupplierId, setEditingPriceSupplierId] = useState<string | null>(null)
   const [priceInput, setPriceInput] = useState('')
   const [savingPrice, setSavingPrice] = useState(false)
-  const [activeTab, setActiveTab] = useState<'fournisseurs' | 'devis' | 'comparatif' | 'documents' | 'infos'>('fournisseurs')
+  const [activeTab, setActiveTab] = useState<'fournisseurs' | 'devis' | 'comparatif' | 'documents' | 'mails' | 'infos'>('fournisseurs')
+  const [mailViewerOpen, setMailViewerOpen] = useState(false)
+  const [mailViewerLoading, setMailViewerLoading] = useState(false)
+  const [mailViewerEmail, setMailViewerEmail] = useState<Email | null>(null)
+  const [mailComposing, setMailComposing] = useState(false)
+  const [mailComposeMinimized, setMailComposeMinimized] = useState(false)
+  const [mailCompose, setMailCompose] = useState({ to: '', cc: '', bcc: '', subject: '', body: '' })
+  const [mailAttachments, setMailAttachments] = useState<File[]>([])
+  const [mailSending, setMailSending] = useState(false)
+  const [mailSendError, setMailSendError] = useState<string | null>(null)
   const [exportingPdf, setExportingPdf] = useState(false)
   const [retainingQuote, setRetainingQuote] = useState<string | null>(null)
   const [linkedEmails, setLinkedEmails] = useState<any[]>([])
@@ -222,6 +282,7 @@ export default function TenderDetailPage() {
       const data = await res.json()
       if (data.success) {
         await loadLinkedEmails()
+        await refreshTender()
         setShowLinkEmailModal(false)
         showRef.current('Email lié à cet AO')
       } else showRef.current(`Erreur : ${data.error}`)
@@ -240,6 +301,7 @@ export default function TenderDetailPage() {
       const data = await res.json()
       if (data.success) {
         await loadLinkedEmails()
+        await refreshTender()
         showRef.current('Email délié')
       } else showRef.current(`Erreur : ${data.error}`)
     } catch {
@@ -250,6 +312,94 @@ export default function TenderDetailPage() {
   useEffect(() => {
     if (tender) loadLinkedEmails()
   }, [tender, loadLinkedEmails])
+
+  const openMailViewer = async (emailId: string) => {
+    setMailViewerOpen(true)
+    setMailViewerLoading(true)
+    setMailViewerEmail(null)
+    try {
+      const res = await authFetch(`/api/mail/emails/${emailId}`)
+      const data = await res.json()
+      if (data.success) setMailViewerEmail(data.data as Email)
+      else showRef.current('Email introuvable')
+    } catch {
+      showRef.current('Erreur chargement mail')
+    }
+    setMailViewerLoading(false)
+  }
+
+  const guessTenderMailRecipient = () => {
+    const inbound = linkedEmails.find((e: { mail_folder?: string }) => e.mail_folder !== 'sent')
+    return inbound?.from_address ?? ''
+  }
+
+  const openTenderMailCompose = () => {
+    const recipient = guessTenderMailRecipient()
+    const subjectPrefix = tender?.title ? `Re: ${tender.title}` : ''
+    setMailCompose({ to: recipient, cc: '', bcc: '', subject: subjectPrefix, body: '' })
+    setMailAttachments([])
+    setMailSendError(null)
+    setMailComposing(true)
+    setMailComposeMinimized(false)
+  }
+
+  const handleTenderMailSend = async () => {
+    const sig = getSignatureData()
+    const signatureHtml = sig.html.trim()
+    const bodyForSend = appendSignatureToBody(
+      stripSignatureFromBody(mailCompose.body, sig.text),
+      signatureHtml,
+      sig.text,
+    )
+    if (!mailCompose.to || !mailCompose.subject) {
+      setMailSendError('Destinataire et sujet requis')
+      return
+    }
+    if (!bodyForSend.trim()) {
+      setMailSendError('Message ou signature requis')
+      return
+    }
+    setMailSending(true)
+    setMailSendError(null)
+    try {
+      const attachmentPayload = await Promise.all(
+        mailAttachments.map(async f => ({
+          filename: f.name,
+          contentType: f.type || 'application/octet-stream',
+          data: await fileToBase64(f),
+        })),
+      )
+      const token = await getAccessToken()
+      if (!token) return
+      const res = await fetch('/api/mail/send', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: mailCompose.to,
+          cc: mailCompose.cc || undefined,
+          bcc: mailCompose.bcc || undefined,
+          subject: mailCompose.subject,
+          body: bodyForSend,
+          tenderId: id,
+          attachments: attachmentPayload.length > 0 ? attachmentPayload : undefined,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setMailComposing(false)
+        setMailComposeMinimized(false)
+        await loadLinkedEmails()
+        await refreshTender()
+        showRef.current('Email envoyé')
+      } else {
+        setMailSendError(data.error ?? 'Erreur envoi')
+      }
+    } catch (e: unknown) {
+      const err = e as { message?: string }
+      setMailSendError(err.message ?? 'Erreur envoi')
+    }
+    setMailSending(false)
+  }
 
   const handleAnalyzeQuotes = async () => {
     setAnalyzingQuotes(true)
@@ -774,6 +924,7 @@ export default function TenderDetailPage() {
           { id: 'devis' as const, label: 'Devis', count: quotes.length },
           { id: 'comparatif' as const, label: 'Comparatif', count: quotes.length },
           { id: 'documents' as const, label: 'Documents', count: receivedDocs.length + sentDocs.length },
+          { id: 'mails' as const, label: 'Mails', count: linkedEmails.length },
           { id: 'infos' as const, label: 'Informations', count: 0 },
         ]).map(tab => (
           <button
@@ -1073,6 +1224,87 @@ export default function TenderDetailPage() {
       </div>
       )}
 
+      {activeTab === 'mails' && (
+      <div style={card}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+            Fil de mails ({linkedEmails.length})
+          </div>
+          <Button variant="ghost" onClick={openTenderMailCompose}>✉️ Envoyer un mail</Button>
+        </div>
+        {linkedEmails.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 24 }}>
+            Aucun mail lié — liez un email ou envoyez un message depuis cet AO
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+            {[...linkedEmails]
+              .sort((a: { received_at?: string }, b: { received_at?: string }) =>
+                new Date(a.received_at ?? 0).getTime() - new Date(b.received_at ?? 0).getTime(),
+              )
+              .map((em: Email & { attachments?: Array<{ filename: string }> }, idx: number) => {
+                const isSent = em.mail_folder === 'sent'
+                const party = isSent ? em.to_address : em.from_address
+                const attCount = em.has_attachments
+                  ? (Array.isArray(em.attachments) ? em.attachments.length : 1)
+                  : 0
+                return (
+                  <div
+                    key={em.id}
+                    style={{
+                      padding: '14px 16px',
+                      background: 'var(--bg-secondary)',
+                      borderTop: idx > 0 ? '1px solid var(--border)' : 'none',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#021246' }}>
+                        {isSent ? '📤 Envoyé' : '📥 Reçu'}
+                      </span>
+                      <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+                        {em.received_at ? new Date(em.received_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      {isSent ? 'À :' : 'De :'} <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{party ?? '—'}</span>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>
+                      {em.subject || '(sans objet)'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => openMailViewer(em.id)}
+                        style={{
+                          fontSize: 11, color: '#021246', background: 'rgba(2,18,70,0.08)',
+                          border: '1px solid rgba(2,18,70,0.2)', borderRadius: 6, padding: '4px 12px',
+                          cursor: 'pointer', fontFamily: 'DM Sans, system-ui', fontWeight: 600,
+                        }}
+                      >
+                        Voir le mail
+                      </button>
+                      {attCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => openMailViewer(em.id)}
+                          style={{
+                            fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)',
+                            border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6, padding: '4px 10px',
+                            cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
+                          }}
+                        >
+                          📎 {attCount > 1 ? `${attCount} pièces jointes` : (em.attachments?.[0]?.filename ?? 'Pièce jointe')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+          </div>
+        )}
+      </div>
+      )}
+
       {activeTab === 'documents' && (
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
@@ -1109,6 +1341,7 @@ export default function TenderDetailPage() {
                     key={doc.id}
                     doc={doc}
                     onDownload={() => downloadTenderDocument(doc.id, doc.filename)}
+                    onOpenMail={openMailViewer}
                   />
                 ))}
               </div>
@@ -1128,6 +1361,7 @@ export default function TenderDetailPage() {
                     key={doc.id}
                     doc={doc}
                     onDownload={() => downloadTenderDocument(doc.id, doc.filename)}
+                    onOpenMail={openMailViewer}
                   />
                 ))}
               </div>
@@ -1471,6 +1705,57 @@ export default function TenderDetailPage() {
           </Button>
         </div>
       </Modal>
+
+      <Modal
+        open={mailViewerOpen}
+        onClose={() => { setMailViewerOpen(false); setMailViewerEmail(null) }}
+        title={mailViewerEmail?.subject ?? 'Mail'}
+      >
+        {mailViewerLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Spinner size={24} /></div>
+        ) : mailViewerEmail ? (
+          <div>
+            <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 8 }}>
+              {mailViewerEmail.mail_folder === 'sent' ? `À : ${mailViewerEmail.to_address}` : `De : ${mailViewerEmail.from_address}`}
+              {' · '}
+              {mailViewerEmail.received_at ? new Date(mailViewerEmail.received_at).toLocaleString('fr-FR') : ''}
+            </div>
+            <div style={{
+              fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6,
+              maxHeight: 360, overflowY: 'auto', whiteSpace: 'pre-wrap',
+              padding: '12px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border)',
+            }}>
+              {mailViewerEmail.body_html
+                ? <div dangerouslySetInnerHTML={{ __html: mailViewerEmail.body_html }} />
+                : (mailViewerEmail.body_text ?? '—')}
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Email introuvable</div>
+        )}
+      </Modal>
+
+      {mailComposing && (
+        <MailComposePopup
+          compose={mailCompose}
+          onChange={patch => setMailCompose(c => ({ ...c, ...patch }))}
+          onSend={() => void handleTenderMailSend()}
+          onRequestClose={() => { setMailComposing(false); setMailComposeMinimized(false) }}
+          onMinimize={() => setMailComposeMinimized(true)}
+          onRestore={() => setMailComposeMinimized(false)}
+          onDelete={() => { setMailComposing(false); setMailComposeMinimized(false) }}
+          attachments={mailAttachments}
+          onRemoveAttachment={i => setMailAttachments(prev => prev.filter((_, j) => j !== i))}
+          onAddAttachments={files => setMailAttachments(prev => [...prev, ...files])}
+          sending={mailSending}
+          sendError={mailSendError}
+          draftSavedLabel={null}
+          isListening={false}
+          onToggleSpeech={() => {}}
+          minimized={mailComposeMinimized}
+          signaturePreview={getSignatureData()}
+        />
+      )}
     </div>
   )
 }

@@ -9,7 +9,55 @@ import { resolveMailAccount } from '@/lib/mail-sync'
 import { normalizeMessageId } from '@/lib/mail-message-id'
 import { applySmartLabels } from '@/lib/mail-smart-labels'
 import { isValidUuid } from '@/lib/api-validation'
+import { attachmentMetaOnly, persistAttachmentsToStorage } from '@/lib/mail-storage'
+import {
+  persistMailLinkedDocuments,
+  resolveTenderIdFromSubject,
+} from '@/lib/tender-documents'
 export const maxDuration = 30
+
+async function resolveTenderIdForSend(
+  db: ReturnType<typeof createAdminClient>,
+  userId: string,
+  opts: {
+    tenderId?: string
+    replyId?: string
+    forwardId?: string
+    subject: string
+  },
+): Promise<string | null> {
+  if (opts.tenderId && isValidUuid(opts.tenderId)) {
+    const { data } = await db
+      .from('tenders')
+      .select('id')
+      .eq('id', opts.tenderId)
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (data?.id) return data.id
+  }
+
+  if (opts.replyId) {
+    const { data } = await db
+      .from('emails')
+      .select('tender_id')
+      .eq('id', opts.replyId)
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (data?.tender_id) return data.tender_id
+  }
+
+  if (opts.forwardId) {
+    const { data } = await db
+      .from('emails')
+      .select('tender_id')
+      .eq('id', opts.forwardId)
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (data?.tender_id) return data.tender_id
+  }
+
+  return await resolveTenderIdFromSubject(db, userId, opts.subject)
+}
 
 export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
@@ -19,7 +67,7 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.json()
   const unexpected = rejectUnexpectedFields(rawBody as Record<string, unknown>, [
     'to', 'subject', 'body', 'cc', 'bcc', 'signature', 'attachments',
-    'replyToEmailId', 'forwardFromEmailId',
+    'replyToEmailId', 'forwardFromEmailId', 'tenderId',
   ])
   if (unexpected) {
     return Response.json({ success: false, error: unexpected }, { status: 400 })
@@ -35,6 +83,7 @@ export async function POST(req: NextRequest) {
     attachments: rawAttachments,
     replyToEmailId,
     forwardFromEmailId,
+    tenderId: rawTenderId,
   } = rawBody
 
   const bodyText = clampString(body, 100000) ?? ''
@@ -106,10 +155,11 @@ export async function POST(req: NextRequest) {
   const mailAttachments = Array.isArray(rawAttachments)
     ? rawAttachments
         .filter((a: { data?: string; filename?: string }) => a?.data && a?.filename)
-        .map((a: { filename: string; contentType?: string; data: string }) => ({
+        .map((a: { filename: string; contentType?: string; data: string; size?: number }) => ({
           filename: a.filename,
           content: Buffer.from(a.data, 'base64'),
           contentType: a.contentType || 'application/octet-stream',
+          size: a.size,
         }))
     : []
 
@@ -142,6 +192,17 @@ export async function POST(req: NextRequest) {
     if (orig?.message_id) inReplyToHeader = orig.message_id
   }
 
+  const forwardId = typeof forwardFromEmailId === 'string' && isValidUuid(forwardFromEmailId)
+    ? forwardFromEmailId
+    : undefined
+
+  const resolvedTenderId = await resolveTenderIdForSend(db, userId, {
+    tenderId: typeof rawTenderId === 'string' ? rawTenderId : undefined,
+    replyId: resolvedReplyId,
+    forwardId,
+    subject: subjectText,
+  })
+
   try {
     const info = await transporter.sendMail({
       from: `"${account.smtp_user.split('@')[0]}" <${account.smtp_user}>`,
@@ -158,7 +219,17 @@ export async function POST(req: NextRequest) {
 
     const sentAt = new Date().toISOString()
     const messageId = normalizeMessageId(info.messageId, `sent-${userId}-${Date.now()}`)
+    const sentEmailId = crypto.randomUUID()
+
+    const attachmentMeta = mailAttachments.map(a => ({
+      filename: a.filename,
+      contentType: a.contentType,
+      size: a.size ?? a.content.length,
+      data: a.content.toString('base64'),
+    }))
+
     const sentInsert: Record<string, unknown> = {
+      id: sentEmailId,
       user_id: userId,
       message_id: messageId,
       subject: subjectText,
@@ -170,18 +241,47 @@ export async function POST(req: NextRequest) {
       is_read: true,
       is_ao: false,
       ao_score: 0,
-      tender_id: null,
+      tender_id: resolvedTenderId,
       attachments: [],
       has_attachments: mailAttachments.length > 0,
       mail_folder: 'sent',
     }
-    const { error: sentEmailError } = await db.from('emails').insert(sentInsert)
+
+    let { error: sentEmailError } = await db.from('emails').insert(sentInsert)
+
     if (sentEmailError && !sentEmailError.message.includes('duplicate key')) {
       const fallback = { ...sentInsert }
       delete fallback.mail_folder
       delete fallback.attachments
       delete fallback.has_attachments
-      await db.from('emails').insert(fallback)
+      const retry = await db.from('emails').insert(fallback)
+      sentEmailError = retry.error
+    }
+
+    if (!sentEmailError && mailAttachments.length > 0) {
+      try {
+        const stored = await persistAttachmentsToStorage(
+          db,
+          userId,
+          sentEmailId,
+          attachmentMeta,
+        )
+        const meta = stored.map(attachmentMetaOnly)
+        await db.from('emails').update({
+          attachments: meta,
+          has_attachments: meta.length > 0,
+        }).eq('id', sentEmailId)
+      } catch (attErr) {
+        console.error('[Mail] persist sent attachments:', attErr)
+      }
+    }
+
+    if (resolvedTenderId && !sentEmailError) {
+      try {
+        await persistMailLinkedDocuments(db, userId, resolvedTenderId, sentEmailId)
+      } catch (docErr) {
+        console.error('[Mail] persist tender docs from sent:', docErr)
+      }
     }
 
     const { error: logError } = await db.from('email_logs').insert({
@@ -193,6 +293,7 @@ export async function POST(req: NextRequest) {
       sent_at: sentAt,
       success: true,
       error_message: null,
+      tender_id: resolvedTenderId,
     })
     if (logError) console.error('[Mail] Log envoi:', logError.message)
 
@@ -201,9 +302,6 @@ export async function POST(req: NextRequest) {
       const labels = await applySmartLabels(db, userId, resolvedReplyId, 'replied')
       if (labels) smartLabelUpdates.push({ emailId: resolvedReplyId, labels })
     }
-    const forwardId = typeof forwardFromEmailId === 'string' && isValidUuid(forwardFromEmailId)
-      ? forwardFromEmailId
-      : undefined
     if (forwardId) {
       const labels = await applySmartLabels(db, userId, forwardId, 'forwarded')
       if (labels) smartLabelUpdates.push({ emailId: forwardId, labels })
@@ -211,7 +309,13 @@ export async function POST(req: NextRequest) {
 
     return Response.json({
       success: true,
-      data: { sent: true, from: account.smtp_user, smartLabelUpdates },
+      data: {
+        sent: true,
+        from: account.smtp_user,
+        smartLabelUpdates,
+        tenderId: resolvedTenderId,
+        sentEmailId,
+      },
     })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Erreur inconnue'
