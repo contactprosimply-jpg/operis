@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Spinner } from '@/components/ui'
+import { getSignatureData } from '@/lib/email-signature'
 
 const POPUP_WIDTH = 560
 const POPUP_HEIGHT = 520
@@ -86,9 +87,11 @@ export default function MailComposePopup({
   const [fileChoice, setFileChoice] = useState<FileChoiceState>(null)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [expanded, setExpanded] = useState(false)
+  const [signatureExpanded, setSignatureExpanded] = useState(false)
   const [customSize, setCustomSize] = useState<{ w: number; h: number } | null>(null)
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
   const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null)
+  const dragDepthRef = useRef(0)
 
   const popupWidth = customSize?.w ?? (expanded ? POPUP_WIDTH_LARGE : POPUP_WIDTH)
   const popupHeight = customSize?.h ?? (expanded ? POPUP_HEIGHT_LARGE : POPUP_HEIGHT)
@@ -102,9 +105,31 @@ export default function MailComposePopup({
   }, [])
 
   useEffect(() => {
+    if (minimized) return
+    const preventDefault = (e: DragEvent) => e.preventDefault()
+    window.addEventListener('dragover', preventDefault)
+    window.addEventListener('drop', preventDefault)
+    return () => {
+      window.removeEventListener('dragover', preventDefault)
+      window.removeEventListener('drop', preventDefault)
+    }
+  }, [minimized])
+
+  useEffect(() => {
     if (compose.cc.trim()) setShowCc(true)
     if (compose.bcc.trim()) setShowBcc(true)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const signatureCollapsedLabel = useMemo(() => {
+    if (!signaturePreview.html) return ''
+    try {
+      const stored = JSON.parse(localStorage.getItem('operis_signature') ?? '{}') as { name?: string }
+      if (stored.name?.trim()) return `-- ${stored.name.trim()}`
+    } catch { /* ignore */ }
+    const line = getSignatureData().text.split('\n').find(l => l.trim().startsWith('--'))
+    if (line?.trim()) return line.trim()
+    return '-- Signature'
+  }, [signaturePreview.html])
 
   useEffect(() => {
     const el = bodyRef.current
@@ -125,33 +150,43 @@ export default function MailComposePopup({
     onChange({ body: html })
   }
 
+  const handleFiles = (files: File[]) => {
+    if (!files.length) return
+    setFileChoice({ files })
+  }
+
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    dragDepthRef.current += 1
     setDragActive(true)
   }
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault()
-    if (e.currentTarget === e.target) setDragActive(false)
+    e.stopPropagation()
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setDragActive(false)
   }
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    setDragActive(true)
   }
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    dragDepthRef.current = 0
     setDragActive(false)
     const files = Array.from(e.dataTransfer.files)
-    if (files.length) setFileChoice({ files })
+    handleFiles(files)
   }
 
-  const handleFilesPicked = (files: FileList | null) => {
+  const handleFileInput = (files: FileList | null) => {
     if (!files?.length) return
-    setFileChoice({ files: Array.from(files) })
+    handleFiles(Array.from(files))
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -364,6 +399,71 @@ export default function MailComposePopup({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      {dragActive && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(59, 127, 232, 0.12)',
+            border: '2px dashed #3B7FE8',
+            borderRadius: 12,
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          <span style={{ color: '#7dd3fc', fontSize: 15, fontWeight: 600 }}>Déposez vos fichiers ici</span>
+        </div>
+      )}
+
+      {fileChoice && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 60,
+            background: 'rgba(0,0,0,0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => setFileChoice(null)}
+        >
+          <div
+            style={{
+              background: '#0d1f4a',
+              border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 12,
+              padding: 16,
+              minWidth: 280,
+              boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 12 }}>
+              {fileChoice.files.length} fichier(s) sélectionné(s)
+            </div>
+            <button type="button" onClick={() => applyFileChoice('attach')} style={choiceBtnStyle}>
+              <span>📎</span> Ajouter en pièce jointe
+            </button>
+            <button
+              type="button"
+              onClick={() => applyFileChoice('inline')}
+              disabled={!fileChoice.files.some(isImageFile)}
+              style={{
+                ...choiceBtnStyle,
+                opacity: fileChoice.files.some(isImageFile) ? 1 : 0.45,
+                cursor: fileChoice.files.some(isImageFile) ? 'pointer' : 'not-allowed',
+              }}
+            >
+              <span>🖼️</span> Intégrer dans le message
+            </button>
+          </div>
+        </div>
+      )}
       <div
         onMouseDown={onResizeMouseDown}
         title="Glisser pour redimensionner"
@@ -421,78 +521,7 @@ export default function MailComposePopup({
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
-        {dragActive && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'rgba(59, 127, 232, 0.15)',
-              border: '2px dashed #3B7FE8',
-              borderRadius: 12,
-              zIndex: 10,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              pointerEvents: 'none',
-            }}
-          >
-            <span style={{ color: '#7dd3fc', fontSize: 15, fontWeight: 600 }}>Déposez votre fichier ici</span>
-          </div>
-        )}
-
-        {fileChoice && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              zIndex: 20,
-              background: 'rgba(0,0,0,0.45)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 16,
-            }}
-            onClick={() => setFileChoice(null)}
-          >
-            <div
-              style={{
-                background: '#0d1f4a',
-                border: '1px solid rgba(255,255,255,0.15)',
-                borderRadius: 12,
-                padding: 16,
-                minWidth: 280,
-                boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
-              }}
-              onClick={e => e.stopPropagation()}
-            >
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 12 }}>
-                {fileChoice.files.length} fichier(s) sélectionné(s)
-              </div>
-              <button
-                type="button"
-                onClick={() => applyFileChoice('attach')}
-                style={choiceBtnStyle}
-              >
-                <span>📎</span> Ajouter en pièce jointe
-              </button>
-              <button
-                type="button"
-                onClick={() => applyFileChoice('inline')}
-                disabled={!fileChoice.files.some(isImageFile)}
-                style={{
-                  ...choiceBtnStyle,
-                  opacity: fileChoice.files.some(isImageFile) ? 1 : 0.45,
-                  cursor: fileChoice.files.some(isImageFile) ? 'pointer' : 'not-allowed',
-                }}
-              >
-                <span>🖼️</span> Intégrer dans le message
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div style={{ padding: '0 14px', flexShrink: 0 }}>
+      <div style={{ padding: '0 14px', flexShrink: 0 }}>
           <FieldRow label="À">
             <input
               type="text"
@@ -541,66 +570,103 @@ export default function MailComposePopup({
           </FieldRow>
         </div>
 
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div
           style={{
             flex: 1,
-            minHeight: 120,
-            margin: '8px 14px',
+            minHeight: 0,
+            margin: '8px 14px 0',
             background: 'rgba(255,255,255,0.04)',
             border: '1px solid rgba(255,255,255,0.1)',
             borderRadius: 10,
             overflow: 'hidden',
             display: 'flex',
-            flexDirection: 'column',
           }}
         >
-          <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            <div
-              ref={bodyRef}
-              contentEditable
-              suppressContentEditableWarning
-              onInput={onBodyInput}
-              data-placeholder="Écrivez votre message…"
-              style={{
-                flex: 1,
-                minHeight: 100,
-                padding: '14px 16px',
-                fontSize: 14,
-                color: '#e8eaef',
-                lineHeight: 1.6,
-                outline: 'none',
-                overflowY: 'auto',
-              }}
-              className="mail-compose-body"
-            />
-            <button
-              type="button"
-              onClick={onToggleSpeech}
-              title="Dictée vocale"
-              style={{
-                margin: '10px 10px 0 0',
-                width: 34,
-                height: 34,
-                borderRadius: '50%',
-                flexShrink: 0,
-                border: isListening ? '2px solid #ef4444' : '1px solid rgba(255,255,255,0.2)',
-                background: isListening ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.06)',
-                cursor: 'pointer',
-                color: '#e8eaef',
-              }}
-            >
-              🎤
-            </button>
-          </div>
-          {signaturePreview.html && (
-            <div style={{ padding: '0 12px 12px', flexShrink: 0 }}>
-              <SignaturePreview html={signaturePreview.html} />
-            </div>
-          )}
+          <div
+            ref={bodyRef}
+            contentEditable
+            suppressContentEditableWarning
+            onInput={onBodyInput}
+            data-placeholder="Écrivez votre message…"
+            style={{
+              flex: 1,
+              minHeight: 0,
+              padding: '14px 16px',
+              fontSize: 14,
+              color: '#e8eaef',
+              lineHeight: 1.6,
+              outline: 'none',
+              overflowY: 'auto',
+            }}
+            className="mail-compose-body"
+          />
+          <button
+            type="button"
+            onClick={onToggleSpeech}
+            title="Dictée vocale"
+            style={{
+              margin: '10px 10px 0 0',
+              width: 34,
+              height: 34,
+              borderRadius: '50%',
+              flexShrink: 0,
+              border: isListening ? '2px solid #ef4444' : '1px solid rgba(255,255,255,0.2)',
+              background: isListening ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.06)',
+              cursor: 'pointer',
+              color: '#e8eaef',
+            }}
+          >
+            🎤
+          </button>
         </div>
 
+        {signaturePreview.html && (
+          <div
+            style={{
+              flexShrink: 0,
+              margin: '0 14px',
+              borderTop: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(0,0,0,0.18)',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setSignatureExpanded(prev => !prev)}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                padding: '8px 12px',
+                border: 'none',
+                background: 'transparent',
+                color: 'rgba(255,255,255,0.65)',
+                fontSize: 12,
+                cursor: 'pointer',
+                fontFamily: 'DM Mono, monospace',
+                minHeight: 40,
+              }}
+            >
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {signatureCollapsedLabel}
+              </span>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', flexShrink: 0 }}>
+                {signatureExpanded ? '▲' : '▼'}
+              </span>
+            </button>
+            {signatureExpanded && (
+              <div style={{ maxHeight: 120, overflow: 'auto', padding: '0 8px 8px' }}>
+                <SignaturePreview html={signaturePreview.html} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
         {attachments.length > 0 && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '0 14px 8px' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '8px 14px 0', flexShrink: 0 }}>
             {attachments.map((f, i) => (
               <div key={`${f.name}-${i}`} style={chipStyle}>
                 <span>📄 {f.name}</span>
@@ -660,7 +726,12 @@ export default function MailComposePopup({
           <button type="button" onClick={onDelete} style={secondaryBtnStyle} title="Supprimer le brouillon">
             🗑️ Supprimer
           </button>
-          <button type="button" onClick={() => fileInputRef.current?.click()} style={secondaryBtnStyle}>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            style={secondaryBtnStyle}
+            title="Joindre un fichier"
+          >
             📎
           </button>
           <input
@@ -668,7 +739,7 @@ export default function MailComposePopup({
             type="file"
             multiple
             style={{ display: 'none' }}
-            onChange={e => handleFilesPicked(e.target.files)}
+            onChange={e => handleFileInput(e.target.files)}
           />
           {draftSavedLabel && (
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginLeft: 'auto', fontFamily: 'DM Mono, monospace' }}>
@@ -676,7 +747,6 @@ export default function MailComposePopup({
             </span>
           )}
         </div>
-      </div>
     </div>
   )
 
