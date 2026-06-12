@@ -29,6 +29,7 @@ import {
 } from '@/lib/email-threading'
 import { detectAo } from '@/services/aoDetector.service'
 import { isDuplicateKeyError, normalizeMessageId } from '@/lib/mail-message-id'
+import { isMissingDbColumnError } from '@/lib/mail-api'
 import { customFolderLabel } from '@/lib/mail-folders'
 import type { AddressObject } from 'mailparser'
 
@@ -366,12 +367,21 @@ async function applyKeywordDetectionToEmail(
   const analysis = analyzeEmailWithKeywords(subject, body, ctx.keywords, ctx.threshold)
   const displayScore = aoDetectionDisplayScore(analysis.score)
 
-  const thread = await resolveEmailThreadId(db, userId, {
-    messageId,
-    subject,
+  let thread = {
+    threadId: messageId,
     inReplyTo: parsedHeaders?.inReplyTo ?? null,
     referencesIds: parsedHeaders?.references ?? [],
-  })
+  }
+  try {
+    thread = await resolveEmailThreadId(db, userId, {
+      messageId,
+      subject,
+      inReplyTo: parsedHeaders?.inReplyTo ?? null,
+      referencesIds: parsedHeaders?.references ?? [],
+    })
+  } catch {
+    // migration 025 absente — threading ignoré
+  }
 
   const updates: Record<string, unknown> = {
     is_ao_related: analysis.isAO,
@@ -385,7 +395,13 @@ async function applyKeywordDetectionToEmail(
     references_ids: thread.referencesIds,
   }
 
-  await db.from('emails').update(updates).eq('id', emailId)
+  const { error: detectError } = await db.from('emails').update(updates).eq('id', emailId)
+  if (detectError && isMissingDbColumnError(detectError.message)) {
+    await db.from('emails').update({
+      is_ao: analysis.isAO,
+      ao_score: displayScore,
+    }).eq('id', emailId)
+  }
 
   const { data: row } = await db
     .from('emails')

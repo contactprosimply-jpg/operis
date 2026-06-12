@@ -6,6 +6,7 @@ import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import {
   EMAIL_LIST_FIELDS,
   EMAIL_LIST_FIELDS_LEGACY,
+  EMAIL_LIST_FIELDS_STANDARD,
   isMissingDbColumnError,
   mergeLabels,
   tenderAutoLabel,
@@ -140,9 +141,18 @@ export async function GET(req: NextRequest) {
   let { data, error } = await buildQuery(EMAIL_LIST_FIELDS, opts, true)
 
   if (error && isMissingDbColumnError(error.message)) {
-    if (/deleted_at/i.test(error.message)) {
+    if (/is_ao_related|ao_detection|thread_id/i.test(error.message)) {
+      const retry = await buildQuery(EMAIL_LIST_FIELDS_STANDARD, opts, true)
+      data = retry.data
+      error = retry.error
+    }
+    if (error && /deleted_at/i.test(error.message)) {
       opts = { ...opts, hasDeletedAt: false }
-      const retry = await buildQuery(EMAIL_LIST_FIELDS.replace(/, deleted_at, original_folder/, ''), opts, true)
+      const retry = await buildQuery(
+        EMAIL_LIST_FIELDS_STANDARD.replace(/, deleted_at, original_folder/, ''),
+        opts,
+        true,
+      )
       data = retry.data
       error = retry.error
     }

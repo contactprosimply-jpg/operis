@@ -3,8 +3,12 @@ import type { Email, EmailLabel } from '@/types/database'
 export const EMAIL_LIST_FIELDS_LEGACY =
   'id, user_id, message_id, subject, from_address, to_address, received_at, is_read, is_ao, ao_score, tender_id, has_attachments, created_at'
 
+/** Sans colonnes migration 025 (ao_detection / threading). */
+export const EMAIL_LIST_FIELDS_STANDARD =
+  'id, user_id, message_id, subject, from_address, to_address, received_at, is_read, is_ao, ao_score, tender_id, has_attachments, source_member_id, source_member_name, priority, labels, mail_folder, imap_uid, imap_mailbox, is_starred, deleted_at, original_folder, created_at'
+
 export const EMAIL_LIST_FIELDS =
-  'id, user_id, message_id, subject, from_address, to_address, received_at, is_read, is_ao, ao_score, is_ao_related, ao_detection_score, ao_detection_category, ao_detection_keywords, thread_id, tender_id, has_attachments, source_member_id, source_member_name, priority, labels, mail_folder, imap_uid, imap_mailbox, is_starred, deleted_at, original_folder, created_at'
+  `${EMAIL_LIST_FIELDS_STANDARD.replace(', tender_id', ', is_ao_related, ao_detection_score, ao_detection_category, ao_detection_keywords, thread_id, tender_id')}`
 
 export function isMissingDbColumnError(message: string): boolean {
   return /column .* does not exist/i.test(message) || /Could not find the .* column/i.test(message)
