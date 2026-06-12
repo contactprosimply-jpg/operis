@@ -55,7 +55,7 @@ export default function MailToolbar({
           fontFamily: 'DM Sans, system-ui',
         }}
       >
-        + Nouveau
+        + Nouveau mail
       </button>
       <button
         type="button"
@@ -72,7 +72,7 @@ export default function MailToolbar({
           fontFamily: 'DM Sans, system-ui',
         }}
       >
-        {syncing ? '↻ Sync…' : '↻ Rafraîchir'}
+        {syncing ? 'Synchronisation…' : '↻ Synchroniser'}
       </button>
       <span
         style={{

@@ -1063,6 +1063,7 @@ export default function MailPage() {
   return (
     <div style={{
       display: 'flex',
+      flexDirection: 'column',
       height: isMobile ? 'calc(100vh - 56px)' : 'calc(100vh - 0px)',
       margin: isMobile ? '-16px -12px' : '-24px -28px',
       overflow: 'hidden',
@@ -1079,14 +1080,26 @@ export default function MailPage() {
       )}
 
       {!isMobile && (
+        <MailToolbar
+          onNewMail={() => openCompose()}
+          onRefresh={handleSync}
+          syncing={syncing}
+          lastSyncLabel={lastSyncLabel}
+          search={searchQuery}
+          onSearchChange={v => { setSearchQuery(v); loadEmails(false) }}
+          listFilter={listListFilter}
+          onListFilterChange={f => { setListListFilter(f); if (f === 'unread') setFilter('unread'); else if (f === 'attachments') setFilter('attachments'); else setFilter('all') }}
+          showAoFilter={folder === 'inbox'}
+        />
+      )}
+
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      {!isMobile && (
         <MailFolderSidebar
           accounts={mailAccounts}
           accountEmail={mailAccountEmail}
           selection={folderSelection}
           onSelectionChange={handleSelectionChange}
-          onCompose={() => openCompose()}
-          onSync={handleSync}
-          syncing={syncing}
           badges={folderBadges}
           customFolders={customFolders}
         />
@@ -1100,19 +1113,6 @@ export default function MailPage() {
           display: 'flex', flexDirection: 'column',
           background: 'var(--bg-secondary)', flexShrink: 0,
         }}>
-          {!isMobile && (
-            <MailToolbar
-              onNewMail={() => openCompose()}
-              onRefresh={handleSync}
-              syncing={syncing}
-              lastSyncLabel={lastSyncLabel}
-              search={searchQuery}
-              onSearchChange={v => { setSearchQuery(v); loadEmails(false) }}
-              listFilter={listListFilter}
-              onListFilterChange={f => { setListListFilter(f); if (f === 'unread') setFilter('unread'); else if (f === 'attachments') setFilter('attachments'); else setFilter('all') }}
-              showAoFilter={folder === 'inbox'}
-            />
-          )}
           <div style={{ padding: isMobile ? '12px 12px 10px' : '8px 14px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
             {folder === 'trash' && emails.length > 0 && (
               <button type="button" onClick={() => void handleEmptyTrash()} style={{ marginBottom: 8, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', fontSize: 11, cursor: 'pointer', color: 'var(--text-muted)' }}>
@@ -1161,40 +1161,42 @@ export default function MailPage() {
                   </div>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                <button
-                  type="button"
-                  data-tour="mail-sync"
-                  onClick={handleSync}
-                  disabled={syncing}
-                  title="Synchroniser la boîte mail"
-                  style={{
-                    background: syncing ? 'var(--bg-hover)' : 'transparent',
-                    border: '1px solid var(--border-hi)',
-                    color: syncing ? 'var(--text-muted)' : 'var(--text-secondary)',
-                    borderRadius: 8,
-                    padding: isMobile ? '8px 12px' : '6px 10px',
-                    minHeight: 36,
-                    minWidth: isMobile ? 44 : undefined,
-                    fontSize: 11,
-                    cursor: syncing ? 'wait' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    fontFamily: 'DM Sans, system-ui',
-                    fontWeight: 600,
-                    flexShrink: 0,
-                    WebkitTapHighlightColor: 'transparent',
-                  }}
-                >
-                  {syncing ? <Spinner size={12} /> : <span style={{ fontSize: 13, lineHeight: 1 }}>↻</span>}
-                  <span>Sync</span>
-                </button>
-                <button onClick={() => openCompose()} style={{
-                  background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
-                  padding: '5px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
-                }}>+ Nouveau</button>
-              </div>
+              {isMobile && (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    data-tour="mail-sync"
+                    onClick={handleSync}
+                    disabled={syncing}
+                    title="Synchroniser la boîte mail"
+                    style={{
+                      background: syncing ? 'var(--bg-hover)' : 'transparent',
+                      border: '1px solid var(--border-hi)',
+                      color: syncing ? 'var(--text-muted)' : 'var(--text-secondary)',
+                      borderRadius: 8,
+                      padding: '8px 12px',
+                      minHeight: 36,
+                      minWidth: 44,
+                      fontSize: 11,
+                      cursor: syncing ? 'wait' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      fontFamily: 'DM Sans, system-ui',
+                      fontWeight: 600,
+                      flexShrink: 0,
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
+                  >
+                    {syncing ? <Spinner size={12} /> : <span style={{ fontSize: 13, lineHeight: 1 }}>↻</span>}
+                    <span>Synchroniser</span>
+                  </button>
+                  <button onClick={() => openCompose()} style={{
+                    background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
+                    padding: '5px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
+                  }}>+ Nouveau mail</button>
+                </div>
+              )}
             </div>
 
             {folder === 'inbox' && (
@@ -1774,6 +1776,8 @@ export default function MailPage() {
           )}
         </div>
       )}
+
+      </div>
 
       {linkModalOpen && (
         <div

@@ -91,7 +91,7 @@ export default function MailFolderSidebar({
   onSelectionChange,
   onCompose,
   onSync,
-  syncing,
+  syncing = false,
   badges,
   customFolders,
   collapsed,
@@ -100,9 +100,9 @@ export default function MailFolderSidebar({
   accountEmail: string | null
   selection: MailFolderSelection
   onSelectionChange: (s: MailFolderSelection) => void
-  onCompose: () => void
-  onSync: () => void
-  syncing: boolean
+  onCompose?: () => void
+  onSync?: () => void
+  syncing?: boolean
   badges: Partial<Record<string, number>>
   customFolders: CachedImapFolder[]
   collapsed?: boolean
@@ -184,30 +184,32 @@ export default function MailFolderSidebar({
         fontFamily: 'DM Sans, system-ui',
       }}
     >
-      <div style={{ padding: collapsed ? '12px 8px' : '14px 12px 10px' }}>
-        <button
-          type="button"
-          onClick={onCompose}
-          style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            gap: 8,
-            padding: collapsed ? '10px' : '10px 14px',
-            borderRadius: 10,
-            border: 'none',
-            background: 'linear-gradient(135deg, #021246 0%, #3b7ef6 100%)',
-            color: '#fff',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
-          {!collapsed && <span>Nouveau message</span>}
-        </button>
-      </div>
+      {onCompose && (
+        <div style={{ padding: collapsed ? '12px 8px' : '14px 12px 10px' }}>
+          <button
+            type="button"
+            onClick={onCompose}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              gap: 8,
+              padding: collapsed ? '10px' : '10px 14px',
+              borderRadius: 10,
+              border: 'none',
+              background: 'linear-gradient(135deg, #021246 0%, #3b7ef6 100%)',
+              color: '#fff',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
+            {!collapsed && <span>Nouveau message</span>}
+          </button>
+        </div>
+      )}
 
       {!collapsed && (accounts.length > 0 || accountEmail) && (
         <div style={{ padding: '8px 14px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
@@ -264,7 +266,7 @@ export default function MailFolderSidebar({
         )}
       </nav>
 
-      {!collapsed && (
+      {onSync && !collapsed && (
         <div style={{ padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <button
             type="button"
