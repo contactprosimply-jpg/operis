@@ -6,6 +6,10 @@ import { Spinner } from '@/components/ui'
 
 const POPUP_WIDTH = 560
 const POPUP_HEIGHT = 520
+const POPUP_WIDTH_LARGE = 760
+const POPUP_HEIGHT_LARGE = 680
+const POPUP_MIN_WIDTH = 420
+const POPUP_MIN_HEIGHT = 360
 const POPUP_Z_INDEX = 10050
 
 const inputStyle: React.CSSProperties = {
@@ -74,7 +78,13 @@ export default function MailComposePopup({
   const [dragActive, setDragActive] = useState(false)
   const [fileChoice, setFileChoice] = useState<FileChoiceState>(null)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const [expanded, setExpanded] = useState(false)
+  const [customSize, setCustomSize] = useState<{ w: number; h: number } | null>(null)
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
+  const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null)
+
+  const popupWidth = customSize?.w ?? (expanded ? POPUP_WIDTH_LARGE : POPUP_WIDTH)
+  const popupHeight = customSize?.h ?? (expanded ? POPUP_HEIGHT_LARGE : POPUP_HEIGHT)
   const bodyRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const bodyInitRef = useRef<string | null>(null)
@@ -193,6 +203,40 @@ export default function MailComposePopup({
     window.addEventListener('mouseup', onUp)
   }
 
+  const onResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    resizeRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startW: popupWidth,
+      startH: popupHeight,
+    }
+    const onMove = (ev: MouseEvent) => {
+      if (!resizeRef.current) return
+      const dw = resizeRef.current.startX - ev.clientX
+      const dh = resizeRef.current.startY - ev.clientY
+      const maxW = window.innerWidth - 48
+      const maxH = window.innerHeight - 24
+      setCustomSize({
+        w: Math.min(maxW, Math.max(POPUP_MIN_WIDTH, resizeRef.current.startW + dw)),
+        h: Math.min(maxH, Math.max(POPUP_MIN_HEIGHT, resizeRef.current.startH + dh)),
+      })
+    }
+    const onUp = () => {
+      resizeRef.current = null
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  const toggleExpanded = () => {
+    setCustomSize(null)
+    setExpanded(prev => !prev)
+  }
+
   const subjectLabel = compose.subject.trim() || compose.to.trim() || 'Nouveau message'
 
   const minimizedBar = (
@@ -245,8 +289,8 @@ export default function MailComposePopup({
         position: 'fixed',
         bottom: 0,
         right: 24,
-        width: `min(${POPUP_WIDTH}px, calc(100vw - 48px))`,
-        height: POPUP_HEIGHT,
+        width: `min(${popupWidth}px, calc(100vw - 48px))`,
+        height: popupHeight,
         maxHeight: 'calc(100vh - 24px)',
         zIndex: POPUP_Z_INDEX,
         borderRadius: '12px 12px 0 0',
@@ -265,6 +309,33 @@ export default function MailComposePopup({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      <div
+        onMouseDown={onResizeMouseDown}
+        title="Glisser pour redimensionner"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: 18,
+          height: 18,
+          cursor: 'nwse-resize',
+          zIndex: 30,
+          borderTopLeftRadius: 12,
+        }}
+      />
+      <div
+        onMouseDown={onResizeMouseDown}
+        title="Glisser pour redimensionner"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 18,
+          right: 18,
+          height: 6,
+          cursor: 'ns-resize',
+          zIndex: 25,
+        }}
+      />
       {/* Header draggable */}
       <div
         onMouseDown={onHeaderMouseDown}
@@ -282,6 +353,14 @@ export default function MailComposePopup({
       >
         <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>Nouveau message</span>
         <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            type="button"
+            onClick={toggleExpanded}
+            title={expanded || customSize ? 'Taille normale' : 'Agrandir'}
+            style={iconBtnStyle}
+          >
+            {expanded || customSize ? '⤡' : '⤢'}
+          </button>
           <button type="button" onClick={onMinimize} title="Réduire" style={iconBtnStyle}>—</button>
           <button type="button" onClick={onClose} title="Fermer" style={iconBtnStyle}>×</button>
         </div>
