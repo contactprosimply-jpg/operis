@@ -273,9 +273,15 @@ export const tenderService = {
       if (!current) return { success: false, error: 'Consultation introuvable' }
 
       const newCount = (current.relaunch_count ?? 0) + 1
+      const db = createAdminClient()
+      const { getUserSettings, relanceMaxReached } = await import('@/lib/user-settings')
+      const settings = await getUserSettings(db, userId)
+      if (relanceMaxReached(current.relaunch_count ?? 0, settings.relance_max_count)) {
+        return { success: false, error: 'Nombre maximum de relances atteint' }
+      }
+
       const newStatus = newCount >= 2 ? 'relance_2' : 'relance'
       const bodyPlain = buildRelaunchEmail(tender, supplier.name, newCount)
-      const db = createAdminClient()
 
       // 1. Envoyer l'email depuis la messagerie du propriétaire de l'AO
       const { text: sentText } = await sendUserEmail(db, userId, {

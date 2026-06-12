@@ -9,6 +9,8 @@ import { buildFieldsSignatureHtml, saveSignatureToStorage } from '@/lib/email-si
 import { THEMES, applyTheme, DEFAULT_THEME_ID, DEFAULT_ACCENT } from '@/lib/theme'
 import { requestProductTour } from '@/lib/product-tour'
 import { useAuth } from '@/components/AuthProvider'
+import MailRelancesSection from '@/components/settings/MailRelancesSection'
+import { cacheUserSettingsLocally } from '@/lib/user-settings'
 
 type MailAccountRow = {
   id: string
@@ -21,6 +23,7 @@ const ACCENT_COLORS = ['#3b7ef6', '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#
 const TABS = [
   { id: 'general',    label: 'General',    icon: '⚙' },
   { id: 'messagerie', label: 'Messagerie', icon: '✉' },
+  { id: 'mail-relaunch', label: 'Messagerie & Relances', icon: '📬' },
   { id: 'signature',  label: 'Signature',  icon: '✍' },
   { id: 'famille',    label: 'Famille',    icon: '👥' },
   { id: 'apparence',  label: 'Apparence',  icon: '🎨' },
@@ -109,6 +112,9 @@ function SettingsPageContent() {
         if (savedGeneral) setGeneral(JSON.parse(savedGeneral))
         if (savedAttachment) setAttachmentName(savedAttachment)
         await loadOrganization()
+        const settingsRes = await authFetch('/api/user-settings')
+        const settingsData = await settingsRes.json()
+        if (settingsData.success) cacheUserSettingsLocally(settingsData.data)
       } catch (e) { console.error(e) }
       setLoading(false)
     }
@@ -536,6 +542,10 @@ function SettingsPageContent() {
             </div>
             </form>
           </>
+        )}
+
+        {tab === 'mail-relaunch' && (
+          <MailRelancesSection onSaved={() => show('✓ Paramètres enregistrés')} />
         )}
 
         {/* SIGNATURE */}

@@ -36,6 +36,7 @@ import {
 } from '@/lib/mail-drafts'
 import { extractEmailAddress } from '@/lib/mail-attachments'
 import type { OperisContact } from '@/lib/contacts'
+import { cacheUserSettingsLocally } from '@/lib/user-settings'
 
 const MAIL_LIST_PAGE_SIZE = 30
 
@@ -618,6 +619,14 @@ export default function MailPage() {
       setSyncing(false)
     }
   }, [loadEmails, loadEmailDetail, refreshFolders, folder, userId])
+
+  useEffect(() => {
+    if (!userId) return
+    void authFetch('/api/user-settings')
+      .then(r => r.json())
+      .then(d => { if (d.success) cacheUserSettingsLocally(d.data) })
+      .catch(() => {})
+  }, [userId])
 
   useEffect(() => {
     if (!ready) return

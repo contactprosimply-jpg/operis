@@ -23,6 +23,28 @@ export function buildFieldsSignatureHtml(sig: SignatureFields, accentColor = '#4
 export function getSignatureData(): { text: string; html: string } {
   if (typeof window === 'undefined') return { text: '', html: '' }
   try {
+    const cachedSettings = localStorage.getItem('operis_user_settings')
+    if (cachedSettings) {
+      const parsed = JSON.parse(cachedSettings) as {
+        mail_signature_enabled?: boolean
+        mail_signature?: string
+      }
+      if (parsed.mail_signature_enabled && parsed.mail_signature?.trim()) {
+        const html = parsed.mail_signature.trim()
+        const isHtml = html.includes('<') && html.includes('>')
+        const textSig = isHtml
+          ? html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+          : html
+        return {
+          text: textSig ? `\n\n--\n${textSig}` : '',
+          html: isHtml ? html : html.replace(/\n/g, '<br>'),
+        }
+      }
+      if (!parsed.mail_signature_enabled) {
+        return { text: '', html: '' }
+      }
+    }
+
     const mode = localStorage.getItem('operis_signature_mode') ?? 'fields'
     const sig = JSON.parse(localStorage.getItem('operis_signature') ?? '{}') as SignatureFields
     const accentColor = localStorage.getItem('operis_accent') ?? '#4f8ef7'

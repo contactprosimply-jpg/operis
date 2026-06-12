@@ -66,11 +66,14 @@ async function main() {
   }
 
   const { runSmartLabelPeriodicChecks } = await import('../src/lib/mail-smart-labels')
+  const { runAutoRelaunchesForUser } = await import('../src/lib/auto-relaunch')
+  const { getUserSettings } = await import('../src/lib/user-settings')
 
   console.log('\n── Sync multi-dossiers (inbox, sent, drafts, trash, spam, custom) ──')
   for (const userId of userIds) {
     console.log(`\n── Sync user ${userId} ──`)
     try {
+      const settings = await getUserSettings(db, userId)
       const smartBefore = await runSmartLabelPeriodicChecks(db, userId)
       if (smartBefore > 0) console.log(`Smart labels (pré-sync): ${smartBefore} mail(s) mis à jour`)
       const result = await syncUserMailAccounts(userId, { backfill: true, quick: false })
@@ -86,6 +89,12 @@ async function main() {
           spam: result.mailboxes.spam,
           custom: result.mailboxes.custom,
         })
+      }
+      const relaunch = await runAutoRelaunchesForUser(db, userId, settings)
+      if (relaunch.sent > 0 || relaunch.pending > 0) {
+        console.log(
+          `Relances: ${relaunch.sent} envoyée(s), ${relaunch.pending} en attente de confirmation`,
+        )
       }
     } catch (e) {
       console.error('Erreur:', e)

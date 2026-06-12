@@ -37,6 +37,21 @@ export interface Contact {
   created_at: string
 }
 
+export interface UserSettings {
+  user_id: string
+  relance_first_delay_days: number
+  relance_interval_days: number
+  relance_max_count: number
+  relance_working_days_only: boolean
+  relance_confirm_before_send: boolean
+  auto_labels_enabled: boolean
+  label_a_traiter_delay_hours: number
+  label_en_retard_delay_days: number
+  mail_signature: string
+  mail_signature_enabled: boolean
+  updated_at?: string
+}
+
 export interface Tender {
   id: string
   user_id: string

@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   try {
     const result = await runAutoRelaunches()
     console.log(
-      `[Cron/Relaunch] ${result.sent} envoyée(s), ${result.errors} erreur(s), ${result.tenders} AO`,
+      `[Cron/Relaunch] ${result.sent} envoyée(s), ${result.pending} en attente, ${result.errors} erreur(s), ${result.tenders} AO`,
     )
     return Response.json({ success: true, data: result })
   } catch (e: unknown) {

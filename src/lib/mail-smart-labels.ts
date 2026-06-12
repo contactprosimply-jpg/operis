@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { EmailLabel } from '@/types/database'
 import { PRESET_EMAIL_LABELS } from '@/lib/mail-api'
+import { getUserSettings } from '@/lib/user-settings'
 
 export type SmartLabelAction = 'replied' | 'forwarded' | 'moved' | 'read'
 export type LabelSource = 'manual' | 'auto'
@@ -98,16 +99,21 @@ export async function runSmartLabelPeriodicChecks(
   db: SupabaseClient,
   userId: string,
 ): Promise<number> {
+  const settings = await getUserSettings(db, userId)
+  if (!settings.auto_labels_enabled) return 0
+
   let updated = 0
-  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
-  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const enRetardMs = settings.label_en_retard_delay_days * 24 * 60 * 60 * 1000
+  const aTraiterMs = settings.label_a_traiter_delay_hours * 60 * 60 * 1000
+  const enRetardCutoff = new Date(Date.now() - enRetardMs).toISOString()
+  const aTraiterCutoff = new Date(Date.now() - aTraiterMs).toISOString()
 
   const { data: inboxMails } = await db
     .from('emails')
     .select('id, labels, received_at')
     .eq('user_id', userId)
     .eq('mail_folder', 'inbox')
-    .lt('received_at', threeDaysAgo)
+    .lt('received_at', enRetardCutoff)
 
   for (const mail of inboxMails ?? []) {
     const labels = (mail.labels as EmailLabel[] | undefined) ?? []
@@ -133,7 +139,7 @@ export async function runSmartLabelPeriodicChecks(
     .eq('user_id', userId)
     .eq('mail_folder', 'inbox')
     .eq('is_read', true)
-    .lt('received_at', oneDayAgo)
+    .lt('received_at', aTraiterCutoff)
 
   for (const mail of readMails ?? []) {
     const labels = (mail.labels as EmailLabel[] | undefined) ?? []

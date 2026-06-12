@@ -50,6 +50,7 @@ const NOTIF_ICONS: Record<string, string> = {
   no_response: '🔔',
   new_ao: '📄',
   quote_received: '✅',
+  relaunch_confirm: '📤',
 }
 
 function timeAgo(dateStr: string): string {
@@ -388,39 +389,101 @@ export default function Sidebar() {
                   <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
                     Aucune notification
                   </div>
-                ) : notifList.map((n: { id: string; type: string; title: string; message: string; created_at: string; tender_id?: string }) => (
-                  <button
-                    key={n.id}
-                    type="button"
-                    onClick={async () => {
-                      const token = accessToken
-                      if (token) {
-                        await fetch('/api/notifications', {
-                          method: 'PATCH',
-                          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ id: n.id }),
-                        })
-                      }
-                      setNotifList(prev => prev.filter(x => x.id !== n.id))
-                      setNotifCount(c => Math.max(0, c - 1))
-                      setShowNotifPanel(false)
-                      if (n.tender_id) router.push(`/tenders/${n.tender_id}`)
-                    }}
-                    style={{
-                      width: '100%', textAlign: 'left', padding: '12px 16px',
-                      background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)',
-                      cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
-                    }}
-                  >
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                      <span style={{ fontSize: 14 }}>{NOTIF_ICONS[n.type] ?? '🔔'}</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{n.title}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{n.message}</div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 4 }}>{timeAgo(n.created_at)}</div>
+                ) : notifList.map((n: { id: string; type: string; title: string; message: string; created_at: string; tender_id?: string; supplier_id?: string }) => (
+                  n.type === 'relaunch_confirm' ? (
+                    <div
+                      key={n.id}
+                      style={{
+                        padding: '12px 16px', borderBottom: '1px solid var(--border)',
+                        fontFamily: 'DM Sans, system-ui',
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                        <span style={{ fontSize: 14 }}>{NOTIF_ICONS[n.type] ?? '🔔'}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{n.title}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{n.message}</div>
+                          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const token = accessToken
+                                if (!token) return
+                                await fetch('/api/notifications/relaunch', {
+                                  method: 'POST',
+                                  headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ id: n.id, action: 'send' }),
+                                })
+                                setNotifList(prev => prev.filter(x => x.id !== n.id))
+                                setNotifCount(c => Math.max(0, c - 1))
+                              }}
+                              style={{
+                                fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 6,
+                                border: 'none', background: '#3B7FE8', color: '#fff', cursor: 'pointer',
+                              }}
+                            >
+                              Envoyer
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const token = accessToken
+                                if (!token) return
+                                await fetch('/api/notifications/relaunch', {
+                                  method: 'POST',
+                                  headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ id: n.id, action: 'cancel' }),
+                                })
+                                setNotifList(prev => prev.filter(x => x.id !== n.id))
+                                setNotifCount(c => Math.max(0, c - 1))
+                              }}
+                              style={{
+                                fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 6,
+                                border: '1px solid var(--border)', background: 'transparent',
+                                color: 'var(--text-secondary)', cursor: 'pointer',
+                              }}
+                            >
+                              Annuler
+                            </button>
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 6 }}>{timeAgo(n.created_at)}</div>
+                        </div>
                       </div>
                     </div>
-                  </button>
+                  ) : (
+                    <button
+                      key={n.id}
+                      type="button"
+                      onClick={async () => {
+                        const token = accessToken
+                        if (token) {
+                          await fetch('/api/notifications', {
+                            method: 'PATCH',
+                            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: n.id }),
+                          })
+                        }
+                        setNotifList(prev => prev.filter(x => x.id !== n.id))
+                        setNotifCount(c => Math.max(0, c - 1))
+                        setShowNotifPanel(false)
+                        if (n.tender_id) router.push(`/tenders/${n.tender_id}`)
+                      }}
+                      style={{
+                        width: '100%', textAlign: 'left', padding: '12px 16px',
+                        background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)',
+                        cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                        <span style={{ fontSize: 14 }}>{NOTIF_ICONS[n.type] ?? '🔔'}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{n.title}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{n.message}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 4 }}>{timeAgo(n.created_at)}</div>
+                        </div>
+                      </div>
+                    </button>
+                  )
                 ))}
               </div>
             </div>
