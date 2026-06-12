@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Spinner } from '@/components/ui'
 
 const POPUP_WIDTH = 560
 const POPUP_HEIGHT = 520
+const POPUP_Z_INDEX = 10050
 
 const inputStyle: React.CSSProperties = {
   flex: 1,
@@ -76,6 +78,11 @@ export default function MailComposePopup({
   const bodyRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const bodyInitRef = useRef<string | null>(null)
+  const [portalReady, setPortalReady] = useState(false)
+
+  useEffect(() => {
+    setPortalReady(true)
+  }, [])
 
   useEffect(() => {
     if (compose.cc.trim()) setShowCc(true)
@@ -188,53 +195,51 @@ export default function MailComposePopup({
 
   const subjectLabel = compose.subject.trim() || compose.to.trim() || 'Nouveau message'
 
-  if (minimized) {
-    return (
-      <div
+  const minimizedBar = (
+    <div
+      style={{
+        position: 'fixed',
+        bottom: 0,
+        right: 24,
+        width: Math.min(POPUP_WIDTH, 'calc(100vw - 48px)'),
+        height: 44,
+        zIndex: POPUP_Z_INDEX,
+        background: '#021246',
+        borderRadius: '10px 10px 0 0',
+        boxShadow: '0 -4px 24px rgba(0,0,0,0.35)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '0 12px',
+        border: '1px solid rgba(255,255,255,0.1)',
+        fontFamily: 'DM Sans, system-ui',
+      }}
+    >
+      <button
+        type="button"
+        onClick={onRestore}
         style={{
-          position: 'fixed',
-          bottom: 0,
-          right: 24,
-          width: Math.min(POPUP_WIDTH, 'calc(100vw - 48px)'),
-          height: 44,
-          zIndex: 1000,
-          background: '#021246',
-          borderRadius: '10px 10px 0 0',
-          boxShadow: '0 -4px 24px rgba(0,0,0,0.35)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '0 12px',
-          border: '1px solid rgba(255,255,255,0.1)',
-          fontFamily: 'DM Sans, system-ui',
+          flex: 1,
+          background: 'none',
+          border: 'none',
+          color: '#e8eaef',
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: 'pointer',
+          textAlign: 'left',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}
       >
-        <button
-          type="button"
-          onClick={onRestore}
-          style={{
-            flex: 1,
-            background: 'none',
-            border: 'none',
-            color: '#e8eaef',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            textAlign: 'left',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {subjectLabel}
-        </button>
-        <button type="button" onClick={onRestore} title="Restaurer" style={iconBtnStyle}>▢</button>
-        <button type="button" onClick={onClose} title="Fermer" style={iconBtnStyle}>×</button>
-      </div>
-    )
-  }
+        {subjectLabel}
+      </button>
+      <button type="button" onClick={onRestore} title="Restaurer" style={iconBtnStyle}>▢</button>
+      <button type="button" onClick={onClose} title="Fermer" style={iconBtnStyle}>×</button>
+    </div>
+  )
 
-  return (
+  const expandedPopup = (
     <div
       style={{
         position: 'fixed',
@@ -243,7 +248,7 @@ export default function MailComposePopup({
         width: Math.min(POPUP_WIDTH, 'calc(100vw - 48px)'),
         height: POPUP_HEIGHT,
         maxHeight: 'calc(100vh - 24px)',
-        zIndex: 1000,
+        zIndex: POPUP_Z_INDEX,
         borderRadius: '12px 12px 0 0',
         background: '#021246',
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
@@ -253,6 +258,7 @@ export default function MailComposePopup({
         transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
         fontFamily: 'DM Sans, system-ui',
         border: '1px solid rgba(255,255,255,0.08)',
+        animation: 'mailComposeSlideUp 0.22s ease-out',
       }}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -539,6 +545,9 @@ export default function MailComposePopup({
       </div>
     </div>
   )
+
+  if (!portalReady) return null
+  return createPortal(minimized ? minimizedBar : expandedPopup, document.body)
 }
 
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
