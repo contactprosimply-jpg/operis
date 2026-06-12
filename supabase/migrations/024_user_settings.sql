@@ -23,6 +23,10 @@ CREATE INDEX IF NOT EXISTS idx_user_settings_user ON user_settings(user_id);
 
 ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS user_settings_select_own ON user_settings;
+DROP POLICY IF EXISTS user_settings_insert_own ON user_settings;
+DROP POLICY IF EXISTS user_settings_update_own ON user_settings;
+
 CREATE POLICY user_settings_select_own ON user_settings
   FOR SELECT USING (user_id = auth.uid());
 
@@ -31,6 +35,32 @@ CREATE POLICY user_settings_insert_own ON user_settings
 
 CREATE POLICY user_settings_update_own ON user_settings
   FOR UPDATE USING (user_id = auth.uid());
+
+-- Notifications (migration 005 peut être absente en prod)
+CREATE TABLE IF NOT EXISTS notifications (
+  id         uuid        PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id    uuid        NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  type       text        NOT NULL,
+  title      text        NOT NULL,
+  message    text        NOT NULL,
+  tender_id  uuid        REFERENCES tenders(id) ON DELETE CASCADE,
+  is_read    boolean     NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "notifications_select" ON notifications;
+DROP POLICY IF EXISTS "notifications_update" ON notifications;
+
+CREATE POLICY "notifications_select" ON notifications
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "notifications_update" ON notifications
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE INDEX IF NOT EXISTS notifications_user_unread
+  ON notifications (user_id, is_read, created_at DESC);
 
 -- Relances en attente de confirmation
 ALTER TABLE notifications
