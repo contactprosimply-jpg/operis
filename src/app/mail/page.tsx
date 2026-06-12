@@ -25,6 +25,7 @@ import {
   upsertDraft,
   removeDraft,
   newDraftId,
+  htmlToPlainText,
   type MailDraft,
 } from '@/lib/mail-drafts'
 
@@ -166,6 +167,7 @@ export default function MailPage() {
   const [allEmails, setAllEmails] = useState<Email[]>([])
   const [drafts, setDrafts] = useState<MailDraft[]>([])
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null)
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false)
   const [mailAccountEmail, setMailAccountEmail] = useState<string | null>(null)
   const [inboxUnread, setInboxUnread] = useState(0)
   const [filter, setFilter] = useState<MailFilter>('all')
@@ -695,11 +697,86 @@ export default function MailPage() {
     if (target && selected?.id !== target.id) selectEmail(target)
   }, [pendingEmailId, emails, selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const isComposeContentEmpty = useCallback(() => {
+    const sig = getSignatureData()
+    const plainBody = htmlToPlainText(compose.body)
+    const bodyWithoutSig = stripSignatureFromBody(plainBody, sig.text).trim()
+    return (
+      !compose.to.trim() &&
+      !compose.cc.trim() &&
+      !compose.bcc.trim() &&
+      !compose.subject.trim() &&
+      !bodyWithoutSig &&
+      attachments.length === 0
+    )
+  }, [compose, attachments])
+
+  const cleanupDraft = useCallback(() => {
+    if (userId && activeDraftId) removeDraft(userId, activeDraftId)
+    if (serverDraftId) {
+      void authFetch(`/api/mail/drafts?id=${encodeURIComponent(serverDraftId)}`, {
+        method: 'DELETE',
+      }).catch(() => {})
+    }
+    setActiveDraftId(null)
+    setServerDraftId(null)
+    if (folder === 'drafts' && userId) setDrafts(loadDrafts(userId))
+  }, [userId, activeDraftId, serverDraftId, folder])
+
+  const saveDraftNow = useCallback(async () => {
+    if (!userId || !activeDraftId || isComposeContentEmpty()) return
+    upsertDraft(userId, {
+      id: activeDraftId,
+      to: compose.to,
+      cc: compose.cc,
+      subject: compose.subject,
+      body: compose.body,
+      updatedAt: new Date().toISOString(),
+    })
+    try {
+      const res = await authFetch('/api/mail/drafts', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: serverDraftId,
+          to: compose.to,
+          cc: compose.cc,
+          bcc: compose.bcc,
+          subject: compose.subject,
+          body: compose.body,
+        }),
+      })
+      const data = await res.json()
+      if (data.success && data.data?.id) setServerDraftId(data.data.id)
+      setDraftSavedLabel('Brouillon enregistré')
+    } catch {}
+    if (folder === 'drafts') setDrafts(loadDrafts(userId))
+  }, [userId, activeDraftId, compose, serverDraftId, folder, isComposeContentEmpty])
+
   const closeCompose = () => {
+    setCloseConfirmOpen(false)
     setComposing(false)
     setComposeMinimized(false)
     setSendError(null)
     setDraftSavedLabel(null)
+  }
+
+  const handleRequestCloseCompose = () => {
+    if (isComposeContentEmpty()) {
+      cleanupDraft()
+      closeCompose()
+      return
+    }
+    setCloseConfirmOpen(true)
+  }
+
+  const handleCloseWithoutSaving = () => {
+    cleanupDraft()
+    closeCompose()
+  }
+
+  const handleCloseWithSaving = async () => {
+    await saveDraftNow()
+    closeCompose()
   }
 
   const openCompose = (prefill: Partial<typeof compose> = {}, draftId?: string) => {
@@ -729,6 +806,18 @@ export default function MailPage() {
   useEffect(() => {
     if (!composing || !userId || !activeDraftId) return
     const interval = setInterval(() => {
+      if (isComposeContentEmpty()) {
+        removeDraft(userId, activeDraftId)
+        if (serverDraftId) {
+          void authFetch(`/api/mail/drafts?id=${encodeURIComponent(serverDraftId)}`, {
+            method: 'DELETE',
+          }).catch(() => {})
+          setServerDraftId(null)
+        }
+        setDraftSavedLabel(null)
+        if (folder === 'drafts') setDrafts(loadDrafts(userId))
+        return
+      }
       upsertDraft(userId, {
         id: activeDraftId,
         to: compose.to,
@@ -757,7 +846,7 @@ export default function MailPage() {
       if (folder === 'drafts') setDrafts(loadDrafts(userId))
     }, 30000)
     return () => clearInterval(interval)
-  }, [composing, compose, activeDraftId, userId, folder, serverDraftId])
+  }, [composing, compose, activeDraftId, userId, folder, serverDraftId, isComposeContentEmpty, attachments])
 
   const openReply = (email: Email) => {
     const originalLines = (email.body_text ?? '').split('\n').slice(0, 8).map(l => `> ${l}`).join('\n')
@@ -1787,7 +1876,13 @@ export default function MailPage() {
           compose={compose}
           onChange={patch => setCompose(c => ({ ...c, ...patch }))}
           onSend={handleSend}
-          onClose={closeCompose}
+          onRequestClose={handleRequestCloseCompose}
+          closeConfirm={{
+            open: closeConfirmOpen,
+            onSave: () => void handleCloseWithSaving(),
+            onDiscard: handleCloseWithoutSaving,
+            onCancel: () => setCloseConfirmOpen(false),
+          }}
           onMinimize={() => setComposeMinimized(true)}
           onRestore={() => setComposeMinimized(false)}
           onDelete={handleDeleteDraft}

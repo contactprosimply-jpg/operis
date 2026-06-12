@@ -39,3 +39,13 @@ export function removeDraft(userId: string, draftId: string) {
 export function newDraftId() {
   return `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
+
+export function htmlToPlainText(html: string): string {
+  if (!html.includes('<')) return html
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .trim()
+}

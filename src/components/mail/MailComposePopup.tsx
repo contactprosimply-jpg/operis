@@ -38,7 +38,8 @@ export default function MailComposePopup({
   compose,
   onChange,
   onSend,
-  onClose,
+  onRequestClose,
+  closeConfirm,
   onMinimize,
   onRestore,
   onDelete,
@@ -57,7 +58,13 @@ export default function MailComposePopup({
   compose: { to: string; cc: string; bcc: string; subject: string; body: string }
   onChange: (patch: Partial<{ to: string; cc: string; bcc: string; subject: string; body: string }>) => void
   onSend: () => void
-  onClose: () => void
+  onRequestClose: () => void
+  closeConfirm?: {
+    open: boolean
+    onSave: () => void
+    onDiscard: () => void
+    onCancel: () => void
+  }
   onMinimize: () => void
   onRestore: () => void
   onDelete: () => void
@@ -279,9 +286,57 @@ export default function MailComposePopup({
         {subjectLabel}
       </button>
       <button type="button" onClick={onRestore} title="Restaurer" style={iconBtnStyle}>▢</button>
-      <button type="button" onClick={onClose} title="Fermer" style={iconBtnStyle}>×</button>
+      <button type="button" onClick={onRequestClose} title="Fermer" style={iconBtnStyle}>×</button>
     </div>
   )
+
+  const closeConfirmDialog = closeConfirm?.open ? (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: POPUP_Z_INDEX + 10,
+        background: 'rgba(0,0,0,0.55)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+      onClick={closeConfirm.onCancel}
+    >
+      <div
+        style={{
+          background: '#0d1f4a',
+          border: '1px solid rgba(255,255,255,0.15)',
+          borderRadius: 12,
+          padding: 20,
+          maxWidth: 400,
+          width: '100%',
+          boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+          fontFamily: 'DM Sans, system-ui',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ fontSize: 15, fontWeight: 600, color: '#fff', marginBottom: 8 }}>
+          Fermer le message ?
+        </div>
+        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5, margin: '0 0 18px' }}>
+          Votre message n&apos;est pas sauvegardé dans les brouillons. Voulez-vous le sauvegarder avant de fermer ?
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button type="button" onClick={closeConfirm.onSave} style={confirmPrimaryBtnStyle}>
+            Sauvegarder dans les brouillons
+          </button>
+          <button type="button" onClick={closeConfirm.onDiscard} style={confirmDangerBtnStyle}>
+            Fermer sans sauvegarder
+          </button>
+          <button type="button" onClick={closeConfirm.onCancel} style={confirmSecondaryBtnStyle}>
+            Continuer l&apos;édition
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
 
   const expandedPopup = (
     <div
@@ -362,7 +417,7 @@ export default function MailComposePopup({
             {expanded || customSize ? '⤡' : '⤢'}
           </button>
           <button type="button" onClick={onMinimize} title="Réduire" style={iconBtnStyle}>—</button>
-          <button type="button" onClick={onClose} title="Fermer" style={iconBtnStyle}>×</button>
+          <button type="button" onClick={onRequestClose} title="Fermer" style={iconBtnStyle}>×</button>
         </div>
       </div>
 
@@ -626,7 +681,13 @@ export default function MailComposePopup({
   )
 
   if (!portalReady) return null
-  return createPortal(minimized ? minimizedBar : expandedPopup, document.body)
+  return createPortal(
+    <>
+      {minimized ? minimizedBar : expandedPopup}
+      {closeConfirmDialog}
+    </>,
+    document.body,
+  )
 }
 
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -700,4 +761,42 @@ const chipStyle: React.CSSProperties = {
   padding: '4px 10px',
   fontSize: 11,
   color: '#e8eaef',
+}
+
+const confirmPrimaryBtnStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '10px 14px',
+  borderRadius: 8,
+  border: 'none',
+  background: 'linear-gradient(135deg, #3b7ef6 0%, #6366f1 100%)',
+  color: '#fff',
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'DM Sans, system-ui',
+}
+
+const confirmDangerBtnStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '10px 14px',
+  borderRadius: 8,
+  border: '1px solid rgba(239,68,68,0.4)',
+  background: 'rgba(239,68,68,0.12)',
+  color: '#fca5a5',
+  fontSize: 13,
+  fontWeight: 500,
+  cursor: 'pointer',
+  fontFamily: 'DM Sans, system-ui',
+}
+
+const confirmSecondaryBtnStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '10px 14px',
+  borderRadius: 8,
+  border: '1px solid rgba(255,255,255,0.15)',
+  background: 'rgba(255,255,255,0.06)',
+  color: '#e8eaef',
+  fontSize: 13,
+  cursor: 'pointer',
+  fontFamily: 'DM Sans, system-ui',
 }
