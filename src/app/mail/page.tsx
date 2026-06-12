@@ -1125,28 +1125,25 @@ export default function MailPage() {
     setSelected(prev => prev?.id === emailId ? { ...prev, ...patch } : prev)
   }
 
-  const handleSetPriority = async (email: Email, priority: EmailPriority) => {
-    try {
-      await patchEmail(email.id, { priority })
-      applyEmailPatch(email.id, { priority })
-      setContextMenuEmailId(null)
-      showToast(`Priorité : ${PRIORITY_STYLES[priority].label}`)
-    } catch {
+  const handleSetPriority = (email: Email, priority: EmailPriority) => {
+    const previous = email.priority
+    applyEmailPatch(email.id, { priority })
+    setContextMenuEmailId(null)
+    void patchEmail(email.id, { priority }).catch(() => {
+      applyEmailPatch(email.id, { priority: previous })
       showToast('Erreur priorité')
-    }
+    })
   }
 
-  const handleToggleLabel = async (email: Email, label: EmailLabel) => {
-    const current = email.labels ?? []
-    const has = current.some(l => l.id === label.id)
-    const next = has ? current.filter(l => l.id !== label.id) : [...current, label]
-    try {
-      await patchEmail(email.id, { labels: next })
-      applyEmailPatch(email.id, { labels: next })
-      showToast(has ? `Étiquette retirée` : `Étiquette « ${label.name} »`)
-    } catch {
-      showToast('Erreur étiquette')
-    }
+  const handleToggleLabel = (email: Email, label: EmailLabel) => {
+    const previous = email.labels ?? []
+    const has = previous.some(l => l.id === label.id)
+    const next = has ? previous.filter(l => l.id !== label.id) : [...previous, label]
+    applyEmailPatch(email.id, { labels: next })
+    void patchEmail(email.id, { labels: next }).catch(() => {
+      applyEmailPatch(email.id, { labels: previous })
+      showToast('Erreur lors de la mise à jour des étiquettes')
+    })
   }
 
   const handleMarkAsAo = async (email: Email) => {
@@ -1690,6 +1687,26 @@ export default function MailPage() {
                             {PRIORITY_STYLES[p].label}
                           </button>
                         ))}
+                        <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '6px 8px 4px', fontFamily: 'DM Mono, monospace', borderTop: '1px solid var(--border)', marginTop: 4 }}>ÉTIQUETTES</div>
+                        {PRESET_EMAIL_LABELS.map(label => {
+                          const active = (email.labels ?? []).some(l => l.id === label.id)
+                          return (
+                            <button
+                              key={label.id}
+                              type="button"
+                              onClick={() => handleToggleLabel(email, label)}
+                              style={{
+                                display: 'block', width: '100%', textAlign: 'left',
+                                padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+                                background: active ? `${label.color}18` : 'transparent',
+                                color: active ? label.color : 'var(--text-secondary)',
+                                fontSize: 11, fontFamily: 'DM Sans, system-ui',
+                              }}
+                            >
+                              {active ? '✓ ' : ''}{label.name}
+                            </button>
+                          )
+                        })}
                       </div>
                     )}
                   </div>
@@ -1772,95 +1789,71 @@ export default function MailPage() {
                 </div>
               )}
 
-              <div style={{ fontSize: isMobile ? 16 : 15, fontWeight: 600, marginBottom: 12, color: 'var(--text-primary)', lineHeight: 1.4 }}>{selected.subject}</div>
-              <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.8 }}>
-                {(folder === 'sent' || selected.mail_folder === 'sent') ? (
-                  <div>À : <span style={{ color: 'var(--text-secondary)' }}>{selected.to_address || '—'}</span></div>
-                ) : (
-                  <div>De : <span style={{ color: 'var(--text-secondary)' }}>{selected.from_address}</span></div>
-                )}
-                <div>Date : <span style={{ color: 'var(--text-secondary)' }}>{selected.received_at ? new Date(selected.received_at).toLocaleString('fr-FR') : '—'}</span></div>
-              </div>
-
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-                  Priorité
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {(['urgent', 'normal', 'info'] as EmailPriority[]).map(p => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => handleSetPriority(selected, p)}
-                      style={{
-                        padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
-                        border: selected.priority === p ? `1px solid ${PRIORITY_STYLES[p].color}` : '1px solid var(--border)',
-                        background: selected.priority === p ? PRIORITY_STYLES[p].bg : 'transparent',
-                        color: PRIORITY_STYLES[p].color, fontFamily: 'DM Sans, system-ui',
-                      }}
-                    >
-                      {PRIORITY_STYLES[p].label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-                  Étiquettes
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {PRESET_EMAIL_LABELS.map(label => {
-                    const active = (selected.labels ?? []).some(l => l.id === label.id)
-                    return (
-                      <button
-                        key={label.id}
-                        type="button"
-                        onClick={() => handleToggleLabel(selected, label)}
-                        style={{
-                          padding: '3px 8px', borderRadius: 12, fontSize: 10, cursor: 'pointer',
-                          border: `1px solid ${active ? label.color : 'var(--border)'}`,
-                          background: active ? `${label.color}22` : 'transparent',
-                          color: active ? label.color : 'var(--text-muted)',
-                          fontFamily: 'DM Mono, monospace',
-                        }}
-                      >
-                        {label.name}
-                      </button>
-                    )
-                  })}
-                  {(selected.labels ?? []).filter(l => !PRESET_EMAIL_LABELS.some(p => p.id === l.id)).map(label => (
-                    <span key={label.id} style={{
-                      padding: '3px 8px', borderRadius: 12, fontSize: 10,
-                      background: `${label.color}22`, color: label.color,
-                      border: `1px solid ${label.color}40`, fontFamily: 'DM Mono, monospace',
-                    }}>
-                      {label.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
-                <button onClick={() => openReply(selected)} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-secondary)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>↩ Répondre</button>
-                <button onClick={() => openForward(selected)} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-secondary)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>→ Transférer</button>
-                {selected.is_read ? (
-                  <button onClick={() => handleMarkUnread(selected)} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-secondary)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Marquer non lu</button>
-                ) : (
-                  <button onClick={() => handleMarkRead(selected)} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-secondary)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Marquer lu</button>
-                )}
-                {folder === 'spam' && (
-                  <button type="button" onClick={() => handleNotSpam(selected)} style={{ background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Pas un indésirable</button>
-                )}
-                {folder === 'trash' && (
-                  <button type="button" onClick={() => handleRestore(selected)} style={{ background: 'transparent', border: '1px solid var(--accent)', color: 'var(--accent)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Restaurer</button>
-                )}
-                {folder !== 'spam' && folder !== 'trash' && (
+              {(() => {
+                const isSentView = folder === 'sent' || selected.mail_folder === 'sent'
+                const party = isSentView
+                  ? (selected.to_address || '—')
+                  : (selected.from_address || '—')
+                const detailIconBtn: React.CSSProperties = {
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  border: '1px solid var(--border-hi)',
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontSize: 15,
+                  lineHeight: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }
+                return (
                   <>
-                    <button type="button" onClick={() => handleMoveToFolder(selected, 'spam')} style={{ background: 'transparent', border: '1px solid rgba(239,68,68,0.35)', color: '#f87171', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Indésirable</button>
-                    <button type="button" onClick={() => handleMoveToFolder(selected, 'trash')} style={{ background: 'transparent', border: '1px solid var(--border-hi)', color: 'var(--text-muted)', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Corbeille</button>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                      <div style={{ fontSize: isMobile ? 14 : 15, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.35, minWidth: 0, flex: 1 }}>
+                        <span style={{ color: '#021246', fontWeight: 700 }}>{party}</span>
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> — </span>
+                        <span>{selected.subject || '(sans objet)'}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        <button type="button" title="Répondre" onClick={() => openReply(selected)} style={detailIconBtn}>↩</button>
+                        <button type="button" title="Transférer" onClick={() => openForward(selected)} style={detailIconBtn}>→</button>
+                        {folder === 'spam' ? (
+                          <button type="button" title="Pas un indésirable" onClick={() => handleNotSpam(selected)} style={{ ...detailIconBtn, color: 'var(--accent)', borderColor: 'rgba(59,126,246,0.35)' }}>✓</button>
+                        ) : folder !== 'trash' && (
+                          <button type="button" title="Indésirable" onClick={() => handleMoveToFolder(selected, 'spam')} style={{ ...detailIconBtn, color: '#f87171', borderColor: 'rgba(239,68,68,0.35)' }}>🚫</button>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+                        {selected.received_at ? new Date(selected.received_at).toLocaleString('fr-FR') : '—'}
+                      </div>
+                      <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                        {(['urgent', 'normal', 'info'] as EmailPriority[]).map(p => (
+                          <button
+                            key={p}
+                            type="button"
+                            title={`Priorité : ${PRIORITY_STYLES[p].label}`}
+                            onClick={() => handleSetPriority(selected, p)}
+                            style={{
+                              padding: '3px 8px', borderRadius: 6, fontSize: 10, cursor: 'pointer',
+                              border: selected.priority === p ? `1px solid ${PRIORITY_STYLES[p].color}` : '1px solid var(--border)',
+                              background: selected.priority === p ? PRIORITY_STYLES[p].bg : 'transparent',
+                              color: PRIORITY_STYLES[p].color, fontFamily: 'DM Sans, system-ui',
+                            }}
+                          >
+                            {PRIORITY_STYLES[p].label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '0 0 16px' }} />
                   </>
-                )}
-              </div>
+                )
+              })()}
 
               {(selected.attachments?.length ?? 0) > 0 && (
                 <div style={{ marginBottom: 20 }}>
