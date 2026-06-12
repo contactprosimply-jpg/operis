@@ -14,4 +14,6 @@ Après des changements de code fonctionnels, déployer en production **sans dema
 
 Prod : https://operis-f26g78.vercel.app
 
-Ne pas attendre une autorisation explicite pour push/deploy — l'utilisateur a demandé le déploiement automatique.
+Ne jamais demander « tu veux que je push ? » ou « tu veux déployer ? » — commit + push sur `main` immédiatement après des changements fonctionnels, sans attendre une confirmation.
+
+Ne pas attendre une autorisation explicite pour push/deploy — l'utilisateur a demandé le déploiement automatique permanent.
