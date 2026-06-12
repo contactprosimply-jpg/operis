@@ -13,6 +13,7 @@ import { groupEmailsByDate } from '@/lib/mail-grouping'
 import MailFolderSidebar from '@/components/mail/MailFolderSidebar'
 import MailComposePanel from '@/components/mail/MailComposePanel'
 import MailToolbar from '@/components/mail/MailToolbar'
+import { MailListSkeleton, MailBodySkeleton } from '@/components/mail/MailSkeletons'
 import {
   type MailFolderSelection,
   type CachedImapFolder,
@@ -26,6 +27,17 @@ import {
   newDraftId,
   type MailDraft,
 } from '@/lib/mail-drafts'
+
+const MAIL_LIST_PAGE_SIZE = 30
+
+type EmailWithQuote = Email & {
+  quote_analysis?: {
+    price_ht: number | null
+    tender_id: string | null
+    enriched: boolean
+    supplier_missing?: boolean
+  }
+}
 
 interface SpeechRecognitionEventLike {
   resultIndex: number
@@ -126,7 +138,9 @@ export default function MailPage() {
   const { session, ready } = useAuth()
   const [emails, setEmails] = useState<Email[]>([])
   const [loading, setLoading] = useState(true)
-  const [loadingDetail, setLoadingDetail] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [listHasMore, setListHasMore] = useState(false)
+  const [loadingDetailBody, setLoadingDetailBody] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [autoSyncStatus, setAutoSyncStatus] = useState<string | null>(null)
   const [selected, setSelected] = useState<Email | null>(null)
@@ -175,6 +189,11 @@ export default function MailPage() {
   const syncAbortRef = useRef<AbortController | null>(null)
   const initialSyncDoneRef = useRef(false)
   const emailsRef = useRef<Email[]>([])
+  const mailCache = useRef<Record<string, EmailWithQuote>>({})
+  const prefetchingRef = useRef<Set<string>>(new Set())
+  const listScrollRef = useRef<HTMLDivElement>(null)
+  const listHasMoreRef = useRef(false)
+  const loadingMoreRef = useRef(false)
   selectedIdRef.current = selected?.id ?? null
   emailsRef.current = emails
 
@@ -295,13 +314,105 @@ export default function MailPage() {
       .catch(() => {})
   }, [ready, userId])
 
-  const loadEmails = useCallback(async (silent = false, selectionOverride?: MailFolderSelection) => {
-    if (!silent) setLoading(true)
-    const safetyTimer = setTimeout(() => { if (!silent) setLoading(false) }, 12000)
+  const fetchEmailDetail = useCallback(async (
+    emailId: string,
+    options?: { analyze?: boolean; silent?: boolean },
+  ): Promise<EmailWithQuote | null> => {
+    const analyze = options?.analyze ?? false
+    const silent = options?.silent ?? false
+    try {
+      const res = await authFetch(`/api/mail/emails/${emailId}?analyze=${analyze}`)
+      const data = await res.json()
+      if (!data.success) return null
+      const full = data.data as EmailWithQuote
+      const merged: EmailWithQuote = {
+        ...full,
+        tender_id: full.tender_id ?? null,
+        quote_analysis: full.quote_analysis ?? mailCache.current[emailId]?.quote_analysis,
+      }
+      mailCache.current[emailId] = { ...mailCache.current[emailId], ...merged }
+      if (selectedIdRef.current === emailId) {
+        setSelected(mailCache.current[emailId])
+      }
+      setEmails(prev => prev.map(e => e.id === full.id ? {
+        ...e,
+        has_attachments: full.has_attachments,
+        attachments: full.attachments,
+        tender_id: merged.tender_id ?? e.tender_id,
+      } : e))
+      if (!silent && analyze && full.quote_analysis?.price_ht) {
+        showToast(`Prix détecté : ${Number(full.quote_analysis.price_ht).toLocaleString('fr-FR')} € HT`)
+      } else if (!silent && analyze && full.quote_analysis?.supplier_missing) {
+        showToast('Fournisseur non reconnu — vérifiez l\'email du fournisseur dans Operis')
+      } else if (!silent && analyze && full.quote_analysis?.enriched) {
+        showToast('Email et pièces jointes importés')
+      } else if (!silent && analyze && full.has_attachments && !full.quote_analysis?.price_ht) {
+        showToast('Prix non trouvé dans le PDF — saisie manuelle sur l\'AO')
+      }
+      return mailCache.current[emailId]
+    } catch (e) {
+      console.error(e)
+      return null
+    }
+  }, [])
+
+  const loadEmailDetail = useCallback(async (
+    emailId: string,
+    silent = false,
+    options?: { analyzeOnly?: boolean },
+  ) => {
+    if (emailId.startsWith('elog-')) {
+      const local = emailsRef.current.find(e => e.id === emailId)
+      if (local) setSelected(local)
+      return
+    }
+    const cached = mailCache.current[emailId]
+    if (options?.analyzeOnly && cached) {
+      void fetchEmailDetail(emailId, { analyze: true, silent: true })
+      return
+    }
+    if (cached?.body_html || cached?.body_text) {
+      setSelected(cached)
+      if (!cached.quote_analysis) void fetchEmailDetail(emailId, { analyze: true, silent: true })
+      return
+    }
+    setLoadingDetailBody(true)
+    try {
+      await fetchEmailDetail(emailId, { analyze: false, silent })
+      void fetchEmailDetail(emailId, { analyze: true, silent: true })
+    } finally {
+      setLoadingDetailBody(false)
+    }
+  }, [fetchEmailDetail])
+
+  const loadEmails = useCallback(async (
+    silent = false,
+    selectionOverride?: MailFolderSelection,
+    append = false,
+  ) => {
+    if (append) {
+      if (loadingMoreRef.current || !listHasMoreRef.current) return
+      loadingMoreRef.current = true
+      setLoadingMore(true)
+    } else if (!silent) {
+      setLoading(true)
+    }
+    const safetyTimer = setTimeout(() => {
+      if (!silent && !append) setLoading(false)
+      if (append) {
+        setLoadingMore(false)
+        loadingMoreRef.current = false
+      }
+    }, 12000)
     try {
       const activeSelection = selectionOverride ?? folderSelection
       const activeFolder = activeSelection.kind
-      const params = new URLSearchParams({ limit: '250', folder: activeFolder })
+      const offset = append ? emailsRef.current.length : 0
+      const params = new URLSearchParams({
+        limit: String(MAIL_LIST_PAGE_SIZE),
+        offset: String(offset),
+        folder: activeFolder,
+      })
       if (activeSelection.kind === 'custom' && activeSelection.customPath) {
         params.set('imap_path', activeSelection.customPath)
       }
@@ -320,18 +431,35 @@ export default function MailPage() {
       const data = await res.json()
       if (data.success) {
         const newEmails = data.data as Email[]
-        if (silent && newEmails.length > emailCountRef.current) {
-          const diff = newEmails.length - emailCountRef.current
-          if (diff > 0) showToast(`${diff} nouveau(x) email(s)`)
+        const hasMore = data.hasMore === true
+        setListHasMore(hasMore)
+        listHasMoreRef.current = hasMore
+        if (append) {
+          setEmails(prev => {
+            const ids = new Set(prev.map(e => e.id))
+            const merged = [...prev, ...newEmails.filter(e => !ids.has(e.id))]
+            emailsRef.current = merged
+            return merged
+          })
+          setAllEmails(prev => {
+            const ids = new Set(prev.map(e => e.id))
+            return [...prev, ...newEmails.filter(e => !ids.has(e.id))]
+          })
+        } else {
+          if (silent && newEmails.length > emailCountRef.current) {
+            const diff = newEmails.length - emailCountRef.current
+            if (diff > 0) showToast(`${diff} nouveau(x) email(s)`)
+          }
+          emailCountRef.current = newEmails.length
+          emailsRef.current = newEmails
+          setAllEmails(newEmails)
+          setEmails(newEmails)
         }
-        emailCountRef.current = newEmails.length
-        setAllEmails(newEmails)
-        setEmails(newEmails)
-        if (activeFolder === 'inbox') {
+        if (activeFolder === 'inbox' && !append) {
           setInboxUnread(newEmails.filter((e: Email) => !e.is_read).length)
         }
         const sid = selectedIdRef.current
-        if (sid) {
+        if (sid && !append) {
           const updated = newEmails.find(e => e.id === sid)
           if (updated) setSelected(prev => prev ? { ...prev, ...updated } : updated)
         }
@@ -339,54 +467,13 @@ export default function MailPage() {
     } catch (e) { console.error(e) }
     finally {
       clearTimeout(safetyTimer)
-      if (!silent) setLoading(false)
+      if (!silent && !append) setLoading(false)
+      if (append) {
+        setLoadingMore(false)
+        loadingMoreRef.current = false
+      }
     }
   }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, folder, folderSelection, searchQuery, listListFilter])
-
-  const loadEmailDetail = useCallback(async (emailId: string, silent = false) => {
-    if (emailId.startsWith('elog-')) {
-      const local = emailsRef.current.find(e => e.id === emailId)
-      if (local) setSelected(local)
-      return
-    }
-    if (!silent) setLoadingDetail(true)
-    const safetyTimer = setTimeout(() => { if (!silent) setLoadingDetail(false) }, 60000)
-    try {
-      const res = await authFetch(`/api/mail/emails/${emailId}`)
-      const data = await res.json()
-      if (data.success) {
-        const full = data.data as Email & {
-          quote_analysis?: {
-            price_ht: number | null
-            tender_id: string | null
-            enriched: boolean
-            supplier_missing?: boolean
-          }
-        }
-        const merged = { ...full, tender_id: full.tender_id ?? null }
-        setSelected(merged)
-        setEmails(prev => prev.map(e => e.id === full.id ? {
-          ...e,
-          has_attachments: full.has_attachments,
-          attachments: full.attachments,
-          tender_id: merged.tender_id ?? e.tender_id,
-        } : e))
-        if (!silent && full.quote_analysis?.price_ht) {
-          showToast(`Prix détecté : ${Number(full.quote_analysis.price_ht).toLocaleString('fr-FR')} € HT`)
-        } else if (!silent && full.quote_analysis?.supplier_missing) {
-          showToast('Fournisseur non reconnu — vérifiez l\'email du fournisseur dans Operis')
-        } else if (!silent && full.quote_analysis?.enriched) {
-          showToast('Email et pièces jointes importés')
-        } else if (!silent && full.has_attachments && !full.quote_analysis?.price_ht) {
-          showToast('Prix non trouvé dans le PDF — saisie manuelle sur l\'AO')
-        }
-      }
-    } catch (e) { console.error(e) }
-    finally {
-      clearTimeout(safetyTimer)
-      if (!silent) setLoadingDetail(false)
-    }
-  }, [])
 
   const runSync = useCallback(async (silent = true, force = false) => {
     if (syncInProgressRef.current && !force) return
@@ -524,7 +611,7 @@ export default function MailPage() {
         const lite: Email = {
           id: raw.id, user_id: raw.user_id, message_id: raw.message_id,
           subject: raw.subject, from_address: raw.from_address, to_address: raw.to_address,
-          body_text: raw.body_text ?? null, body_html: raw.body_html ?? null,
+          body_text: null, body_html: null,
           received_at: raw.received_at, is_read: raw.is_read, is_ao: raw.is_ao,
           ao_score: raw.ao_score, tender_id: raw.tender_id, has_attachments: raw.has_attachments,
           created_at: raw.created_at,
@@ -563,13 +650,44 @@ export default function MailPage() {
 
   const handleSync = () => void runSync(false, true)
 
+  const prefetchEmail = useCallback((emailId: string) => {
+    if (emailId.startsWith('elog-')) return
+    const cached = mailCache.current[emailId]
+    if (cached?.body_html || cached?.body_text) return
+    if (prefetchingRef.current.has(emailId)) return
+    prefetchingRef.current.add(emailId)
+    void fetchEmailDetail(emailId, { analyze: false, silent: true }).finally(() => {
+      prefetchingRef.current.delete(emailId)
+    })
+  }, [fetchEmailDetail])
+
   const selectEmail = (email: Email) => {
-    setSelected(email)
+    const cached = mailCache.current[email.id]
+    setSelected(cached ? { ...email, ...cached } : email)
     setComposing(false)
     if (isMobile) setMobileShowDetail(true)
-    loadEmailDetail(email.id)
+    const hasBody = Boolean(
+      cached?.body_html || cached?.body_text || email.body_html || email.body_text,
+    )
+    if (!hasBody) {
+      void loadEmailDetail(email.id)
+    } else if (!cached?.quote_analysis) {
+      void loadEmailDetail(email.id, true, { analyzeOnly: true })
+    }
     if (!email.is_read) handleMarkRead(email)
   }
+
+  useEffect(() => {
+    const el = listScrollRef.current
+    if (!el) return
+    const onScroll = () => {
+      if (loadingMoreRef.current || !listHasMoreRef.current || loading) return
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140
+      if (nearBottom) void loadEmails(true, undefined, true)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [loadEmails, loading])
 
   useEffect(() => {
     if (!pendingEmailId || emails.length === 0) return
@@ -688,19 +806,17 @@ export default function MailPage() {
     setSending(false)
   }
 
-  const handleMarkRead = async (email: Email) => {
+  const handleMarkRead = (email: Email) => {
     if (email.is_read) return
     setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: true } : e))
     setSelected(prev => prev?.id === email.id ? { ...prev, is_read: true } : prev)
-    try {
-      await authFetch('/api/mail/emails', {
-        method: 'PATCH',
-        body: JSON.stringify({ id: email.id, is_read: true }),
-      })
-    } catch {
+    void authFetch('/api/mail/emails', {
+      method: 'PATCH',
+      body: JSON.stringify({ id: email.id, is_read: true }),
+    }).catch(() => {
       setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: false } : e))
       setSelected(prev => prev?.id === email.id ? { ...prev, is_read: false } : prev)
-    }
+    })
   }
 
   const handleMarkUnread = async (email: Email) => {
@@ -1190,7 +1306,7 @@ export default function MailPage() {
             )}
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div ref={listScrollRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
             {folder === 'drafts' && drafts.length > 0 && drafts.map(draft => (
                 <div
                   key={draft.id}
@@ -1219,7 +1335,7 @@ export default function MailPage() {
               </div>
             )}
             {(!ready || (loading && emails.length === 0 && (folder !== 'drafts' || drafts.length === 0))) ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}><Spinner /></div>
+              <MailListSkeleton />
             ) : emails.length === 0 && folder !== 'drafts' ? (
               <div style={{ textAlign: 'center', padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -1263,6 +1379,7 @@ export default function MailPage() {
                 </div>
                 {group.emails.map(email => (
                   <div key={email.id} onClick={() => selectEmail(email)}
+                    onMouseEnter={() => prefetchEmail(email.id)}
                     onContextMenu={(e) => {
                       e.preventDefault()
                       setContextMenuEmailId(email.id)
@@ -1405,6 +1522,11 @@ export default function MailPage() {
                 ))}
               </div>
             ))}
+            {loadingMore && (
+              <div style={{ padding: '8px 0' }}>
+                <MailListSkeleton rows={3} />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1437,11 +1559,6 @@ export default function MailPage() {
             />
           ) : selected ? (
             <div style={{ padding: isMobile ? '12px 14px' : '20px 24px' }}>
-              {loadingDetail && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 11, color: 'var(--text-muted)' }}>
-                  <Spinner size={12} /> Chargement du message…
-                </div>
-              )}
               {isMobile && (
                 <button onClick={() => { setMobileShowDetail(false); setSelected(null) }} style={{
                   background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
@@ -1496,11 +1613,6 @@ export default function MailPage() {
                   <button type="button" onClick={() => handleUnlinkTender(selected)} style={{ background: 'transparent', color: '#f87171', border: '1px solid rgba(248,113,113,0.35)', borderRadius: 7, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
                     Délier
                   </button>
-                </div>
-              )}
-              {loadingDetail && (
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
-                  Analyse de l&apos;email et des pièces jointes…
                 </div>
               )}
               {(selected as Email & { quote_analysis?: { supplier_missing?: boolean; price_ht?: number | null } }).quote_analysis?.supplier_missing && (
@@ -1630,7 +1742,7 @@ export default function MailPage() {
                   </div>
                 </div>
               )}
-              {selected.has_attachments && !(selected.attachments?.length) && !loadingDetail && (
+              {selected.has_attachments && !(selected.attachments?.length) && !loadingDetailBody && (
                 <div style={{ marginBottom: 20, padding: '12px 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)' }}>
                   Pièces jointes non importées —
                   <button type="button" onClick={() => loadEmailDetail(selected.id)} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontFamily: 'DM Sans, system-ui', padding: 4, minHeight: 32 }}>
@@ -1643,11 +1755,13 @@ export default function MailPage() {
                 </div>
               )}
 
-              {selected.body_html ? (
+              {loadingDetailBody && !selected.body_html && !selected.body_text ? (
+                <MailBodySkeleton />
+              ) : selected.body_html ? (
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7, maxWidth: '100%', overflowX: 'auto' }} dangerouslySetInnerHTML={{ __html: selected.body_html }} />
-              ) : (
+              ) : selected.body_text ? (
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{selected.body_text}</div>
-              )}
+              ) : null}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', gap: 12, padding: 24 }}>

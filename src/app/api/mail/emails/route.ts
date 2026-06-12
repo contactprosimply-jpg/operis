@@ -99,6 +99,7 @@ export async function GET(req: NextRequest) {
   const labelFilter = searchParams.get('label')?.trim() || undefined
   const db = createAdminClient()
   const limit = Math.min(Number(searchParams.get('limit') || 250), 500)
+  const offset = Math.max(0, Number(searchParams.get('offset') || 0))
   const folder = searchParams.get('folder')
   const imapPath = searchParams.get('imap_path') || undefined
   const searchQ = searchParams.get('q')?.trim() || undefined
@@ -109,7 +110,7 @@ export async function GET(req: NextRequest) {
     let q = db.from('emails')
       .select(fields)
       .order('received_at', { ascending: false })
-      .limit(limit)
+      .range(offset, offset + limit - 1)
       .eq('user_id', userId)
 
     q = applyFolderFilter(q, folder, imapPath, opts)
@@ -188,15 +189,12 @@ export async function GET(req: NextRequest) {
     rows = rows.slice(0, limit)
   }
 
+  const listRows = rows.map(row => toListEmail(row))
+
   return Response.json({
     success: true,
-    data: rows.map(row => {
-      const lite = toListEmail(row)
-      if (String(row.id).startsWith('elog-') && row.body_text) {
-        lite.body_text = row.body_text
-      }
-      return lite
-    }),
+    data: listRows,
+    hasMore: listRows.length === limit,
   })
 }
 
