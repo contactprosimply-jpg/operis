@@ -228,7 +228,7 @@ export default function TendersPage() {
         </div>
       </Card>
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouvel appel d'offres">
+      <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouvel appel d'offres" size="lg">
         <Field label="Titre *" value={form.title} onChange={v => setForm(f => ({ ...f, title: v }))} placeholder="Ex: Rehabilitation facades R+5" />
         <Field label="Client *" value={form.client} onChange={v => setForm(f => ({ ...f, client: v }))} placeholder="Ex: Nexity Grand Paris" />
         <Field label="Deadline" value={form.deadline} onChange={v => setForm(f => ({ ...f, deadline: v }))} type="date" />

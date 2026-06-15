@@ -186,39 +186,70 @@ export function Spinner({ size = 16 }: { size?: number }) {
 }
 
 // ── MODAL ────────────────────────────────────────────────────
-export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+export type ModalSize = 'sm' | 'md' | 'lg' | 'xl'
+
+function lockBodyScroll() {
+  const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+  document.body.classList.add('modal-open')
+  if (scrollbarWidth > 0) {
+    document.body.style.paddingRight = `${scrollbarWidth}px`
+  }
+}
+
+function unlockBodyScroll() {
+  document.body.classList.remove('modal-open')
+  document.body.style.paddingRight = ''
+}
+
+export function useModalBodyLock(open: boolean) {
+  useEffect(() => {
+    if (!open) return
+    lockBodyScroll()
+    return () => unlockBodyScroll()
+  }, [open])
+}
+
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  size = 'md',
+}: {
+  open: boolean
+  onClose: () => void
+  title: string
+  children: ReactNode
+  size?: ModalSize
+}) {
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     if (open) document.addEventListener('keydown', h)
     return () => document.removeEventListener('keydown', h)
   }, [open, onClose])
 
+  useEffect(() => {
+    if (!open) return
+    lockBodyScroll()
+    return () => unlockBodyScroll()
+  }, [open])
+
   if (!open) return null
 
   return (
-    <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{
-      position: 'fixed', inset: 0, zIndex: 100,
-      background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-    }}>
-      <div className="animate-scale" style={{
-        background: 'var(--bg-card)', border: '1px solid var(--border-hi)',
-        borderRadius: 16, width: 460, maxWidth: '100%',
-        maxHeight: '85vh', display: 'flex', flexDirection: 'column',
-        boxShadow: 'var(--shadow-md)',
-      }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '20px 24px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0,
-        }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</div>
-          <button type="button" onClick={onClose} style={{
-            width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border-hi)',
-            background: 'var(--bg-hover)', color: 'var(--text-secondary)', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, lineHeight: 1,
-          }}>×</button>
+    <div
+      className="modal-overlay"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+    >
+      <div className={`modal-dialog animate-modal modal-dialog--${size}`}>
+        <div className="modal-header">
+          <div id="modal-title" className="modal-title">{title}</div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Fermer">×</button>
         </div>
-        <div style={{ padding: '20px 24px 24px', overflowY: 'auto', flex: 1 }}>{children}</div>
+        <div className="modal-body">{children}</div>
       </div>
     </div>
   )

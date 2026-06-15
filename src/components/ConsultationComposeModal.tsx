@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { buildConsultationDefaultBody } from '@/lib/email-compose'
-import { Spinner } from '@/components/ui'
+import { Spinner, useModalBodyLock } from '@/components/ui'
 
 const inputStyle: React.CSSProperties = {
   flex: 1,
@@ -111,6 +111,8 @@ export default function ConsultationComposeModal({
     return () => document.removeEventListener('keydown', h)
   }, [open, onClose])
 
+  useModalBodyLock(open)
+
   if (!open) return null
 
   const toggle = (id: string) => {
@@ -136,35 +138,23 @@ export default function ConsultationComposeModal({
 
   return (
     <div
+      className="modal-overlay"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 200,
-        background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(12px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-      }}
+      role="dialog"
+      aria-modal="true"
     >
-      <div style={{
-        background: 'var(--bg-card)', border: '1px solid var(--border-hi)',
-        borderRadius: 16, width: '100%', maxWidth: 640, maxHeight: '92vh',
-        display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-md)',
-      }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0,
-        }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Envoyer la consultation</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 2 }}>
+      <div className="modal-dialog animate-modal modal-dialog--lg">
+        <div className="modal-header">
+          <div style={{ minWidth: 0 }}>
+            <div className="modal-title">Envoyer la consultation</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 4 }}>
               {tender.title}
             </div>
           </div>
-          <button type="button" onClick={onClose} style={{
-            width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border-hi)',
-            background: 'var(--bg-hover)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 18,
-          }}>×</button>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Fermer">×</button>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+        <div className="modal-body" style={{ padding: '16px 20px' }}>
           {/* Fournisseurs */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>

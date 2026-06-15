@@ -203,7 +203,7 @@ function DocumentDetailModal({
 }) {
   const latest = group.latest
   return (
-    <Modal open onClose={onClose} title={group.label}>
+    <Modal open onClose={onClose} title={group.label} size="lg">
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
           {group.version_count} version{group.version_count > 1 ? 's' : ''} · dernière : {formatDate(latest.date)}

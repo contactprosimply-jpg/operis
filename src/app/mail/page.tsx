@@ -13,7 +13,7 @@ import {
   labelTooltip,
   manualLabel,
 } from '@/lib/mail-smart-labels'
-import { Spinner } from '@/components/ui'
+import { Spinner, useModalBodyLock } from '@/components/ui'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
 import { AO_CATEGORY_BADGE, type AoKeywordCategory } from '@/lib/ao-email-analysis'
@@ -139,6 +139,7 @@ export default function MailPage() {
   const [creating, setCreating] = useState(false)
   const [creatingAoId, setCreatingAoId] = useState<string | null>(null)
   const [linkModalOpen, setLinkModalOpen] = useState(false)
+  useModalBodyLock(linkModalOpen)
   const [tendersForLink, setTendersForLink] = useState<Array<{ id: string; title: string; client: string }>>([])
   const [linkingTender, setLinkingTender] = useState(false)
   const [folderSelection, setFolderSelection] = useState<MailFolderSelection>({ kind: 'inbox' })
@@ -2165,14 +2166,20 @@ export default function MailPage() {
 
       {linkModalOpen && (
         <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          className="modal-overlay"
           onClick={() => setLinkModalOpen(false)}
+          role="dialog"
+          aria-modal="true"
         >
           <div
-            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, maxWidth: 440, width: '100%', maxHeight: '70vh', overflow: 'auto' }}
+            className="modal-dialog animate-modal modal-dialog--md"
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: 'var(--text-primary)' }}>Lier à un appel d&apos;offres</div>
+            <div className="modal-header">
+              <div className="modal-title">Lier à un appel d&apos;offres</div>
+              <button type="button" className="modal-close" onClick={() => setLinkModalOpen(false)} aria-label="Fermer">×</button>
+            </div>
+            <div className="modal-body">
             <input
               type="search"
               placeholder="Rechercher un AO…"
@@ -2212,6 +2219,7 @@ export default function MailPage() {
                 ))}
               </div>
             )}
+            </div>
           </div>
         </div>
       )}

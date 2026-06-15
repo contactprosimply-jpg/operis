@@ -1000,7 +1000,7 @@ export default function TenderDetailPage() {
       )}
 
       {showLinkEmailModal && (
-        <Modal open={showLinkEmailModal} onClose={() => setShowLinkEmailModal(false)} title="Lier un email à cet AO">
+        <Modal open={showLinkEmailModal} onClose={() => setShowLinkEmailModal(false)} title="Lier un email à cet AO" size="lg">
           <div style={{ maxHeight: 360, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {unlinkedEmails.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucun email non lié</div>
@@ -1537,7 +1537,7 @@ export default function TenderDetailPage() {
       )}
 
       {/* === MODAL MODIFIER AO === */}
-      <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Modifier l'appel d'offres">
+      <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Modifier l'appel d'offres" size="xl">
         <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 4 }}>
           {/* Statut */}
           <div style={{ marginBottom: 14 }}>
@@ -1676,6 +1676,7 @@ export default function TenderDetailPage() {
         open={mailViewerOpen}
         onClose={() => { setMailViewerOpen(false); setMailViewerEmail(null) }}
         title={mailViewerEmail?.subject ?? 'Mail'}
+        size="lg"
       >
         {mailViewerLoading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Spinner size={24} /></div>
@@ -1688,7 +1689,7 @@ export default function TenderDetailPage() {
             </div>
             <div style={{
               fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6,
-              maxHeight: 360, overflowY: 'auto', whiteSpace: 'pre-wrap',
+              maxHeight: 480, overflowY: 'auto', whiteSpace: 'pre-wrap',
               padding: '12px', background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border)',
             }}>
               {mailViewerEmail.body_html
