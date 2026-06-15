@@ -1322,5 +1322,23 @@ export async function collectTenderDocuments(
 
   const document_groups = buildTenderDocumentGroups(allVersions)
 
-  return { received, sent, optional_png, document_groups }
+  const displayReceived = document_groups
+    .filter(g => g.latest.kind === 'received')
+    .map(g => g.latest)
+    .sort((a, b) => {
+      const da = a.date ? new Date(a.date).getTime() : 0
+      const db = b.date ? new Date(b.date).getTime() : 0
+      return db - da
+    })
+
+  const displaySent = document_groups
+    .filter(g => g.latest.kind === 'sent')
+    .map(g => g.latest)
+    .sort((a, b) => {
+      const da = a.date ? new Date(a.date).getTime() : 0
+      const db = b.date ? new Date(b.date).getTime() : 0
+      return db - da
+    })
+
+  return { received: displayReceived, sent: displaySent, optional_png, document_groups }
 }

@@ -434,37 +434,7 @@ export default function TenderDocumentsTab({
           Aucun document — demande AO, devis fournisseurs et PJ de consultation apparaîtront ici
         </div>
       ) : (
-        <>
-          {documentGroups.length > 0 && (
-            <div style={{ marginBottom: 24 }}>
-              <div style={{
-                fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)',
-                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8,
-              }}>
-                Suivi par document ({documentGroups.length})
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
-                Dernière version visible — cliquez pour l&apos;historique (v1, v2, v3…)
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {documentGroups.map(group => (
-                  <TenderDocumentRow
-                    key={group.base_name}
-                    doc={group.latest}
-                    versionCount={group.version_count}
-                    onOpenDetail={() => {
-                      setHighlightDoc(group.latest)
-                      setDetailGroup(group)
-                    }}
-                    onDownload={() => onDownload(group.latest.id, group.latest.filename)}
-                    onOpenMail={onOpenMail}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
             <div>
               <div style={{
                 fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)',
@@ -518,7 +488,6 @@ export default function TenderDocumentsTab({
               </div>
             </div>
           </div>
-        </>
       )}
 
       {optionalPngDocs.length > 0 && (
