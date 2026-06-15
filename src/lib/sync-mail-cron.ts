@@ -1,5 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { MailAccountWithId } from '@/lib/mail-sync'
+import {
+  CLOUD_CRON_MAX_NEW_MESSAGES_PER_ACCOUNT,
+  type MailAccountWithId,
+} from '@/lib/mail-sync'
 import {
   isSyncRunInProgress,
   startSyncRun,
@@ -99,7 +102,10 @@ export async function runCloudMailSync(db: SupabaseClient): Promise<CloudMailSyn
         const result = await syncMailAccount(
           row.user_id,
           account as MailAccountWithId & { id: string },
-          { backfill: false },
+          {
+            backfill: false,
+            maxNewMessages: CLOUD_CRON_MAX_NEW_MESSAGES_PER_ACCOUNT,
+          },
         )
         accountsSynced++
         newEmails += result.stored

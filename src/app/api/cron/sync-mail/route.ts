@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest } from 'next/server'
 
-export const maxDuration = 60
+/** Vercel Pro — doit rester aligné avec CRON_SYNC_MAX_DURATION_SECONDS dans sync-runs.ts */
+export const maxDuration = 300
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization')

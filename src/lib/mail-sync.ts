@@ -71,6 +71,9 @@ export type MailAccountWithId = MailAccountConfig & {
   last_sync_uid?: number | null
 }
 
+/** Plafond nouveaux messages par compte pour un run cron cloud (backlog rattrapé au run suivant). */
+export const CLOUD_CRON_MAX_NEW_MESSAGES_PER_ACCOUNT = 100
+
 export interface MailSourceMeta {
   sourceMemberId?: string | null
   sourceMemberName?: string | null
@@ -507,7 +510,9 @@ async function syncOneMailboxFolder(
   source?: MailSourceMeta,
   aliases?: string[],
   aoCtx?: AoSyncContext,
+  maxNewMessages?: number,
 ) {
+  if (maxNewMessages != null && result.stored >= maxNewMessages) return
   const fetchOpts = {
     sinceDays: job.sinceDays,
     limit: job.limit,
@@ -555,6 +560,7 @@ async function syncOneMailboxFolder(
 
   const newEmailMap = new Map<number, string>()
   for (const envelope of newEnvelopes) {
+    if (maxNewMessages != null && result.stored >= maxNewMessages) break
     try {
       const emailId = await quickInsertFromEnvelope(
         db, userId, envelope, job.folder, job.mailboxPath, source,
@@ -722,7 +728,12 @@ async function syncOneMailboxFolder(
 export async function syncMailAccount(
   userId: string,
   account: MailAccountWithId,
-  options: { backfill?: boolean; quick?: boolean; loginEmail?: string | null } = {},
+  options: {
+    backfill?: boolean
+    quick?: boolean
+    loginEmail?: string | null
+    maxNewMessages?: number
+  } = {},
   source?: MailSourceMeta,
 ): Promise<MailSyncResult> {
   const backfill = options.backfill === true
@@ -784,8 +795,11 @@ export async function syncMailAccount(
     { folder: 'spam', mailboxPath: mailboxes.spam, sinceDays: 60, limit: 60, skipOutbound: false },
   ]
 
+  const maxNewMessages = options.maxNewMessages
+
   for (const job of jobs) {
     if (!job.mailboxPath) continue
+    if (maxNewMessages != null && result.stored >= maxNewMessages) break
     try {
       await syncOneMailboxFolder(
         db,
@@ -797,6 +811,7 @@ export async function syncMailAccount(
         source,
         aliases,
         aoCtx,
+        maxNewMessages,
       )
     } catch (err) {
       result.errors++
@@ -805,6 +820,7 @@ export async function syncMailAccount(
   }
 
   for (const customPath of mailboxes.custom ?? []) {
+    if (maxNewMessages != null && result.stored >= maxNewMessages) break
     try {
       await syncOneMailboxFolder(
         db,
@@ -823,6 +839,7 @@ export async function syncMailAccount(
         source,
         aliases,
         aoCtx,
+        maxNewMessages,
       )
     } catch (err) {
       result.errors++

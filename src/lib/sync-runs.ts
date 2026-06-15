@@ -27,8 +27,11 @@ export type SyncRunRow = {
   duration_ms: number | null
 }
 
-/** Durée max d'un run avant qu'un nouveau cron soit bloqué. */
-export const SYNC_LOCK_MINUTES = 10
+/** maxDuration Vercel Pro du cron sync-mail (secondes) — aligné avec route.ts maxDuration = 300. */
+export const CRON_SYNC_MAX_DURATION_SECONDS = 300
+
+/** Verrou anti-chevauchement : doit couvrir CRON_SYNC_MAX_DURATION_SECONDS + marge. */
+export const SYNC_LOCK_MINUTES = Math.max(10, Math.ceil(CRON_SYNC_MAX_DURATION_SECONDS / 60) + 1)
 
 const ADMIN_ALERT_EMAIL = 'contact@nikodex.fr'
 
