@@ -1,0 +1,5 @@
+# Config minimale pour supabase link / db push (CI + local)
+project_id = "operis"
+
+[db]
+major_version = 15
