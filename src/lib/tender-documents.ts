@@ -37,6 +37,76 @@ export interface TenderDocumentItem {
   is_optional?: boolean
 }
 
+export interface TenderDocumentVersion extends TenderDocumentItem {
+  version_number: number
+}
+
+export interface TenderDocumentGroup {
+  base_name: string
+  label: string
+  versions: TenderDocumentVersion[]
+  latest: TenderDocumentItem
+  version_count: number
+}
+
+/** Nom de base pour regrouper les versions (plan, devis, CCTP…). */
+export function normalizeDocumentBaseName(filename: string): string {
+  let name = filename.replace(/\.[^.]+$/, '').toLowerCase().trim()
+  name = name.replace(/\s*\(\d+\)\s*$/g, '')
+  name = name.replace(/[_\-\s]+v\d+$/i, '')
+  name = name.replace(/[_\-\s]+rev\.?\d+$/i, '')
+  name = name.replace(/\s+(copie|copy)\s*\d*$/i, '')
+  name = name.replace(/\d{4}[-_/.]?\d{2}[-_/.]?\d{2}/g, '')
+  name = name.replace(/[_\-]+/g, ' ')
+  name = name.replace(/\s+/g, ' ').trim()
+  return name || filename.toLowerCase().trim()
+}
+
+function trackDocumentVersion(all: TenderDocumentItem[], item: TenderDocumentItem) {
+  if (all.some(v => v.id === item.id)) return
+  all.push(item)
+}
+
+export function buildTenderDocumentGroups(items: TenderDocumentItem[]): TenderDocumentGroup[] {
+  const byBase = new Map<string, TenderDocumentItem[]>()
+  for (const item of items) {
+    const base = normalizeDocumentBaseName(item.filename)
+    const list = byBase.get(base) ?? []
+    list.push(item)
+    byBase.set(base, list)
+  }
+
+  const groups: TenderDocumentGroup[] = []
+  for (const [base_name, docs] of byBase) {
+    const sorted = [...docs].sort((a, b) => {
+      const da = a.date ? new Date(a.date).getTime() : 0
+      const db = b.date ? new Date(b.date).getTime() : 0
+      if (da !== db) return da - db
+      return a.filename.localeCompare(b.filename, 'fr')
+    })
+    const versions: TenderDocumentVersion[] = sorted.map((doc, i) => ({
+      ...doc,
+      version_number: i + 1,
+    }))
+    const latest = sorted[sorted.length - 1]
+    groups.push({
+      base_name,
+      label: base_name.replace(/\b\w/g, c => c.toUpperCase()),
+      versions,
+      latest,
+      version_count: versions.length,
+    })
+  }
+
+  groups.sort((a, b) => {
+    const da = a.latest.date ? new Date(a.latest.date).getTime() : 0
+    const db = b.latest.date ? new Date(b.latest.date).getTime() : 0
+    return db - da
+  })
+
+  return groups
+}
+
 function titleAoInbound(fromLabel: string) {
   const who = fromLabel.trim()
   return {
@@ -601,7 +671,9 @@ function pushReceived(
   received: TenderDocumentItem[],
   seenFiles: Set<string>,
   item: TenderDocumentItem,
+  allVersions?: TenderDocumentItem[],
 ) {
+  if (allVersions) trackDocumentVersion(allVersions, item)
   const fp = fileFingerprint(item.filename, item.size)
   if (seenFiles.has(fp)) return
   seenFiles.add(fp)
@@ -700,6 +772,7 @@ async function collectInboundMailDocuments(
   emailId: string,
   seenFiles: Set<string>,
   label = 'Demande AO',
+  allVersions?: TenderDocumentItem[],
 ): Promise<TenderDocumentItem[]> {
   const { data: em } = await db
     .from('emails')
@@ -737,6 +810,8 @@ async function collectInboundMailDocuments(
       is_png: isPngAttachment(att.filename, att.contentType),
     }
 
+    if (allVersions) trackDocumentVersion(allVersions, item)
+
     const fp = fileFingerprint(item.filename, item.size)
     if (seenFiles.has(fp)) continue
     seenFiles.add(fp)
@@ -752,6 +827,7 @@ async function collectLinkedInboundMailDocuments(
   tenderId: string,
   sourceEmailId: string | null | undefined,
   seenFiles: Set<string>,
+  allVersions?: TenderDocumentItem[],
 ): Promise<TenderDocumentItem[]> {
   const { data: emails } = await db
     .from('emails')
@@ -800,6 +876,8 @@ async function collectLinkedInboundMailDocuments(
         attachment_index: i,
         is_png: isPngAttachment(att.filename, att.contentType),
       }
+
+      if (allVersions) trackDocumentVersion(allVersions, item)
 
       const fp = fileFingerprint(item.filename, item.size)
       if (seenFiles.has(fp)) continue
@@ -1052,9 +1130,10 @@ export async function collectTenderDocuments(
   tenderId: string,
   consultations: ConsultationRow[],
   quotes: QuoteRow[],
-): Promise<{ received: TenderDocumentItem[]; sent: TenderDocumentItem[]; optional_png: TenderDocumentItem[] }> {
+): Promise<{ received: TenderDocumentItem[]; sent: TenderDocumentItem[]; optional_png: TenderDocumentItem[]; document_groups: TenderDocumentGroup[] }> {
   const received: TenderDocumentItem[] = []
   const sent: TenderDocumentItem[] = []
+  const allVersions: TenderDocumentItem[] = []
   const seenFiles = new Set<string>()
   const seenSent = new Set<string>()
   const excludedKeys = await loadExcludedMailAttachmentKeys(db, userId, tenderId)
@@ -1108,10 +1187,10 @@ export async function collectTenderDocuments(
 
     await repairTenderInboundSources(db, userId, tenderId, sourceEmailId, sourceInboundKeys)
 
-    received.push(...await collectInboundMailDocuments(db, userId, sourceEmailId, seenFiles))
+    received.push(...await collectInboundMailDocuments(db, userId, sourceEmailId, seenFiles, 'Demande AO', allVersions))
   }
 
-  received.push(...await collectLinkedInboundMailDocuments(db, userId, tenderId, sourceEmailId, seenFiles))
+  received.push(...await collectLinkedInboundMailDocuments(db, userId, tenderId, sourceEmailId, seenFiles, allVersions))
 
   const quoteBySupplier = new Map(quotes.map(q => [q.supplier_id ?? q.supplier?.id, q]))
 
@@ -1145,7 +1224,7 @@ export async function collectTenderDocuments(
       download_type: 'mail',
       email_id: email.id,
       attachment_index: origIndex >= 0 ? origIndex : 0,
-    })
+    }, allVersions)
   }
 
   const { data: tenderDocs } = await db
@@ -1189,8 +1268,9 @@ export async function collectTenderDocuments(
     }
 
     if (inbound) {
-      pushReceived(received, seenFiles, item)
+      pushReceived(received, seenFiles, item, allVersions)
     } else {
+      trackDocumentVersion(allVersions, item)
       const key = `sent:doc:${doc.id}`
       if (!seenSent.has(key)) {
         seenSent.add(key)
@@ -1217,7 +1297,7 @@ export async function collectTenderDocuments(
       seenSent.add(key)
 
       const titles = titleSentToSupplier(supplierName, log.type ?? 'consultation')
-      sent.push({
+      const logItem: TenderDocumentItem = {
         id: `log:${log.id}:${i}`,
         kind: 'sent',
         filename: att.filename,
@@ -1230,7 +1310,9 @@ export async function collectTenderDocuments(
         display_title: titles.display_title,
         download_type: 'tender_doc',
         document_id: `log:${log.id}:${i}`,
-      })
+      }
+      trackDocumentVersion(allVersions, logItem)
+      sent.push(logItem)
     }
   }
 
@@ -1238,5 +1320,7 @@ export async function collectTenderDocuments(
     db, userId, tenderId, sourceEmailId, seenFiles, excludedKeys,
   )
 
-  return { received, sent, optional_png }
+  const document_groups = buildTenderDocumentGroups(allVersions)
+
+  return { received, sent, optional_png, document_groups }
 }

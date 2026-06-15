@@ -20,6 +20,7 @@ import { memberDisplayName } from '@/lib/family'
 import type { OrganizationPayload } from '@/lib/organization'
 import { useAuth } from '@/components/AuthProvider'
 import TenderOriginBadge from '@/components/TenderOriginBadge'
+import TenderDocumentsTab from '@/components/tender/TenderDocumentsTab'
 import { getTenderAssigneeLabel, getTenderCreatorLabel } from '@/lib/tender-member-label'
 import { groupEmailsByThread, computeThreadStatus, THREAD_STATUS_META } from '@/lib/email-threading'
 import { AO_CATEGORY_BADGE, type AoKeywordCategory } from '@/lib/ao-email-analysis'
@@ -58,124 +59,6 @@ async function fileToBase64(file: File): Promise<string> {
   let binary = ''
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
   return btoa(binary)
-}
-
-function documentCategoryStyle(category?: string) {
-  switch (category) {
-    case 'ao_inbound':
-      return { background: 'rgba(59,126,246,0.14)', color: '#60a5fa', border: '1px solid rgba(59,126,246,0.25)' }
-    case 'supplier_response':
-      return { background: 'rgba(74,222,128,0.14)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.25)' }
-    case 'consultation_sent':
-      return { background: 'rgba(251,191,36,0.14)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.25)' }
-    case 'relance_sent':
-      return { background: 'rgba(248,113,113,0.14)', color: '#f87171', border: '1px solid rgba(248,113,113,0.25)' }
-    default:
-      return { background: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px solid var(--border)' }
-  }
-}
-
-function mailSourceBadge(source?: string | null) {
-  if (source === 'mail_received') return { label: '📧 Reçu par mail', color: '#60a5fa' }
-  if (source === 'mail_sent') return { label: '📤 Envoyé par mail', color: '#fbbf24' }
-  if (source === 'manual') return { label: '📁 Manuel', color: 'var(--text-muted)' }
-  return null
-}
-
-function TenderDocumentRow({
-  doc,
-  onDownload,
-  onOpenMail,
-  onExcludePng,
-  excluding,
-}: {
-  doc: {
-    id: string
-    filename: string
-    date?: string | null
-    display_title?: string
-    category?: string
-    supplier_name?: string
-    label?: string
-    mail_source?: string | null
-    email_id?: string
-    attachment_index?: number
-    is_png?: boolean
-    is_optional?: boolean
-    contentType?: string
-  }
-  onDownload: () => void
-  onOpenMail?: (emailId: string) => void
-  onExcludePng?: (emailId: string, attachmentIndex: number) => void
-  excluding?: boolean
-}) {
-  const title = doc.display_title
-    ?? (doc.supplier_name ? `${doc.supplier_name}` : doc.label ?? 'Document')
-  const badgeStyle = documentCategoryStyle(doc.category)
-  const sourceBadge = mailSourceBadge(doc.mail_source)
-
-  return (
-    <div style={{
-      padding: '10px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8,
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-    }}>
-      <div style={{ minWidth: 0 }}>
-        {sourceBadge && (
-          <button
-            type="button"
-            disabled={!doc.email_id}
-            onClick={() => doc.email_id && onOpenMail?.(doc.email_id)}
-            style={{
-              fontSize: 10, fontWeight: 600, fontFamily: 'DM Sans, system-ui',
-              padding: '2px 8px', borderRadius: 4, marginBottom: 6,
-              display: 'inline-block', border: '1px solid var(--border)',
-              background: 'var(--bg-tertiary)', color: sourceBadge.color,
-              cursor: doc.email_id ? 'pointer' : 'default',
-            }}
-          >
-            {sourceBadge.label}
-          </button>
-        )}
-        <div style={{
-          fontSize: 10, fontWeight: 600, fontFamily: 'DM Sans, system-ui',
-          padding: '2px 8px', borderRadius: 4, marginBottom: 6,
-          display: 'inline-block', maxWidth: '100%',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          ...badgeStyle,
-        }}>
-          {title}
-        </div>
-        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {doc.is_png ? '🖼' : '📎'} {doc.filename}
-        </div>
-        {doc.date && (
-          <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginTop: 2 }}>
-            {new Date(doc.date).toLocaleDateString('fr-FR')}
-          </div>
-        )}
-      </div>
-      <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-        {doc.is_png && doc.email_id != null && doc.attachment_index != null && onExcludePng && !doc.is_optional && (
-          <button
-            type="button"
-            disabled={excluding}
-            onClick={() => onExcludePng(doc.email_id!, doc.attachment_index!)}
-            style={{
-              fontSize: 11, color: '#f87171', background: 'transparent',
-              border: '1px solid rgba(248,113,113,0.35)', borderRadius: 6,
-              padding: '4px 10px', cursor: excluding ? 'wait' : 'pointer', fontFamily: 'DM Sans, system-ui',
-            }}
-          >
-            {excluding ? '…' : 'Retirer'}
-          </button>
-        )}
-        <button type="button" onClick={onDownload}
-          style={{ fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', flexShrink: 0, fontFamily: 'DM Sans, system-ui' }}>
-          Télécharger
-        </button>
-      </div>
-    </div>
-  )
 }
 
 function DeadlineBadge({ deadline }: { deadline: string | null }) {
@@ -853,10 +736,11 @@ export default function TenderDetailPage() {
 
   const consultations = tender.consultations ?? []
   const quotes = tender.quotes ?? []
-  const documents = tender.documents ?? { received: [], sent: [], optional_png: [] }
+  const documents = tender.documents ?? { received: [], sent: [], optional_png: [], document_groups: [] }
   const receivedDocs = documents.received ?? []
   const sentDocs = documents.sent ?? []
   const optionalPngDocs = documents.optional_png ?? []
+  const documentGroups = documents.document_groups ?? []
   const alreadyAdded = new Set(consultations.map((c: any) => c.supplier_id))
   const availableSuppliers = suppliers.filter(s => !alreadyAdded.has(s.id))
 
@@ -1433,159 +1317,23 @@ export default function TenderDetailPage() {
 
       {activeTab === 'documents' && (
       <div style={card}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-            Documents & pièces jointes
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input type="file" multiple style={{ display: 'none' }} id="tender-doc-upload"
-              onChange={e => { if (e.target.files?.length) handleUploadTenderDoc(e.target.files); e.target.value = '' }} />
-            <Button variant="ghost" loading={uploadingDoc} onClick={() => document.getElementById('tender-doc-upload')?.click()}>
-              + Ajouter un document
-            </Button>
-          </div>
-        </div>
-
-        {receivedDocs.length === 0 && sentDocs.length === 0 && optionalPngDocs.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 24 }}>
-            Aucun document — demande AO, devis fournisseurs et PJ de consultation apparaîtront ici
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
-            <div>
-              <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
-                Reçus ({receivedDocs.length})
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
-                Demande AO (DCE, CCTP…) et devis fournisseurs
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {receivedDocs.length === 0 ? (
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucune PJ reçue</span>
-                ) : receivedDocs.map((doc: any) => (
-                  <TenderDocumentRow
-                    key={doc.id}
-                    doc={doc}
-                    onDownload={() => downloadTenderDocument(doc.id, doc.filename)}
-                    onOpenMail={openMailViewer}
-                    onExcludePng={(emailId, idx) => handleMailAttachmentAction('exclude', emailId, idx)}
-                    excluding={pngAttachmentAction === `exclude:${doc.email_id}:${doc.attachment_index}`}
-                  />
-                ))}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
-                Envoyés ({sentDocs.length})
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
-                PJ transmises aux fournisseurs (consultation)
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {sentDocs.length === 0 ? (
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucune PJ envoyée</span>
-                ) : sentDocs.map((doc: any) => (
-                  <TenderDocumentRow
-                    key={doc.id}
-                    doc={doc}
-                    onDownload={() => downloadTenderDocument(doc.id, doc.filename)}
-                    onOpenMail={openMailViewer}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {optionalPngDocs.length > 0 && (
-          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-            <button
-              type="button"
-              onClick={() => setShowOptionalPng(v => !v)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
-                border: '1px dashed var(--border-hi)', background: 'var(--bg-secondary)',
-                color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui', fontSize: 12,
-              }}
-            >
-              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{showOptionalPng ? '▼' : '▶'}</span>
-              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                Images PNG des mails ({optionalPngDocs.length})
-              </span>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                — logos / signatures, non intégrées par défaut
-              </span>
-            </button>
-            {showOptionalPng && (
-              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {optionalPngDocs.map((doc: any) => {
-                  const includeKey = `include:${doc.email_id}:${doc.attachment_index}`
-                  const excludeKey = `exclude:${doc.email_id}:${doc.attachment_index}`
-                  const busy = pngAttachmentAction === includeKey || pngAttachmentAction === excludeKey
-                  return (
-                    <div
-                      key={doc.id}
-                      style={{
-                        padding: '10px 12px', background: 'var(--bg-secondary)',
-                        border: '1px dashed rgba(59,126,246,0.25)', borderRadius: 8,
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                      }}
-                    >
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>
-                          🖼 {doc.filename}
-                        </div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>
-                          {doc.size ? `${(doc.size / 1024).toFixed(1)} Ko` : '—'}
-                          {doc.supplier_name ? ` · ${doc.supplier_name}` : ''}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => downloadTenderDocument(doc.id, doc.filename)}
-                          style={{
-                            fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)',
-                            border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6,
-                            padding: '4px 10px', cursor: busy ? 'wait' : 'pointer', fontFamily: 'DM Sans, system-ui',
-                          }}
-                        >
-                          Voir
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy || !doc.email_id}
-                          onClick={() => handleMailAttachmentAction('include', doc.email_id!, doc.attachment_index!)}
-                          style={{
-                            fontSize: 11, color: '#4ade80', background: 'rgba(74,222,128,0.12)',
-                            border: '1px solid rgba(74,222,128,0.35)', borderRadius: 6,
-                            padding: '4px 10px', cursor: busy ? 'wait' : 'pointer', fontFamily: 'DM Sans, system-ui',
-                          }}
-                        >
-                          {pngAttachmentAction === includeKey ? '…' : 'Intégrer'}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy || !doc.email_id}
-                          onClick={() => handleMailAttachmentAction('exclude', doc.email_id!, doc.attachment_index!)}
-                          style={{
-                            fontSize: 11, color: '#f87171', background: 'transparent',
-                            border: '1px solid rgba(248,113,113,0.35)', borderRadius: 6,
-                            padding: '4px 10px', cursor: busy ? 'wait' : 'pointer', fontFamily: 'DM Sans, system-ui',
-                          }}
-                        >
-                          {pngAttachmentAction === excludeKey ? '…' : 'Ignorer'}
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
+        <input type="file" multiple style={{ display: 'none' }} id="tender-doc-upload"
+          onChange={e => { if (e.target.files?.length) handleUploadTenderDoc(e.target.files); e.target.value = '' }} />
+        <TenderDocumentsTab
+          receivedDocs={receivedDocs}
+          sentDocs={sentDocs}
+          optionalPngDocs={optionalPngDocs}
+          documentGroups={documentGroups}
+          uploadingDoc={uploadingDoc}
+          showOptionalPng={showOptionalPng}
+          pngAttachmentAction={pngAttachmentAction}
+          onUploadClick={() => document.getElementById('tender-doc-upload')?.click()}
+          onDownload={downloadTenderDocument}
+          onOpenMail={openMailViewer}
+          onExcludePng={(emailId, idx) => handleMailAttachmentAction('exclude', emailId, idx)}
+          onIncludePng={(emailId, idx) => handleMailAttachmentAction('include', emailId, idx)}
+          onToggleOptionalPng={() => setShowOptionalPng(v => !v)}
+        />
       </div>
       )}
 
