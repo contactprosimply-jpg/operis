@@ -1,9 +1,25 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-export const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+let browserClient: SupabaseClient | null = null
+
+function getBrowserClient(): SupabaseClient {
+  if (!browserClient) {
+    browserClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+  }
+  return browserClient
+}
+
+/** Client anon — initialisé au premier accès (pas au chargement du module). */
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_target, prop, receiver) {
+    const client = getBrowserClient()
+    const value = Reflect.get(client, prop, receiver)
+    return typeof value === 'function' ? value.bind(client) : value
+  },
+})
 
 export function createAdminClient() {
   return createClient(
@@ -14,7 +30,7 @@ export function createAdminClient() {
 }
 
 export async function getCurrentUser() {
-  const { data: { user }, error } = await supabase.auth.getUser()
+  const { data: { user }, error } = await getBrowserClient().auth.getUser()
   if (error || !user) return null
   return user
 }
