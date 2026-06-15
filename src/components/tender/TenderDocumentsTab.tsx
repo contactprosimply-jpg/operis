@@ -149,7 +149,11 @@ function DocumentVersionTimeline({
               }}>
                 {v.is_png ? '🖼' : '📎'} {v.filename}
               </div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, fontFamily: 'DM Mono, monospace' }}>
+              <div style={{
+                fontSize: 10, color: 'var(--text-muted)', marginTop: 4,
+                fontFamily: 'DM Mono, monospace',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
                 {formatFileSize(v.size)}
                 {v.label ? ` · ${v.label}` : ''}
               </div>

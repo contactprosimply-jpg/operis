@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { buildConsultationDefaultBody } from '@/lib/email-compose'
 import { Spinner, useModalBodyLock } from '@/components/ui'
@@ -88,6 +89,9 @@ export default function ConsultationComposeModal({
   const [selected, setSelected] = useState<string[]>([])
   const [files, setFiles] = useState<File[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [portalReady, setPortalReady] = useState(false)
+
+  useEffect(() => setPortalReady(true), [])
 
   const signature = getSignatureData()
 
@@ -113,7 +117,7 @@ export default function ConsultationComposeModal({
 
   useModalBodyLock(open)
 
-  if (!open) return null
+  if (!open || !portalReady) return null
 
   const toggle = (id: string) => {
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
@@ -136,7 +140,7 @@ export default function ConsultationComposeModal({
   const selectedRecipients = recipients.filter(r => selected.includes(r.supplier_id))
   const toPreview = selectedRecipients.map(r => r.email).join(', ')
 
-  return (
+  return createPortal(
     <div
       className="modal-overlay"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
@@ -294,6 +298,7 @@ export default function ConsultationComposeModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

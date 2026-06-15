@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { authFetch, getAccessToken } from '@/lib/auth-client'
@@ -139,6 +140,8 @@ export default function MailPage() {
   const [creating, setCreating] = useState(false)
   const [creatingAoId, setCreatingAoId] = useState<string | null>(null)
   const [linkModalOpen, setLinkModalOpen] = useState(false)
+  const [modalPortalReady, setModalPortalReady] = useState(false)
+  useEffect(() => setModalPortalReady(true), [])
   useModalBodyLock(linkModalOpen)
   const [tendersForLink, setTendersForLink] = useState<Array<{ id: string; title: string; client: string }>>([])
   const [linkingTender, setLinkingTender] = useState(false)
@@ -2164,7 +2167,7 @@ export default function MailPage() {
         />
       )}
 
-      {linkModalOpen && (
+      {linkModalOpen && modalPortalReady && createPortal(
         <div
           className="modal-overlay"
           onClick={() => setLinkModalOpen(false)}
@@ -2221,7 +2224,8 @@ export default function MailPage() {
             )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { TenderStatus, ConsultationStatus } from '@/types/database'
 
 // ── BADGE ────────────────────────────────────────────────────
@@ -209,6 +210,13 @@ export function useModalBodyLock(open: boolean) {
   }, [open])
 }
 
+export function ModalPortal({ children }: { children: ReactNode }) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  if (!mounted) return null
+  return createPortal(children, document.body)
+}
+
 export function Modal({
   open,
   onClose,
@@ -234,9 +242,12 @@ export function Modal({
     return () => unlockBodyScroll()
   }, [open])
 
-  if (!open) return null
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
-  return (
+  if (!open || !mounted) return null
+
+  return createPortal(
     <div
       className="modal-overlay"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
@@ -251,7 +262,8 @@ export function Modal({
         </div>
         <div className="modal-body">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
