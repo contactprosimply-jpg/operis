@@ -31,6 +31,8 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [checkingAlerts, setCheckingAlerts] = useState(false)
   const [alertsMsg, setAlertsMsg] = useState<string | null>(null)
+  const [syncHealth, setSyncHealth] = useState<any>(null)
+  const [syncHealthLoading, setSyncHealthLoading] = useState(true)
 
   useEffect(() => {
     if (!ready) return
@@ -53,6 +55,15 @@ export default function AdminPage() {
         setError(data.error)
       }
       setLoading(false)
+
+      try {
+        const healthRes = await fetch('/api/admin/sync-health', { headers: { Authorization: `Bearer ${token}` } })
+        const healthData = await healthRes.json()
+        if (healthData.success) setSyncHealth(healthData.data)
+      } catch {
+        /* ignore */
+      }
+      setSyncHealthLoading(false)
     }
     init()
   }, [router, ready, session])
@@ -148,6 +159,83 @@ export default function AdminPage() {
             <div style={{ fontSize: 30, fontWeight: 700, color: k.color, fontFamily: 'DM Mono, monospace' }}>{k.value}</div>
           </div>
         ))}
+      </div>
+
+      {/* Santé du sync mail */}
+      <div style={{
+        ...card,
+        marginBottom: 28,
+        background: 'linear-gradient(135deg, #021246 0%, #06205c 100%)',
+        border: '1px solid rgba(30,203,225,0.25)',
+        color: '#e2e8f0',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>Santé du sync mail</div>
+            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Cron Vercel · /api/cron/sync-mail · toutes les 5 min</div>
+          </div>
+          {syncHealth?.in_progress && (
+            <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: 'rgba(30,203,225,0.15)', color: '#1ECBE1', fontFamily: 'DM Mono, monospace' }}>
+              sync en cours…
+            </span>
+          )}
+        </div>
+        {syncHealthLoading ? (
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>Chargement…</div>
+        ) : !syncHealth?.last_run ? (
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>Aucun run enregistré (migration 028 ou premier cron).</div>
+        ) : (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 14, marginBottom: 16 }}>
+              <div>
+                <div style={{ ...label, color: '#64748b' }}>Dernière sync OK</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#1ECBE1', fontFamily: 'DM Mono, monospace' }}>
+                  {syncHealth.minutes_since_success != null
+                    ? `${syncHealth.minutes_since_success} min`
+                    : '—'}
+                </div>
+              </div>
+              <div>
+                <div style={{ ...label, color: '#64748b' }}>Statut dernier run</div>
+                <div style={{
+                  fontSize: 14, fontWeight: 700, fontFamily: 'DM Mono, monospace',
+                  color: syncHealth.last_run?.status === 'success' ? '#4ade80'
+                    : syncHealth.last_run?.status === 'partial' ? '#fbbf24' : '#f87171',
+                }}>
+                  {syncHealth.last_run?.status ?? '—'}
+                </div>
+              </div>
+              <div>
+                <div style={{ ...label, color: '#64748b' }}>Nouveaux mails</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#fff', fontFamily: 'DM Mono, monospace' }}>
+                  {syncHealth.last_run?.new_emails ?? 0}
+                </div>
+              </div>
+              <div>
+                <div style={{ ...label, color: '#64748b' }}>Comptes sync</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#fff', fontFamily: 'DM Mono, monospace' }}>
+                  {syncHealth.last_run?.accounts_synced ?? 0}
+                </div>
+              </div>
+            </div>
+            {syncHealth.recent_errors?.length > 0 && (
+              <div style={{ marginTop: 8, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: '#f87171', marginBottom: 8, textTransform: 'uppercase' }}>
+                  Derniers runs en erreur
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {syncHealth.recent_errors.slice(0, 5).map((run: any) => (
+                    <div key={run.id} style={{ fontSize: 11, color: '#cbd5e1', fontFamily: 'DM Mono, monospace' }}>
+                      {new Date(run.finished_at ?? run.started_at).toLocaleString('fr-FR')}
+                      · {run.new_emails} mails · {run.duration_ms ?? 0} ms
+                      {run.error_detail?.fatal && ` · ${run.error_detail.fatal}`}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Table membres */}
