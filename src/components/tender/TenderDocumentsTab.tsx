@@ -89,7 +89,7 @@ function DocumentVersionTimeline({
   highlightId?: string
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0, width: '100%', maxWidth: '100%', minWidth: 0 }}>
       {versions.map((v, idx) => {
         const accent = versionAccentColor(v)
         const isLast = idx === versions.length - 1
@@ -98,7 +98,7 @@ function DocumentVersionTimeline({
         const sourceBadge = mailSourceBadge(v.mail_source)
 
         return (
-          <div key={v.id} style={{ display: 'flex', gap: 12, minHeight: 72 }}>
+          <div key={v.id} style={{ display: 'flex', gap: 12, minHeight: 72, width: '100%', minWidth: 0 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28, flexShrink: 0 }}>
               <div style={{
                 width: 12, height: 12, borderRadius: '50%',
@@ -110,27 +110,36 @@ function DocumentVersionTimeline({
               )}
             </div>
             <div style={{
-              flex: 1, marginBottom: isLast ? 0 : 12,
+              flex: 1,
+              minWidth: 0,
+              maxWidth: '100%',
+              marginBottom: isLast ? 0 : 12,
               padding: '10px 12px',
               borderRadius: 8,
+              boxSizing: 'border-box',
               border: isHighlight ? `1px solid ${accent}` : '1px solid var(--border)',
+              borderLeftWidth: 3,
+              borderLeftColor: accent,
               background: isHighlight ? `${accent}0d` : 'var(--bg-secondary)',
-              borderLeft: `3px solid ${accent}`,
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap', minWidth: 0 }}>
                 <span style={{
                   fontSize: 10, fontWeight: 700, fontFamily: 'DM Mono, monospace',
-                  color: accent, letterSpacing: '0.04em',
+                  color: accent, letterSpacing: '0.04em', flexShrink: 0,
                 }}>
                   v{v.version_number}
                 </span>
                 <span style={{
                   fontSize: 10, fontWeight: 600, fontFamily: 'DM Sans, system-ui',
                   color: accent,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
                 }}>
                   {versionDirectionLabel(v)}
                 </span>
-                <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+                <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', flexShrink: 0 }}>
                   {formatDate(v.date)}
                 </span>
               </div>
@@ -138,7 +147,9 @@ function DocumentVersionTimeline({
                 <div style={{
                   fontSize: 10, fontWeight: 600, fontFamily: 'DM Sans, system-ui',
                   padding: '2px 8px', borderRadius: 4, marginBottom: 6,
-                  display: 'inline-block', ...badgeStyle,
+                  display: 'block', maxWidth: '100%', overflow: 'hidden',
+                  textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  ...badgeStyle,
                 }}>
                   {v.display_title}
                 </div>
@@ -208,28 +219,31 @@ function DocumentDetailModal({
   const latest = group.latest
   return (
     <Modal open onClose={onClose} title={group.label} size="lg">
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
-          {group.version_count} version{group.version_count > 1 ? 's' : ''} · dernière : {formatDate(latest.date)}
+      <div style={{ width: '100%', minWidth: 0 }}>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
+            {group.version_count} version{group.version_count > 1 ? 's' : ''} · dernière : {formatDate(latest.date)}
+          </div>
+          <div style={{
+            fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
+            padding: '10px 12px', borderRadius: 8, boxSizing: 'border-box',
+            background: `${versionAccentColor(latest)}14`,
+            border: `1px solid ${versionAccentColor(latest)}40`,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            Version actuelle : {latest.is_png ? '🖼' : '📎'} {latest.filename}
+          </div>
         </div>
-        <div style={{
-          fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
-          padding: '10px 12px', borderRadius: 8,
-          background: `${versionAccentColor(latest)}14`,
-          border: `1px solid ${versionAccentColor(latest)}40`,
-        }}>
-          Version actuelle : {latest.is_png ? '🖼' : '📎'} {latest.filename}
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          Historique des versions
         </div>
+        <DocumentVersionTimeline
+          versions={group.versions}
+          onDownload={onDownload}
+          onOpenMail={onOpenMail}
+          highlightId={highlightDoc?.id ?? latest.id}
+        />
       </div>
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        Historique des versions
-      </div>
-      <DocumentVersionTimeline
-        versions={group.versions}
-        onDownload={onDownload}
-        onOpenMail={onOpenMail}
-        highlightId={highlightDoc?.id ?? latest.id}
-      />
     </Modal>
   )
 }
