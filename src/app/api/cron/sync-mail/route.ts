@@ -1,8 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest } from 'next/server'
-import { createAdminClient } from '@/lib/supabase'
-import { runCloudMailSync } from '@/lib/sync-mail-cron'
 
 export const maxDuration = 60
 
@@ -11,6 +9,9 @@ export async function GET(req: NextRequest) {
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const { createAdminClient } = await import('@/lib/supabase')
+  const { runCloudMailSync } = await import('@/lib/sync-mail-cron')
 
   const db = createAdminClient()
   const result = await runCloudMailSync(db)

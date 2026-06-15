@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { sendHtmlEmail } from '@/lib/mailer'
 
 export type SyncRunStatus = 'success' | 'partial' | 'error'
 
@@ -164,6 +163,7 @@ export async function maybeAlertSyncFailure(
   `
 
   try {
+    const { sendHtmlEmail } = await import('@/lib/mailer')
     await sendHtmlEmail({
       to: ADMIN_ALERT_EMAIL,
       subject,

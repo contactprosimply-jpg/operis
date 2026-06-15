@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { syncMailAccount, mapMailAccountRow, type MailAccountWithId } from '@/lib/mail-sync'
+import type { MailAccountWithId } from '@/lib/mail-sync'
 import {
   isSyncRunInProgress,
   startSyncRun,
@@ -29,6 +29,8 @@ function formatErr(e: unknown): string {
  * Réutilise syncMailAccount (backfill: false → quick/incremental).
  */
 export async function runCloudMailSync(db: SupabaseClient): Promise<CloudMailSyncResult> {
+  const { syncMailAccount, mapMailAccountRow } = await import('@/lib/mail-sync')
+
   if (await isSyncRunInProgress(db)) {
     return {
       skipped: true,
