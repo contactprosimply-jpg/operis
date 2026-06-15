@@ -166,6 +166,7 @@ export const tenderService = {
           .select('*')
           .eq('tender_id', tenderId)
           .eq('user_id', userId)
+          .is('deleted_at', null)
           .in('id', options.document_ids)
 
         for (const doc of docs ?? []) {

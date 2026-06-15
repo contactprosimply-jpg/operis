@@ -64,6 +64,7 @@ export async function GET(
     .eq('id', docId)
     .eq('tender_id', id)
     .eq('user_id', ownerId)
+    .is('deleted_at', null)
     .single()
 
   if (!doc) return Response.json({ success: false, error: 'Fichier introuvable' }, { status: 404 })

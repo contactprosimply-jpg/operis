@@ -99,6 +99,8 @@ export interface EmailAttachment {
   path?: string
   data?: string
   hasData?: boolean
+  contentDisposition?: string
+  contentId?: string
 }
 
 export interface Quote {

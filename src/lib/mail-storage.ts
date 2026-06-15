@@ -14,6 +14,8 @@ export function attachmentMetaOnly(att: StoredEmailAttachment) {
     size: att.size,
     path: att.path,
     hasData: !!(att.path || att.data),
+    contentDisposition: att.contentDisposition,
+    contentId: att.contentId,
   } as StoredEmailAttachment & { hasData: boolean }
 }
 

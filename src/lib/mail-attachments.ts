@@ -1,5 +1,6 @@
 import type { Attachment } from 'mailparser'
 import type { EmailAttachment } from '@/types/database'
+import { normalizeContentId } from '@/lib/attachment-signature-filter'
 
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 
@@ -9,6 +10,8 @@ export interface StoredEmailAttachment {
   size: number
   data?: string
   path?: string
+  contentDisposition?: string
+  contentId?: string
 }
 
 const FILE_EXT = /\.(pdf|docx?|xlsx?|xls|csv|zip|rar|7z|pptx?|txt|png|jpe?g|gif|webp|xml|dwg|dxf)$/i
@@ -29,6 +32,10 @@ function isRealAttachment(att: Attachment): boolean {
 
   // Inline PDFs / docs without explicit disposition
   if (contentType.includes('pdf') && size > 500) return true
+
+  // Inline images (signatures) : ne pas stocker dans emails.attachments
+  if (disposition.includes('inline') && contentType.startsWith('image/')) return false
+  if (/^image\d+\.(png|jpe?g|gif)/i.test(filename) && contentType.startsWith('image/')) return false
 
   // Skip tiny decorative inline images
   if (!filename && att.related && contentType.startsWith('image/') && size < 8000) return false
@@ -54,7 +61,13 @@ export function parseMailAttachments(parsedAttachments: Attachment[] | undefined
     if (seen.has(key)) continue
     seen.add(key)
 
-    const entry: StoredEmailAttachment = { filename, contentType, size }
+    const entry: StoredEmailAttachment = {
+      filename,
+      contentType,
+      size,
+      contentDisposition: att.contentDisposition || undefined,
+      contentId: att.contentId ? normalizeContentId(att.contentId) : undefined,
+    }
     if (size <= MAX_ATTACHMENT_BYTES) {
       entry.data = Buffer.from(buf).toString('base64')
     }
@@ -78,16 +91,20 @@ export function normalizeAttachments(raw: unknown): EmailAttachment[] {
     path: att.path,
     data: att.data,
     hasData: !!(att.path || att.data || att.hasData),
+    contentDisposition: att.contentDisposition,
+    contentId: att.contentId,
   }))
 }
 
 export function toAttachmentMeta(raw: unknown): EmailAttachment[] {
-  return normalizeAttachments(raw).map(({ filename, contentType, size, path, data, hasData }) => ({
+  return normalizeAttachments(raw).map(({ filename, contentType, size, path, data, hasData, contentDisposition, contentId }) => ({
     filename,
     contentType,
     size,
     path,
     hasData: hasData ?? !!(path || data),
+    contentDisposition,
+    contentId,
   }))
 }
 

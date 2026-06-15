@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { toAttachmentMeta, normalizeAttachments, extractEmailAddress } from '@/lib/mail-attachments'
+import type { EmailAttachment } from '@/types/database'
+import { isAoTenderDocumentAttachment, isPngAttachment } from '@/lib/attachment-signature-filter'
 import { isQuoteDocument } from '@/lib/document-text-extract'
 import { isEmailIncompleteForEnrich, reEnrichEmailIfNeeded } from '@/lib/mail-enrich'
 import { looksLikeSupplierQuoteEmail } from '@/services/aoDetector.service'
@@ -31,6 +33,8 @@ export interface TenderDocumentItem {
   attachment_index?: number
   document_id?: string
   mail_source?: TenderDocumentMailSource
+  is_png?: boolean
+  is_optional?: boolean
 }
 
 function titleAoInbound(fromLabel: string) {
@@ -79,7 +83,6 @@ export type QuoteRow = {
   source_email_id?: string | null
 }
 
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i
 const OUTBOUND_DOC_SOURCES = new Set(['outbound', 'consultation', 'mail_sent'])
 const INBOUND_DOC_SOURCES = new Set(['ao_request', 'inbound', 'mail_received'])
 function titleMailDocument(
@@ -136,28 +139,35 @@ function clientLabelFromAddress(fromAddress?: string | null) {
   return fromAddress?.split('<')[0].trim() || fromAddress || 'Client'
 }
 
-function isNonImageAttachment(filename: string, contentType?: string): boolean {
-  if (IMAGE_EXT.test(filename)) return false
-  if (contentType?.startsWith('image/')) return false
-  return true
+function passesAoDocumentFilter(
+  att: EmailAttachment,
+  bodyHtml?: string | null,
+  buffer?: Buffer | null,
+): boolean {
+  return isAoTenderDocumentAttachment(att, { bodyHtml, buffer })
 }
 
 function isInboundEmailDocument(
   subject: string,
   bodySnippet: string,
-  filename: string,
+  att: EmailAttachment,
   isAo: boolean,
+  bodyHtml?: string | null,
 ): boolean {
+  if (!passesAoDocumentFilter(att, bodyHtml)) return false
   if (looksLikeSupplierQuoteEmail(subject, bodySnippet)) return true
-  if (isAo) return isNonImageAttachment(filename)
-  if (/cctp|dpgf|dce|dossier|consultation|appel d.offres/i.test(`${subject} ${filename}`)) return true
-  return isNonImageAttachment(filename)
+  if (isAo) return true
+  if (/cctp|dpgf|dce|dossier|consultation|appel d.offres/i.test(`${subject} ${att.filename}`)) return true
+  return true
 }
 
-function collectInboundFilenameKeys(attachments: ReturnType<typeof toAttachmentMeta>): Set<string> {
+function collectInboundFilenameKeys(
+  attachments: ReturnType<typeof toAttachmentMeta>,
+  bodyHtml?: string | null,
+): Set<string> {
   const keys = new Set<string>()
   for (const att of attachments) {
-    if (!isNonImageAttachment(att.filename, att.contentType)) continue
+    if (!passesAoDocumentFilter(att, bodyHtml)) continue
     keys.add(inboundFilenameKey(att.filename))
   }
   return keys
@@ -286,7 +296,7 @@ export async function persistMailLinkedDocuments(
 ): Promise<void> {
   const { data: em } = await db
     .from('emails')
-    .select('attachments, mail_folder, from_address, to_address, received_at')
+    .select('attachments, mail_folder, from_address, to_address, received_at, body_html')
     .eq('id', emailId)
     .eq('user_id', userId)
     .maybeSingle()
@@ -307,6 +317,7 @@ export async function persistMailLinkedDocuments(
     .select('filename, size, email_id')
     .eq('tender_id', tenderId)
     .eq('user_id', userId)
+    .is('deleted_at', null)
 
   const existingFp = new Set((existing ?? []).map(d => fileFingerprint(d.filename, d.size)))
   const existingMailFp = new Set(
@@ -315,14 +326,17 @@ export async function persistMailLinkedDocuments(
       .map(d => fileFingerprint(d.filename, d.size)),
   )
 
+  const bodyHtml = em.body_html as string | null
+
   for (const att of attachments) {
-    if (!isNonImageAttachment(att.filename, att.contentType)) continue
+    if (!passesAoDocumentFilter(att, bodyHtml)) continue
     const fp = fileFingerprint(att.filename, att.size)
     if (existingMailFp.has(fp)) continue
     if (existingFp.has(fp)) continue
 
     const buffer = await downloadAttachmentBuffer(db, att)
     if (!buffer?.length) continue
+    if (!passesAoDocumentFilter(att, bodyHtml, buffer)) continue
 
     try {
       const docId = crypto.randomUUID()
@@ -439,16 +453,26 @@ export async function persistAoInboundDocuments(
     .select('filename, size')
     .eq('tender_id', tenderId)
     .eq('user_id', userId)
+    .is('deleted_at', null)
 
   const existingFp = new Set((existing ?? []).map(d => fileFingerprint(d.filename, d.size)))
 
+  const { data: srcEmail } = await db
+    .from('emails')
+    .select('body_html')
+    .eq('id', sourceEmailId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  const bodyHtml = srcEmail?.body_html as string | null
+
   for (const att of attachments) {
-    if (!isNonImageAttachment(att.filename, att.contentType)) continue
+    if (!passesAoDocumentFilter(att, bodyHtml)) continue
     const fp = fileFingerprint(att.filename, att.size)
     if (existingFp.has(fp)) continue
 
     const buffer = await downloadAttachmentBuffer(db, att)
     if (!buffer?.length) continue
+    if (!passesAoDocumentFilter(att, bodyHtml, buffer)) continue
 
     try {
       const docId = crypto.randomUUID()
@@ -490,7 +514,7 @@ export async function persistInboundFromConsultationLogs(
     .maybeSingle()
 
   const sourceAtts = normalizeAttachments(em?.attachments).filter(
-    a => isNonImageAttachment(a.filename, a.contentType),
+    a => passesAoDocumentFilter(a),
   )
   const hasSourceFiles = sourceAtts.some(a => a.path || a.data)
   if (hasSourceFiles) return
@@ -511,11 +535,12 @@ export async function persistInboundFromConsultationLogs(
     .select('filename, size')
     .eq('tender_id', tenderId)
     .eq('user_id', userId)
+    .is('deleted_at', null)
 
   const existingFp = new Set((existing ?? []).map(d => fileFingerprint(d.filename, d.size)))
 
   for (const att of toAttachmentMeta(log.attachments)) {
-    if (!isNonImageAttachment(att.filename, att.contentType)) continue
+    if (!passesAoDocumentFilter(att)) continue
     if (!att.path) continue
 
     const fp = fileFingerprint(att.filename, att.size)
@@ -562,6 +587,7 @@ export async function repairTenderInboundSources(
     .select('id, filename, source')
     .eq('tender_id', tenderId)
     .eq('user_id', userId)
+    .is('deleted_at', null)
 
   for (const doc of docs ?? []) {
     if (INBOUND_DOC_SOURCES.has(doc.source ?? '')) continue
@@ -677,7 +703,7 @@ async function collectInboundMailDocuments(
 ): Promise<TenderDocumentItem[]> {
   const { data: em } = await db
     .from('emails')
-    .select('id, subject, from_address, received_at, attachments')
+    .select('id, subject, from_address, received_at, attachments, body_html')
     .eq('id', emailId)
     .eq('user_id', userId)
     .maybeSingle()
@@ -687,10 +713,11 @@ async function collectInboundMailDocuments(
   const items: TenderDocumentItem[] = []
   const attachments = normalizeAttachments(em.attachments)
   const clientLabel = clientLabelFromAddress(em.from_address)
+  const bodyHtml = em.body_html as string | null
 
   for (let i = 0; i < attachments.length; i++) {
     const att = attachments[i]
-    if (!isNonImageAttachment(att.filename, att.contentType)) continue
+    if (!passesAoDocumentFilter(att, bodyHtml)) continue
 
     const titles = titleAoInbound(clientLabel)
     const item: TenderDocumentItem = {
@@ -707,6 +734,7 @@ async function collectInboundMailDocuments(
       download_type: 'mail',
       email_id: em.id,
       attachment_index: i,
+      is_png: isPngAttachment(att.filename, att.contentType),
     }
 
     const fp = fileFingerprint(item.filename, item.size)
@@ -727,7 +755,7 @@ async function collectLinkedInboundMailDocuments(
 ): Promise<TenderDocumentItem[]> {
   const { data: emails } = await db
     .from('emails')
-    .select('id, subject, from_address, received_at, attachments, is_ao, body_text')
+    .select('id, subject, from_address, received_at, attachments, is_ao, body_text, body_html')
     .eq('user_id', userId)
     .eq('tender_id', tenderId)
 
@@ -737,17 +765,18 @@ async function collectLinkedInboundMailDocuments(
     if (em.id === sourceEmailId) continue
     const attachments = normalizeAttachments(em.attachments)
     const fromLabel = clientLabelFromAddress(em.from_address)
+    const bodyHtml = em.body_html as string | null
     const bodySnippet = (em.body_text ?? '').slice(0, 2000)
 
     for (let i = 0; i < attachments.length; i++) {
       const att = attachments[i]
       const include = em.is_ao
-        ? isNonImageAttachment(att.filename, att.contentType)
-        : isInboundEmailDocument(em.subject ?? '', bodySnippet, att.filename, false)
+        ? passesAoDocumentFilter(att, bodyHtml)
+        : isInboundEmailDocument(em.subject ?? '', bodySnippet, att, false, bodyHtml)
       if (!include) continue
 
       const isSupplierReply = !em.is_ao && isInboundEmailDocument(
-        em.subject ?? '', bodySnippet, att.filename, false,
+        em.subject ?? '', bodySnippet, att, false, bodyHtml,
       ) && looksLikeSupplierQuoteEmail(em.subject ?? '', bodySnippet)
       const titles = em.is_ao
         ? titleAoInbound(fromLabel)
@@ -769,6 +798,7 @@ async function collectLinkedInboundMailDocuments(
         download_type: 'mail',
         email_id: em.id,
         attachment_index: i,
+        is_png: isPngAttachment(att.filename, att.contentType),
       }
 
       const fp = fileFingerprint(item.filename, item.size)
@@ -779,6 +809,234 @@ async function collectLinkedInboundMailDocuments(
   }
 
   return items
+}
+
+export type MailAttachmentRef = { email_id: string; attachment_index: number }
+
+export function mailAttachmentKey(emailId: string, attachmentIndex: number): string {
+  return `${emailId}:${attachmentIndex}`
+}
+
+function parseExcludedMailAttachments(raw: unknown): Set<string> {
+  const keys = new Set<string>()
+  if (!Array.isArray(raw)) return keys
+  for (const item of raw) {
+    if (
+      item
+      && typeof item === 'object'
+      && typeof (item as MailAttachmentRef).email_id === 'string'
+      && typeof (item as MailAttachmentRef).attachment_index === 'number'
+    ) {
+      const ref = item as MailAttachmentRef
+      keys.add(mailAttachmentKey(ref.email_id, ref.attachment_index))
+    }
+  }
+  return keys
+}
+
+async function loadExcludedMailAttachmentKeys(
+  db: SupabaseClient,
+  userId: string,
+  tenderId: string,
+): Promise<Set<string>> {
+  const { data } = await db
+    .from('tenders')
+    .select('excluded_mail_attachments')
+    .eq('id', tenderId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  return parseExcludedMailAttachments(data?.excluded_mail_attachments)
+}
+
+async function collectOptionalPngMailDocuments(
+  db: SupabaseClient,
+  userId: string,
+  tenderId: string,
+  sourceEmailId: string | null | undefined,
+  seenFiles: Set<string>,
+  excludedKeys: Set<string>,
+): Promise<TenderDocumentItem[]> {
+  const { data: emails } = await db
+    .from('emails')
+    .select('id, subject, from_address, received_at, attachments, body_html')
+    .eq('user_id', userId)
+    .eq('tender_id', tenderId)
+
+  const items: TenderDocumentItem[] = []
+
+  for (const em of emails ?? []) {
+    const attachments = normalizeAttachments(em.attachments)
+    const bodyHtml = em.body_html as string | null
+    const fromLabel = clientLabelFromAddress(em.from_address)
+
+    for (let i = 0; i < attachments.length; i++) {
+      const att = attachments[i]
+      if (!isPngAttachment(att.filename, att.contentType)) continue
+      if (passesAoDocumentFilter(att, bodyHtml)) continue
+
+      const key = mailAttachmentKey(em.id, i)
+      if (excludedKeys.has(key)) continue
+
+      const fp = fileFingerprint(att.filename, att.size)
+      if (seenFiles.has(fp)) continue
+
+      const titles = titleAoInbound(fromLabel)
+      items.push({
+        id: `mail:${em.id}:${i}`,
+        kind: 'received',
+        filename: att.filename,
+        contentType: att.contentType,
+        size: att.size,
+        date: em.received_at,
+        label: em.subject,
+        supplier_name: fromLabel,
+        category: titles.category,
+        display_title: titles.display_title,
+        download_type: 'mail',
+        email_id: em.id,
+        attachment_index: i,
+        is_png: true,
+        is_optional: true,
+      })
+    }
+  }
+
+  return items
+}
+
+/** Intègre une PJ mail PNG (ou ignorée) dans tender_documents. */
+export async function includeMailAttachmentInTender(
+  db: SupabaseClient,
+  userId: string,
+  tenderId: string,
+  emailId: string,
+  attachmentIndex: number,
+): Promise<void> {
+  const { data: em } = await db
+    .from('emails')
+    .select('attachments, mail_folder, from_address, to_address, body_html, tender_id')
+    .eq('id', emailId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (!em) throw new Error('Email introuvable')
+
+  if (em.tender_id !== tenderId) {
+    await db.from('emails').update({ tender_id: tenderId }).eq('id', emailId).eq('user_id', userId)
+  }
+
+  const attachments = normalizeAttachments(em.attachments)
+  const att = attachments[attachmentIndex]
+  if (!att) throw new Error('Pièce jointe introuvable')
+
+  const bodyHtml = em.body_html as string | null
+  const isSent = em.mail_folder === 'sent'
+  const docSource = isSent ? 'mail_sent' : 'mail_received'
+
+  const { data: existing } = await db
+    .from('tender_documents')
+    .select('filename, size, email_id')
+    .eq('tender_id', tenderId)
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+
+  const fp = fileFingerprint(att.filename, att.size)
+  const already = (existing ?? []).some(
+    d => d.email_id === emailId && fileFingerprint(d.filename, d.size) === fp,
+  )
+  if (!already) {
+    const buffer = await downloadAttachmentBuffer(db, att)
+    if (!buffer?.length) throw new Error('Fichier introuvable')
+
+    const docId = crypto.randomUUID()
+    const storagePath = await uploadTenderDocument(db, userId, tenderId, {
+      filename: att.filename,
+      contentType: att.contentType || 'application/octet-stream',
+      buffer,
+    }, docId)
+
+    await db.from('tender_documents').insert({
+      tender_id: tenderId,
+      user_id: userId,
+      filename: att.filename,
+      content_type: att.contentType || 'application/octet-stream',
+      size: buffer.length,
+      storage_path: storagePath,
+      bucket: DEVIS_BUCKET,
+      source: docSource,
+      email_id: emailId,
+    })
+  }
+
+  const { data: tender } = await db
+    .from('tenders')
+    .select('excluded_mail_attachments')
+    .eq('id', tenderId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  const excluded = parseExcludedMailAttachments(tender?.excluded_mail_attachments)
+  const refKey = mailAttachmentKey(emailId, attachmentIndex)
+  if (excluded.has(refKey)) {
+    const next = (Array.isArray(tender?.excluded_mail_attachments) ? tender!.excluded_mail_attachments as MailAttachmentRef[] : [])
+      .filter(r => mailAttachmentKey(r.email_id, r.attachment_index) !== refKey)
+    await db.from('tenders').update({ excluded_mail_attachments: next }).eq('id', tenderId).eq('user_id', userId)
+  }
+}
+
+/** Masque une PJ mail PNG de l'AO (liste + soft-delete si déjà copiée). */
+export async function excludeMailAttachmentFromTender(
+  db: SupabaseClient,
+  userId: string,
+  tenderId: string,
+  emailId: string,
+  attachmentIndex: number,
+): Promise<void> {
+  const { data: em } = await db
+    .from('emails')
+    .select('attachments')
+    .eq('id', emailId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  const attachments = normalizeAttachments(em?.attachments)
+  const att = attachments[attachmentIndex]
+
+  const { data: tender } = await db
+    .from('tenders')
+    .select('excluded_mail_attachments')
+    .eq('id', tenderId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  const ref: MailAttachmentRef = { email_id: emailId, attachment_index: attachmentIndex }
+  const refKey = mailAttachmentKey(emailId, attachmentIndex)
+  const current = Array.isArray(tender?.excluded_mail_attachments)
+    ? (tender!.excluded_mail_attachments as MailAttachmentRef[])
+    : []
+  if (!current.some(r => mailAttachmentKey(r.email_id, r.attachment_index) === refKey)) {
+    await db.from('tenders').update({
+      excluded_mail_attachments: [...current, ref],
+    }).eq('id', tenderId).eq('user_id', userId)
+  }
+
+  if (att) {
+    const fp = fileFingerprint(att.filename, att.size)
+    const { data: docs } = await db
+      .from('tender_documents')
+      .select('id, filename, size')
+      .eq('tender_id', tenderId)
+      .eq('user_id', userId)
+      .eq('email_id', emailId)
+      .is('deleted_at', null)
+
+    const now = new Date().toISOString()
+    for (const doc of docs ?? []) {
+      if (fileFingerprint(doc.filename, doc.size) === fp) {
+        await db.from('tender_documents').update({ deleted_at: now }).eq('id', doc.id)
+      }
+    }
+  }
 }
 
 /**
@@ -794,11 +1052,12 @@ export async function collectTenderDocuments(
   tenderId: string,
   consultations: ConsultationRow[],
   quotes: QuoteRow[],
-): Promise<{ received: TenderDocumentItem[]; sent: TenderDocumentItem[] }> {
+): Promise<{ received: TenderDocumentItem[]; sent: TenderDocumentItem[]; optional_png: TenderDocumentItem[] }> {
   const received: TenderDocumentItem[] = []
   const sent: TenderDocumentItem[] = []
   const seenFiles = new Set<string>()
   const seenSent = new Set<string>()
+  const excludedKeys = await loadExcludedMailAttachmentKeys(db, userId, tenderId)
 
   const sourceEmailId = await resolveSourceEmailId(db, userId, tenderId)
   let inboundClientLabel = 'Client'
@@ -830,7 +1089,7 @@ export async function collectTenderDocuments(
 
     const { data: srcMeta } = await db
       .from('emails')
-      .select('from_address, attachments, received_at')
+      .select('from_address, attachments, received_at, body_html')
       .eq('id', sourceEmailId)
       .eq('user_id', userId)
       .maybeSingle()
@@ -839,7 +1098,10 @@ export async function collectTenderDocuments(
       inboundClientLabel = clientLabelFromAddress(srcMeta.from_address)
       sourceReceivedAt = srcMeta.received_at
       sourceInboundKeys.clear()
-      for (const k of collectInboundFilenameKeys(toAttachmentMeta(srcMeta.attachments))) {
+      for (const k of collectInboundFilenameKeys(
+        toAttachmentMeta(srcMeta.attachments),
+        srcMeta.body_html as string | null,
+      )) {
         sourceInboundKeys.add(k)
       }
     }
@@ -891,6 +1153,7 @@ export async function collectTenderDocuments(
     .select('id, filename, content_type, size, source, created_at, email_id, supplier:suppliers(name)')
     .eq('tender_id', tenderId)
     .eq('user_id', userId)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
 
   for (const doc of tenderDocs ?? []) {
@@ -947,7 +1210,7 @@ export async function collectTenderDocuments(
     const supplierName = (log.supplier as { name?: string } | null)?.name
     for (let i = 0; i < attachments.length; i++) {
       const att = attachments[i]
-      if (!isNonImageAttachment(att.filename, att.contentType)) continue
+      if (!passesAoDocumentFilter(att)) continue
 
       const key = `sent:log:${log.id}:${i}`
       if (seenSent.has(key)) continue
@@ -971,5 +1234,9 @@ export async function collectTenderDocuments(
     }
   }
 
-  return { received, sent }
+  const optional_png = await collectOptionalPngMailDocuments(
+    db, userId, tenderId, sourceEmailId, seenFiles, excludedKeys,
+  )
+
+  return { received, sent, optional_png }
 }
