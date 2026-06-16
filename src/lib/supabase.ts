@@ -6,7 +6,13 @@ function getBrowserClient(): SupabaseClient {
   if (!browserClient) {
     browserClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: {
+          // Évite le hang ~60s au réveil d'onglet (contention Web Locks API)
+          lock: async (_name, _acquireTimeout, fn) => await fn(),
+        },
+      },
     )
   }
   return browserClient
