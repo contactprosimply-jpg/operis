@@ -13,7 +13,9 @@
     "desktop:icon": "node scripts/generate-icon.mjs",
     "desktop": "electron .",
     "desktop:build": "npm run desktop:icon && electron-builder --win --x64",
-    "sync": "npx tsx scripts/sync-mail.ts"
+    "sync": "npx tsx scripts/sync-mail.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "build": {
     "appId": "fr.nikodex.operis",
@@ -94,6 +96,7 @@
     "sharp": "^0.33.5",
     "to-ico": "^1.1.5",
     "tsx": "^4.19.4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }

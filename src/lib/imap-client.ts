@@ -129,6 +129,17 @@ function envelopeToMeta(
   }
 }
 
+/** Plage UID IMAP pour sync incrémentale (UID strictement > last_sync_uid). */
+export function incrementalUidSearchRange(lastSyncUid: number): string {
+  return `${lastSyncUid + 1}:*`
+}
+
+/** Filtre les UID > last_sync_uid (équivalent logique du search IMAP incremental). */
+export function filterUidsAboveLastSync(lastSyncUid: number, uids: number[]): number[] {
+  if (lastSyncUid <= 0) return [...uids].sort((a, b) => a - b)
+  return uids.filter(u => u > lastSyncUid).sort((a, b) => a - b)
+}
+
 function mergeEnvelopesByUid(arrays: ImapEnvelopeMeta[][]): ImapEnvelopeMeta[] {
   const map = new Map<number, ImapEnvelopeMeta>()
   for (const arr of arrays) {
@@ -495,7 +506,7 @@ async function fetchEnvelopesInOpenMailbox(
     }
 
     if (minUid > 0 && fullScan) {
-      const newUids = await client.search({ uid: `${minUid + 1}:*` }, { uid: true })
+      const newUids = await client.search({ uid: incrementalUidSearchRange(minUid) }, { uid: true })
       if (Array.isArray(newUids) && newUids.length) {
         batches.push(await fetchEnvelopeByUidRange(client, newUids, uidFetchLimit, accountUser))
       }
