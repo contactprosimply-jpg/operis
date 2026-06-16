@@ -14,14 +14,22 @@ function ChoosePlanContent() {
   const [checkingAccess, setCheckingAccess] = useState(true)
 
   useEffect(() => {
+    let cancelled = false
     authFetch('/api/billing/status')
       .then(r => r.json())
       .then(json => {
+        if (cancelled) return
         if (json.success && json.data.has_access) {
           router.replace('/dashboard')
         }
       })
-      .finally(() => setCheckingAccess(false))
+      .catch(() => {
+        // Session invalide : AuthProvider gère la déconnexion
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingAccess(false)
+      })
+    return () => { cancelled = true }
   }, [router])
 
   const handleCheckout = async (plan: BillingPlan) => {

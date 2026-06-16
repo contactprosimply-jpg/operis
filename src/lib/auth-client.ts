@@ -37,7 +37,6 @@ export async function getAccessToken(): Promise<string | null> {
 export async function authFetch(url: string, options: RequestInit = {}) {
   const token = await getAccessToken()
   if (!token) {
-    if (typeof window !== 'undefined') window.location.href = '/login'
     throw new Error('Non autorise')
   }
   const res = await fetch(url, {
@@ -48,8 +47,13 @@ export async function authFetch(url: string, options: RequestInit = {}) {
       ...(options.headers ?? {}),
     },
   })
-  if (res.status === 401 && typeof window !== 'undefined') {
-    window.location.href = '/login'
+  if (res.status === 401) {
+    cachedToken = null
+    setAccessToken(null)
+    await supabase.auth.signOut()
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login'
+    }
     throw new Error('Non autorise')
   }
   return res

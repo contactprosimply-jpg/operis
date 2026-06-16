@@ -34,6 +34,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [billingChecked, setBillingChecked] = useState(false)
   const [hasBillingAccess, setHasBillingAccess] = useState(false)
 
+  const isPublic = isPublicRoute(pathname)
+  const isBillingExempt = isBillingExemptRoute(pathname)
+
   useEffect(() => {
     let mounted = true
 
@@ -44,12 +47,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setReady(true)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return
       setSession(session)
       setAccessToken(session?.access_token ?? null)
       setReady(true)
-      setBillingChecked(false)
+      // Ne pas re-vérifier la facturation sur chaque TOKEN_REFRESHED (boucle spinner)
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        setBillingChecked(false)
+      }
     })
 
     return () => {
@@ -59,8 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!ready || !session) {
-      if (ready && !session) setBillingChecked(true)
+    if (!ready) return
+    if (!session) {
+      setHasBillingAccess(false)
+      setBillingChecked(true)
       return
     }
 
@@ -80,27 +88,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
 
     return () => { cancelled = true }
-  }, [ready, session, pathname])
+  }, [ready, session?.user?.id])
 
   useEffect(() => {
     if (!ready || !session || !billingChecked) return
 
-    const isPublic = isPublicRoute(pathname)
-    const isBillingExempt = isBillingExemptRoute(pathname)
-
     if (isAuthEntryRoute(pathname)) {
-      router.replace(hasBillingAccess ? '/dashboard' : '/choose-plan')
+      const target = hasBillingAccess ? '/dashboard' : '/choose-plan'
+      if (pathname !== target) router.replace(target)
       return
     }
 
-    if (!hasBillingAccess && !isPublic && !isBillingExempt) {
+    if (!hasBillingAccess && !isPublic && !isBillingExempt && pathname !== '/choose-plan') {
       router.replace('/choose-plan')
     }
-  }, [ready, session, billingChecked, hasBillingAccess, pathname, router])
+  }, [ready, session, billingChecked, hasBillingAccess, pathname, router, isPublic, isBillingExempt])
 
-  const isPublic = isPublicRoute(pathname)
-  const isBillingExempt = isBillingExemptRoute(pathname)
-  const waitingBilling = session && !billingChecked && !isPublic
+  const waitingBilling = session && !billingChecked && !isPublic && !isBillingExempt
 
   if (!ready || waitingBilling) {
     return (
