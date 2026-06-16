@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
@@ -13,6 +13,7 @@ type AuthContextValue = {
   accessToken: string | null
   ready: boolean
   hasBillingAccess: boolean
+  refreshBillingAccess: () => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -20,6 +21,7 @@ const AuthContext = createContext<AuthContextValue>({
   accessToken: null,
   ready: false,
   hasBillingAccess: false,
+  refreshBillingAccess: async () => false,
 })
 
 export function useAuth() {
@@ -33,9 +35,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [billingChecked, setBillingChecked] = useState(false)
   const [hasBillingAccess, setHasBillingAccess] = useState(false)
+  const [stripeReturnSuccess, setStripeReturnSuccess] = useState(false)
 
   const isPublic = isPublicRoute(pathname)
   const isBillingExempt = isBillingExemptRoute(pathname)
+
+  useEffect(() => {
+    if (pathname !== '/settings/billing') {
+      setStripeReturnSuccess(false)
+      return
+    }
+    const params = new URLSearchParams(window.location.search)
+    setStripeReturnSuccess(params.get('success') === '1')
+  }, [pathname])
+
+  const refreshBillingAccess = useCallback(async () => {
+    try {
+      const json = await authFetch('/api/billing/status').then(r => r.json())
+      const access = Boolean(json.success && json.data?.has_access)
+      setHasBillingAccess(access)
+      setBillingChecked(true)
+      return access
+    } catch {
+      setHasBillingAccess(false)
+      setBillingChecked(true)
+      return false
+    }
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -91,6 +117,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [ready, session?.user?.id])
 
   useEffect(() => {
+    if (!ready || !session || hasBillingAccess) return
+    if (!isBillingExempt && !stripeReturnSuccess) return
+
+    let attempts = 0
+    const maxAttempts = stripeReturnSuccess ? 20 : 8
+    const interval = setInterval(async () => {
+      attempts += 1
+      const access = await refreshBillingAccess()
+      if (access || attempts >= maxAttempts) {
+        clearInterval(interval)
+      }
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [ready, session, hasBillingAccess, isBillingExempt, stripeReturnSuccess, refreshBillingAccess])
+
+  useEffect(() => {
     if (!ready || !session || !billingChecked) return
 
     if (isAuthEntryRoute(pathname)) {
@@ -136,6 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       accessToken: session?.access_token ?? null,
       ready,
       hasBillingAccess,
+      refreshBillingAccess,
     }}>
       {children}
     </AuthContext.Provider>

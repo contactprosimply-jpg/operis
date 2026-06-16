@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
-import { ensureBillingOrg, BILLING_ADMIN_EMAIL } from '@/lib/billing/subscription'
+import { ensureBillingOrg } from '@/lib/billing/subscription'
 import { getStripe, getStripePriceId } from '@/lib/billing/stripe'
 import { billingReturnUrlsFromOrigin, requestOrigin } from '@/lib/billing/request-origin'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
@@ -32,11 +32,13 @@ export async function GET(req: NextRequest) {
     const urls = billingReturnUrlsFromOrigin(requestOrigin(req))
     const priceId = getStripePriceId(plan)
 
+    const { data: { user } } = await db.auth.admin.getUserById(userId)
+    const customerEmail = user?.email ?? undefined
+
     let customerId = sub?.stripe_customer_id as string | null
     if (!customerId) {
-      const { data: { user } } = await db.auth.admin.getUserById(userId)
       const customer = await stripe.customers.create({
-        email: user?.email ?? undefined,
+        email: customerEmail,
         metadata: { org_id: orgId, user_id: userId },
       })
       customerId = customer.id
@@ -52,12 +54,14 @@ export async function GET(req: NextRequest) {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
+      customer_email: customerEmail,
+      client_reference_id: userId,
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: urls.success,
       cancel_url: urls.cancel,
       metadata: { org_id: orgId, plan, user_id: userId },
       subscription_data: {
-        metadata: { org_id: orgId, plan },
+        metadata: { org_id: orgId, plan, user_id: userId },
       },
     })
 

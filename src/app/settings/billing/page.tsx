@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import PricingPlans from '@/components/billing/PricingPlans'
+import { useAuth } from '@/components/AuthProvider'
 import { authFetch } from '@/lib/auth-client'
 import { Button, Spinner } from '@/components/ui'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
@@ -30,6 +31,7 @@ function formatDate(iso: string | null) {
 
 function BillingSettingsContent() {
   const searchParams = useSearchParams()
+  const { refreshBillingAccess } = useAuth()
   const success = searchParams.get('success') === '1'
   const canceled = searchParams.get('canceled') === '1'
 
@@ -70,6 +72,7 @@ function BillingSettingsContent() {
         setData(json.data)
         if (json.data.has_access) {
           setStatusMessage('Abonnement activé. Vous pouvez utiliser Operis.')
+          await refreshBillingAccess()
           clearInterval(interval)
         } else if (attempts >= 12) {
           setStatusMessage('Paiement reçu. L\'activation peut prendre quelques minutes — rechargez cette page.')
@@ -79,7 +82,7 @@ function BillingSettingsContent() {
     }, 3000)
 
     return () => clearInterval(interval)
-  }, [success, canceled])
+  }, [success, canceled, refreshBillingAccess])
 
   const handleCheckout = async (plan: BillingPlan) => {
     setLoadingPlan(plan)
