@@ -11,6 +11,7 @@ import {
   leaveOrganizationAsMember,
   userBelongsToOrganization,
 } from '@/lib/organization'
+import { ensureSubscriptionRow } from '@/lib/billing/subscription'
 import { canAssignTender, canViewTender, getTenderAccessScope } from '@/lib/tender-access'
 
 export async function GET(req: NextRequest) {
@@ -50,6 +51,8 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
+
+  await ensureSubscriptionRow(db, org.id)
 
   const { data: { user } } = await db.auth.admin.getUserById(userId)
   const { data: profile } = await db.from('profiles').select('full_name').eq('id', userId).maybeSingle()

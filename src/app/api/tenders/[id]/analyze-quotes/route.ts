@@ -5,6 +5,7 @@ import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import { analyzeQuotesForTender } from '@/lib/mail-quote-extract'
 import { assertTenderAccess } from '@/lib/tender-access'
+import { requireBillingAccess, hasBusinessFeatures } from '@/lib/billing/subscription'
 
 export const maxDuration = 60
 
@@ -21,6 +22,17 @@ export async function POST(
   const access = await assertTenderAccess(db, id, userId, 'mutate')
   if (!access.ok) {
     return Response.json({ success: false, error: access.error }, { status: access.status })
+  }
+
+  const billing = await requireBillingAccess(db, userId)
+  if (!billing.ok) return billing.response
+
+  if (!hasBusinessFeatures(billing.ctx)) {
+    return Response.json({
+      success: false,
+      error: 'Analyse IA des devis disponible avec l\'offre Business',
+      code: 'PLAN_BUSINESS_REQUIRED',
+    }, { status: 403 })
   }
 
   try {

@@ -12,6 +12,7 @@ import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import { deleteAllTendersForUser } from '@/lib/tender-reset'
 import { rejectUnexpectedFields, validateTitle, badRequest } from '@/lib/api-validation'
+import { requireBillingAccess } from '@/lib/billing/subscription'
 
 export async function GET(req: NextRequest) {
   const userId = await getUserFromRequest(req)
@@ -37,6 +38,10 @@ export async function POST(req: NextRequest) {
   if (!body.client || typeof body.client !== 'string' || !body.client.trim()) {
     return badRequest('Client requis')
   }
+
+  const db = createAdminClient()
+  const billing = await requireBillingAccess(db, userId)
+  if (!billing.ok) return billing.response
 
   const result = await tenderService.create(userId, body)
   return Response.json(result, { status: result.success ? 201 : 400 })

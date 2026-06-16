@@ -6,6 +6,7 @@ import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { collectTenderDocuments, type QuoteRow } from '@/lib/tender-documents'
 import { uploadTenderDocument, DEVIS_BUCKET } from '@/lib/devis-storage'
 import { assertTenderAccess } from '@/lib/tender-access'
+import { assertStorageQuota } from '@/lib/billing/subscription'
 
 export async function GET(
   req: NextRequest,
@@ -58,6 +59,12 @@ export async function POST(
 
   const docId = crypto.randomUUID()
   const buffer = Buffer.from(data, 'base64')
+
+  const quota = await assertStorageQuota(db, userId, buffer.length)
+  if (!quota.ok) {
+    return Response.json({ success: false, error: quota.error, code: 'STORAGE_QUOTA' }, { status: 403 })
+  }
+
   const storagePath = await uploadTenderDocument(db, ownerId, id, {
     filename,
     contentType: contentType || 'application/octet-stream',

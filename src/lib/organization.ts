@@ -371,6 +371,10 @@ export async function acceptOrganizationInvite(token: string, userId: string) {
     .select('id', { count: 'exact', head: true })
     .eq('organization_id', orgId)
 
+  const { canAddOrgMember } = await import('@/lib/billing/subscription')
+  const seatCheck = await canAddOrgMember(db, orgId)
+  if (!seatCheck.ok) return { ok: false as const, error: seatCheck.error! }
+
   const color = MEMBER_COLORS[(count ?? 0) % MEMBER_COLORS.length]
 
   const { error } = await db.from('organization_members').insert({

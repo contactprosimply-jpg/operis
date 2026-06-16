@@ -27,10 +27,11 @@ export function integrationConfigured(): boolean {
 }
 
 export async function createTestClients(): Promise<TestUsers> {
-  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
-  if (!url) throw new Error('SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_URL requis')
-  const anon = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!anon) throw new Error('SUPABASE_ANON_KEY ou NEXT_PUBLIC_SUPABASE_ANON_KEY requis')
+  const urlRaw = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anonRaw = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!urlRaw || !anonRaw) throw new Error('SUPABASE_URL et SUPABASE_ANON_KEY requis')
+  const url: string = urlRaw
+  const anon: string = anonRaw
   const serviceKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY')
 
   const admin = createClient(url, serviceKey, {

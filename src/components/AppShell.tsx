@@ -6,6 +6,7 @@ import Sidebar from '@/components/Sidebar'
 import PwaInstaller from '@/components/PwaInstaller'
 import ProductTour from '@/components/ProductTour'
 import UserJourney from '@/components/UserJourney'
+import BillingGateBanner from '@/components/billing/BillingGateBanner'
 
 const PUBLIC_ROUTES = ['/', '/login', '/register']
 
@@ -21,8 +22,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       ) : (
         <div style={{ display: 'flex', height: '100vh', width: '100vw' }}>
           <Sidebar />
-          <main style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-secondary)', minWidth: 0 }}>
-            <div className="page-content">
+          <main style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-secondary)', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <BillingGateBanner />
+            <div className="page-content" style={{ flex: 1 }}>
               {children}
             </div>
           </main>
