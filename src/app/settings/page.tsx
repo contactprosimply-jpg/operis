@@ -11,6 +11,7 @@ import { requestProductTour } from '@/lib/product-tour'
 import { useAuth } from '@/components/AuthProvider'
 import MailRelancesSection from '@/components/settings/MailRelancesSection'
 import AoDetectionSection from '@/components/settings/AoDetectionSection'
+import BillingSummarySection from '@/components/settings/BillingSummarySection'
 import { cacheUserSettingsLocally } from '@/lib/user-settings'
 
 type MailAccountRow = {
@@ -387,6 +388,8 @@ function SettingsPageContent() {
           </button>
         ))}
       </div>
+
+      <BillingSummarySection />
 
       <div style={{ maxWidth: 660 }}>
 

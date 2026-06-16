@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
         seats: ctx.seatCount,
         storage_bytes: ctx.storageBytes,
         storage_gb: Number((ctx.storageBytes / (1024 ** 3)).toFixed(2)),
+        storage_remaining_gb: Number(Math.max(0, ctx.limits.storageGb - ctx.storageBytes / (1024 ** 3)).toFixed(2)),
       },
       org_id: ctx.orgId,
       is_owner: ctx.isOwner,
