@@ -1,10 +1,11 @@
 'use client'
 
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { getAccessToken } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
-import { useState, useEffect, useRef } from 'react'
+import { supabase } from '@/lib/supabase'
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: (a: boolean) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={a ? 2 : 1.6} width="20" height="20"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> },
@@ -66,7 +67,7 @@ function timeAgo(dateStr: string): string {
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const { session, accessToken } = useAuth()
+  const { session, userId } = useAuth()
   const [unreadCount, setUnreadCount] = useState(0)
   const [showAccountPanel, setShowAccountPanel] = useState(false)
   const [currentUser, setCurrentUser] = useState<{ email: string; name: string } | null>(null)
@@ -108,11 +109,13 @@ export default function Sidebar() {
 
   // Compter les emails non lus toutes les 60 secondes
   useEffect(() => {
-    if (!accessToken) return
+    if (!userId) return
     const fetchUnread = async () => {
       try {
+        const token = await getAccessToken()
+        if (!token) return
         const res = await fetch('/api/mail/emails?unread=true', {
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers: { Authorization: `Bearer ${token}` },
         })
         const data = await res.json()
         if (data.success) setUnreadCount(data.data.length)
@@ -121,15 +124,17 @@ export default function Sidebar() {
     fetchUnread()
     const interval = setInterval(fetchUnread, 60000)
     return () => clearInterval(interval)
-  }, [accessToken])
+  }, [userId])
 
   // Notifications
   useEffect(() => {
-    if (!accessToken) return
+    if (!userId) return
     const fetchNotifs = async () => {
       try {
+        const token = await getAccessToken()
+        if (!token) return
         const res = await fetch('/api/notifications?unread=true', {
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers: { Authorization: `Bearer ${token}` },
         })
         const data = await res.json()
         if (data.success) { setNotifList(data.data); setNotifCount(data.data.length) }
@@ -138,7 +143,7 @@ export default function Sidebar() {
     fetchNotifs()
     const iv = setInterval(fetchNotifs, 30000)
     return () => clearInterval(iv)
-  }, [accessToken])
+  }, [userId])
 
   // Fermer panel notifications si clic extérieur
   useEffect(() => {
@@ -368,7 +373,7 @@ export default function Sidebar() {
                   <button
                     type="button"
                     onClick={async () => {
-                      const token = accessToken
+                      const token = await getAccessToken()
                       if (!token) return
                       await fetch('/api/notifications', {
                         method: 'PATCH',
@@ -407,7 +412,7 @@ export default function Sidebar() {
                             <button
                               type="button"
                               onClick={async () => {
-                                const token = accessToken
+                                const token = await getAccessToken()
                                 if (!token) return
                                 await fetch('/api/notifications/relaunch', {
                                   method: 'POST',
@@ -427,7 +432,7 @@ export default function Sidebar() {
                             <button
                               type="button"
                               onClick={async () => {
-                                const token = accessToken
+                                const token = await getAccessToken()
                                 if (!token) return
                                 await fetch('/api/notifications/relaunch', {
                                   method: 'POST',
@@ -455,7 +460,7 @@ export default function Sidebar() {
                       key={n.id}
                       type="button"
                       onClick={async () => {
-                        const token = accessToken
+                        const token = await getAccessToken()
                         if (token) {
                           await fetch('/api/notifications', {
                             method: 'PATCH',

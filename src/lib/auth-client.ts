@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 
 let cachedToken: string | null = null
+let refreshInFlight: Promise<boolean> | null = null
 
 const GET_SESSION_TIMEOUT_MS = 4000
 const AUTH_WAIT_TIMEOUT_MS = 2000
@@ -23,18 +24,31 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 async function getSessionFast() {
   if (typeof console !== 'undefined' && console.time) console.time('[auth] getSession')
   try {
-    const result = await withTimeout(
+    return await withTimeout(
       supabase.auth.getSession(),
       GET_SESSION_TIMEOUT_MS,
       'getSession',
     )
-    return result
   } catch (err) {
     console.warn('[auth] getSession failed or timed out', err)
     return { data: { session: null }, error: null }
   } finally {
     if (typeof console !== 'undefined' && console.timeEnd) console.timeEnd('[auth] getSession')
   }
+}
+
+async function tryRefreshSession(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight
+  refreshInFlight = supabase.auth.refreshSession().then(({ data, error }) => {
+    refreshInFlight = null
+    if (error || !data.session?.access_token) return false
+    cachedToken = data.session.access_token
+    return true
+  }).catch(() => {
+    refreshInFlight = null
+    return false
+  })
+  return refreshInFlight
 }
 
 export async function getAccessToken(): Promise<string | null> {
@@ -57,25 +71,21 @@ export async function getAccessToken(): Promise<string | null> {
       resolve(token)
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      finish(session?.access_token ?? null)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        finish(session?.access_token ?? null)
+      }
     })
 
     const timer = setTimeout(() => finish(null), AUTH_WAIT_TIMEOUT_MS)
   })
 }
 
-export async function authFetch(url: string, options: RequestInit = {}) {
-  const token = await getAccessToken()
-  if (!token) {
-    throw new Error('Non autorise')
-  }
-
+async function fetchWithAuth(url: string, options: RequestInit, token: string) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-
   try {
-    const res = await fetch(url, {
+    return await fetch(url, {
       ...options,
       signal: controller.signal,
       headers: {
@@ -84,18 +94,28 @@ export async function authFetch(url: string, options: RequestInit = {}) {
         ...(options.headers ?? {}),
       },
     })
-
-    if (res.status === 401) {
-      cachedToken = null
-      setAccessToken(null)
-      await supabase.auth.signOut()
-      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-        window.location.href = '/login'
-      }
-      throw new Error('Non autorise')
-    }
-    return res
   } finally {
     clearTimeout(timeout)
   }
+}
+
+export async function authFetch(url: string, options: RequestInit = {}) {
+  const token = await getAccessToken()
+  if (!token) {
+    throw new Error('Non autorise')
+  }
+
+  let res = await fetchWithAuth(url, options, token)
+
+  if (res.status === 401) {
+    const refreshed = await tryRefreshSession()
+    if (refreshed && cachedToken) {
+      res = await fetchWithAuth(url, options, cachedToken)
+    }
+    if (res.status === 401) {
+      throw new Error('Non autorise')
+    }
+  }
+
+  return res
 }

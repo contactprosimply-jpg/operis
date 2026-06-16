@@ -54,7 +54,7 @@ function ResponseBarChart({ pct }: { pct: number }) {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { ready, accessToken, session } = useAuth()
+  const { ready, userId, session } = useAuth()
   const { tenders, loading } = useTenders()
   const { show, ToastComponent } = useToast()
   const [emails, setEmails] = useState<Email[]>([])
@@ -65,7 +65,7 @@ export default function DashboardPage() {
   const currentUserId = session?.user?.id
 
   useEffect(() => {
-    if (!ready || !accessToken) return
+    if (!ready || !userId) return
     const load = async () => {
       const [aoRes, unlinkedRes, notifRes, orgRes] = await Promise.all([
         authFetch('/api/mail/emails?ao=true'),
@@ -93,7 +93,7 @@ export default function DashboardPage() {
       if (orgData.success) setOrg(orgData.data ?? null)
     }
     load()
-  }, [ready, accessToken])
+  }, [ready, userId])
 
   const handleCreateAo = async (email: Email) => {
     setCreatingAo(email.id)

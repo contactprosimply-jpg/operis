@@ -1,5 +1,5 @@
 /* Operis PWA — assets only; ne pas intercepter les navigations (évite shell vide au réveil) */
-const CACHE = 'operis-v2'
+const CACHE = 'operis-v3'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

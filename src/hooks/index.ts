@@ -16,30 +16,53 @@ import {
   TenderStatus,
 } from '@/types/database'
 
-// ── Rafraîchir quand l'onglet redevient visible ───────────────
+const MIN_HIDDEN_MS = 5000
+const REFOCUS_DEBOUNCE_MS = 800
+
+// ── Rafraîchir quand l'onglet redevient visible (throttle, pas à chaque refocus) ──
 export function useRefreshOnFocus(refetch: (silent?: boolean) => void, enabled = true) {
   const refetchRef = useRef(refetch)
   refetchRef.current = refetch
+  const hiddenAtRef = useRef(0)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     if (!enabled) return
+
     const onVisible = () => {
-      if (document.visibilityState === 'visible') refetchRef.current(true)
+      if (document.visibilityState === 'hidden') {
+        hiddenAtRef.current = Date.now()
+        return
+      }
+      if (document.visibilityState !== 'visible') return
+
+      const hiddenMs = hiddenAtRef.current ? Date.now() - hiddenAtRef.current : MIN_HIDDEN_MS
+      if (hiddenMs < MIN_HIDDEN_MS) return
+
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        if (document.visibilityState === 'visible') refetchRef.current(true)
+      }, REFOCUS_DEBOUNCE_MS)
     }
+
     document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
   }, [enabled])
 }
 
 // ── Hook : liste des AO ──────────────────────────────────────
 export function useTenders() {
-  const { ready, accessToken } = useAuth()
+  const { ready, userId } = useAuth()
   const [tenders, setTenders] = useState<TenderStats[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const fetch = useCallback(async (silent = false) => {
-    if (!accessToken) return
+    if (!userId) return
     if (silent) setRefreshing(true)
     else setLoading(true)
     try {
@@ -50,14 +73,14 @@ export function useTenders() {
       if (silent) setRefreshing(false)
       else setLoading(false)
     }
-  }, [accessToken])
+  }, [userId])
 
   useEffect(() => {
-    if (!ready || !accessToken) return
+    if (!ready || !userId) return
     fetch(false)
-  }, [fetch, ready, accessToken])
+  }, [fetch, ready, userId])
 
-  useRefreshOnFocus(fetch, ready && !!accessToken)
+  useRefreshOnFocus(fetch, ready && !!userId)
 
   const create = async (payload: CreateTenderPayload) => {
     const res = await tendersApi.create(payload)
@@ -85,13 +108,13 @@ export function useTenders() {
 
 // ── Hook : détail d'un AO ─────────────────────────────────────
 export function useTenderDetail(id: string) {
-  const { ready, accessToken } = useAuth()
+  const { ready, userId } = useAuth()
   const [tender, setTender] = useState<TenderDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const fetch = useCallback(async (silent = false) => {
-    if (!id || !accessToken) return
+    if (!id || !userId) return
     if (!silent) setLoading(true)
     try {
       const res = await tendersApi.getById(id)
@@ -100,14 +123,14 @@ export function useTenderDetail(id: string) {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [id, accessToken])
+  }, [id, userId])
 
   useEffect(() => {
-    if (!ready || !accessToken) return
+    if (!ready || !userId) return
     fetch(false)
-  }, [fetch, ready, accessToken])
+  }, [fetch, ready, userId])
 
-  useRefreshOnFocus(fetch, ready && !!accessToken && !!id)
+  useRefreshOnFocus(fetch, ready && !!userId && !!id)
 
   const addSupplier = async (supplierId: string) => {
     const res = await tendersApi.addSupplier(id, supplierId)
@@ -150,12 +173,12 @@ export function useTenderDetail(id: string) {
 
 // ── Hook : fournisseurs ───────────────────────────────────────
 export function useSuppliers() {
-  const { ready, accessToken } = useAuth()
+  const { ready, userId } = useAuth()
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetch = useCallback(async () => {
-    if (!accessToken) return
+    if (!userId) return
     setLoading(true)
     try {
       const res = await suppliersApi.getAll()
@@ -163,12 +186,12 @@ export function useSuppliers() {
     } finally {
       setLoading(false)
     }
-  }, [accessToken])
+  }, [userId])
 
   useEffect(() => {
-    if (!ready || !accessToken) return
+    if (!ready || !userId) return
     fetch()
-  }, [fetch, ready, accessToken])
+  }, [fetch, ready, userId])
 
   const create = async (payload: CreateSupplierPayload) => {
     const res = await suppliersApi.create(payload)
@@ -187,13 +210,13 @@ export function useSuppliers() {
 
 // ── Hook : boîte mail ─────────────────────────────────────────
 export function useMail(filters?: { ao?: boolean; unread?: boolean }) {
-  const { ready, accessToken } = useAuth()
+  const { ready, userId } = useAuth()
   const [emails, setEmails] = useState<Email[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
 
   const fetch = useCallback(async () => {
-    if (!accessToken) return
+    if (!userId) return
     setLoading(true)
     try {
       const res = await mailApi.getEmails(filters)
@@ -201,12 +224,12 @@ export function useMail(filters?: { ao?: boolean; unread?: boolean }) {
     } finally {
       setLoading(false)
     }
-  }, [accessToken, filters?.ao, filters?.unread])
+  }, [userId, filters?.ao, filters?.unread])
 
   useEffect(() => {
-    if (!ready || !accessToken) return
+    if (!ready || !userId) return
     fetch()
-  }, [fetch, ready, accessToken])
+  }, [fetch, ready, userId])
 
   const sync = async () => {
     setSyncing(true)

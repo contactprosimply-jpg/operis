@@ -34,13 +34,11 @@ async function apiFetch<T>(
 ): Promise<ApiResponse<T>> {
   const headers = await getAuthHeaders()
   if (!headers) {
-    if (typeof window !== 'undefined') window.location.href = '/login'
     return { success: false, error: 'Non autorise' }
   }
 
   const res = await fetch(url, { ...options, headers })
-  if (res.status === 401 && typeof window !== 'undefined') {
-    window.location.href = '/login'
+  if (res.status === 401) {
     return { success: false, error: 'Non autorise' }
   }
   return res.json()
