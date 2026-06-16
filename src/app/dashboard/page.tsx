@@ -1,7 +1,5 @@
 'use client'
 
-export const dynamic = 'force-dynamic'
-
 import { useRouter } from 'next/navigation'
 import { useTenders } from '@/hooks'
 import { KpiCard, TenderStatusBadge, Badge, useToast, Card, tableRowHoverHandlers, TableSkeleton, Skeleton } from '@/components/ui'

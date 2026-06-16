@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { authFetch, getAccessToken } from '@/lib/auth-client'
+import { authFetch, getAccessToken, NETWORK_TIMEOUT_MS } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
 import { Email, EmailAttachment, EmailLabel, EmailPriority } from '@/types/database'
 import { PRESET_EMAIL_LABELS } from '@/lib/mail-api'
@@ -184,7 +184,6 @@ export default function MailPage() {
   const selectedIdRef = useRef<string | null>(null)
   const syncInProgressRef = useRef(false)
   const syncAbortRef = useRef<AbortController | null>(null)
-  const initialSyncDoneRef = useRef(false)
   const emailsRef = useRef<Email[]>([])
   const mailCache = useRef<Record<string, EmailWithQuote>>({})
   const prefetchingRef = useRef<Set<string>>(new Set())
@@ -311,7 +310,6 @@ export default function MailPage() {
       }).catch(() => {})
     }
     loadEmails(false, sel)
-    if (sel.kind === 'sent' || sel.kind === 'inbox') void runSync(true)
   }
 
   const mailAction = async (action: string, payload: Record<string, unknown> = {}) => {
@@ -535,7 +533,7 @@ export default function MailPage() {
     syncInProgressRef.current = true
     const abortController = new AbortController()
     syncAbortRef.current = abortController
-    const syncTimeout = setTimeout(() => abortController.abort(), force ? 55000 : 35000)
+    const syncTimeout = setTimeout(() => abortController.abort(), force ? 55000 : NETWORK_TIMEOUT_MS)
     try {
       setSyncing(true)
       const res = await authFetch('/api/mail/sync', {
@@ -642,24 +640,7 @@ export default function MailPage() {
     void loadEmails(false)
   }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, ready, userId, loadEmails])
 
-  useEffect(() => {
-    if (!ready || !userId || initialSyncDoneRef.current) return
-    initialSyncDoneRef.current = true
-    void runSync(true)
-  }, [ready, userId, runSync])
-
-  // Sync automatique toutes les 5 minutes si visible
-  useEffect(() => {
-    if (!ready || !userId) return
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible' && !syncInProgressRef.current) {
-        void runSync(true)
-      }
-    }, 5 * 60 * 1000)
-    return () => clearInterval(interval)
-  }, [ready, userId, runSync])
-
-  // Realtime Supabase INSERT + UPDATE
+  // Sync IMAP : uniquement via cron serveur ou bouton manuel — pas au chargement de page
   useEffect(() => {
     if (!userId) return
     const channel = supabase.channel(`emails-realtime-${userId}`)
@@ -682,7 +663,6 @@ export default function MailPage() {
         })
         emailCountRef.current += 1
         showToast(`Nouvel email : ${lite.subject?.slice(0, 40)}`)
-        void runSync(true)
       })
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'emails',

@@ -1,17 +1,18 @@
+import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 
 let cachedToken: string | null = null
 let refreshInFlight: Promise<boolean> | null = null
 
+export const NETWORK_TIMEOUT_MS = 8000
 const GET_SESSION_TIMEOUT_MS = 4000
 const AUTH_WAIT_TIMEOUT_MS = 2000
-const FETCH_TIMEOUT_MS = 12000
 
 export function setAccessToken(token: string | null) {
   cachedToken = token
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timeout (${ms}ms)`)), ms)
     promise.then(
@@ -21,7 +22,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   })
 }
 
-async function getSessionFast() {
+/** getSession avec timeout — utilisé au bootstrap et pour les fetchs API. */
+export async function getSessionWithTimeout() {
   if (typeof console !== 'undefined' && console.time) console.time('[auth] getSession')
   try {
     return await withTimeout(
@@ -31,7 +33,7 @@ async function getSessionFast() {
     )
   } catch (err) {
     console.warn('[auth] getSession failed or timed out', err)
-    return { data: { session: null }, error: null }
+    return { data: { session: null as Session | null }, error: null }
   } finally {
     if (typeof console !== 'undefined' && console.timeEnd) console.timeEnd('[auth] getSession')
   }
@@ -39,7 +41,11 @@ async function getSessionFast() {
 
 async function tryRefreshSession(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight
-  refreshInFlight = supabase.auth.refreshSession().then(({ data, error }) => {
+  refreshInFlight = withTimeout(
+    supabase.auth.refreshSession(),
+    NETWORK_TIMEOUT_MS,
+    'refreshSession',
+  ).then(({ data, error }) => {
     refreshInFlight = null
     if (error || !data.session?.access_token) return false
     cachedToken = data.session.access_token
@@ -54,7 +60,7 @@ async function tryRefreshSession(): Promise<boolean> {
 export async function getAccessToken(): Promise<string | null> {
   if (cachedToken) return cachedToken
 
-  const { data: { session } } = await getSessionFast()
+  const { data: { session } } = await getSessionWithTimeout()
   if (session?.access_token) {
     cachedToken = session.access_token
     return cachedToken
@@ -83,7 +89,7 @@ export async function getAccessToken(): Promise<string | null> {
 
 async function fetchWithAuth(url: string, options: RequestInit, token: string) {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  const timeout = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS)
   try {
     return await fetch(url, {
       ...options,

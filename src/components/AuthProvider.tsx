@@ -1,12 +1,18 @@
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
-import { authFetch, setAccessToken } from '@/lib/auth-client'
+import { authFetch, getSessionWithTimeout, setAccessToken } from '@/lib/auth-client'
+import {
+  clearAuthSessionStore,
+  markAuthBootstrapped,
+  markBillingFetched,
+  readAuthSessionStore,
+  wasBillingFetched,
+} from '@/lib/auth-session-store'
 import { readBillingCache, writeBillingCache, clearBillingCache } from '@/lib/billing/billing-cache'
-import { AppLoadingScreen } from '@/components/AppLoadingScreen'
 import { isAuthEntryRoute, isBillingExemptRoute, isPublicRoute } from '@/lib/public-routes'
 
 type AuthContextValue = {
@@ -42,19 +48,19 @@ async function fetchBillingAccess(userId: string): Promise<boolean> {
   }
 }
 
-const BOOTSTRAP_MAX_MS = 2500
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const [session, setSession] = useState<Session | null>(null)
-  const [ready, setReady] = useState(false)
-  const [bootstrapped, setBootstrapped] = useState(false)
-  const [hasBillingAccess, setHasBillingAccess] = useState(false)
+  const initial = readAuthSessionStore()
 
-  const billingFetchedForUser = useRef<string | null>(null)
+  const [session, setSession] = useState<Session | null>(initial.session)
+  const [ready, setReady] = useState(initial.bootstrapped)
+  const [hasBillingAccess, setHasBillingAccess] = useState(() => {
+    if (!initial.userId) return false
+    return readBillingCache(initial.userId) === true
+  })
+
   const userId = session?.user?.id ?? null
-
   const isPublic = isPublicRoute(pathname)
   const isBillingExempt = isBillingExemptRoute(pathname)
 
@@ -63,45 +69,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const access = await fetchBillingAccess(userId)
     setHasBillingAccess(access)
     writeBillingCache(userId, access)
+    markBillingFetched(userId)
     return access
   }, [userId])
 
-  // Bootstrap auth — timeout garanti, jamais bloquer indéfiniment
+  // Bootstrap auth (timeout court) — état module survivant aux navigations
   useEffect(() => {
     let mounted = true
-    const bootstrapTimer = setTimeout(() => {
-      if (mounted) setBootstrapped(true)
-    }, BOOTSTRAP_MAX_MS)
+
+    if (initial.bootstrapped) {
+      if (typeof console !== 'undefined') console.info('[auth] bootstrap skipped (module cache)')
+      return
+    }
 
     if (typeof console !== 'undefined' && console.time) console.time('[auth] bootstrap')
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    getSessionWithTimeout().then(({ data: { session: s } }) => {
       if (!mounted) return
-      setSession(session)
-      setAccessToken(session?.access_token ?? null)
+      setSession(s)
+      setAccessToken(s?.access_token ?? null)
       setReady(true)
-      setBootstrapped(true)
-      if (typeof console !== 'undefined' && console.timeEnd) console.timeEnd('[auth] bootstrap')
-    }).catch((err) => {
-      console.warn('[auth] bootstrap getSession error', err)
-      if (!mounted) return
-      setReady(true)
-      setBootstrapped(true)
+      markAuthBootstrapped(s)
       if (typeof console !== 'undefined' && console.timeEnd) console.timeEnd('[auth] bootstrap')
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return
 
-      // TOKEN_REFRESHED au refocus : mettre à jour le token sans re-render global
       if (event === 'TOKEN_REFRESHED') {
         setAccessToken(nextSession?.access_token ?? null)
         return
       }
 
+      if (event === 'INITIAL_SESSION') {
+        setAccessToken(nextSession?.access_token ?? null)
+        if (!readAuthSessionStore().bootstrapped) {
+          setSession(nextSession)
+          setReady(true)
+          markAuthBootstrapped(nextSession)
+        }
+        return
+      }
+
       if (event === 'SIGNED_OUT') {
         clearBillingCache()
-        billingFetchedForUser.current = null
+        clearAuthSessionStore()
         setSession(null)
         setAccessToken(null)
         setHasBillingAccess(false)
@@ -110,25 +122,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const nextUserId = nextSession?.user?.id ?? null
-      if (event === 'SIGNED_IN' && nextUserId && billingFetchedForUser.current !== nextUserId) {
-        billingFetchedForUser.current = null
+      if (event === 'SIGNED_IN' && nextUserId) {
         const cached = readBillingCache(nextUserId)
-        setHasBillingAccess(cached === true)
+        if (cached === true) setHasBillingAccess(true)
       }
 
       setSession(nextSession)
       setAccessToken(nextSession?.access_token ?? null)
       setReady(true)
+      markAuthBootstrapped(nextSession)
     })
 
     return () => {
       mounted = false
-      clearTimeout(bootstrapTimer)
       subscription.unsubscribe()
     }
-  }, [])
+  }, [initial.bootstrapped])
 
-  // Billing : une vérif initiale par utilisateur, puis refresh silencieux en arrière-plan
+  // Billing : une seule vérif serveur par utilisateur (module store), jamais bloquant
   useEffect(() => {
     if (!ready || !userId) {
       if (ready && !userId) setHasBillingAccess(false)
@@ -139,9 +150,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (cached === true) setHasBillingAccess(true)
     else if (cached === false) setHasBillingAccess(false)
 
-    if (billingFetchedForUser.current === userId) return
-    billingFetchedForUser.current = userId
+    if (wasBillingFetched(userId)) return
 
+    markBillingFetched(userId)
     fetchBillingAccess(userId).then(access => {
       setHasBillingAccess(access)
       writeBillingCache(userId, access)
@@ -150,7 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Paywall : redirection sans bloquer le rendu
   useEffect(() => {
-    if (!bootstrapped || !ready) return
+    if (!ready) return
 
     if (!session && !isPublic) {
       router.replace('/login')
@@ -168,13 +179,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!hasBillingAccess && !isPublic && !isBillingExempt && pathname !== '/choose-plan') {
       router.replace('/choose-plan')
     }
-  }, [bootstrapped, ready, session, hasBillingAccess, pathname, router, isPublic, isBillingExempt])
+  }, [ready, session, hasBillingAccess, pathname, router, isPublic, isBillingExempt])
 
-  // Écran de chargement UNIQUEMENT au premier bootstrap (max ~2.5s), jamais au refocus
-  if (!bootstrapped && !isPublic) {
-    return <AppLoadingScreen />
-  }
+  // Log navigation timing
+  useEffect(() => {
+    if (typeof console !== 'undefined' && console.time) {
+      console.time(`[nav] ${pathname}`)
+      const id = requestAnimationFrame(() => {
+        console.timeEnd(`[nav] ${pathname}`)
+      })
+      return () => cancelAnimationFrame(id)
+    }
+  }, [pathname])
 
+  // Ne jamais bloquer le rendu global — shell + pages toujours montés
   return (
     <AuthContext.Provider value={{
       session,

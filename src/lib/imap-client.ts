@@ -41,7 +41,7 @@ export function formatImapError(e: unknown): string {
   return parts.join(' ')
 }
 
-export function createImapClient(config: MailAccountConfig): ImapFlow {
+export function createImapClient(config: MailAccountConfig, timeoutMs = 8000): ImapFlow {
   const port = Number(config.imap_port) || 993
   return new ImapFlow({
     host: config.imap_host || 'mail.gandi.net',
@@ -52,9 +52,9 @@ export function createImapClient(config: MailAccountConfig): ImapFlow {
       pass: config.imap_pass,
     },
     logger: false,
-    connectionTimeout: 25000,
-    greetingTimeout: 25000,
-    socketTimeout: 90000,
+    connectionTimeout: timeoutMs,
+    greetingTimeout: timeoutMs,
+    socketTimeout: timeoutMs,
     tls: { minVersion: 'TLSv1.2' },
   })
 }

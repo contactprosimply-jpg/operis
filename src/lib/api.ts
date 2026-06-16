@@ -3,7 +3,7 @@
 // Client API typé — toutes les fonctions pour appeler le backend
 // ============================================================
 
-import { getAccessToken } from './auth-client'
+import { getAccessToken, NETWORK_TIMEOUT_MS } from './auth-client'
 import {
   TenderStats,
   TenderDetail,
@@ -37,11 +37,18 @@ async function apiFetch<T>(
     return { success: false, error: 'Non autorise' }
   }
 
-  const res = await fetch(url, { ...options, headers })
-  if (res.status === 401) {
-    return { success: false, error: 'Non autorise' }
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS)
+
+  try {
+    const res = await fetch(url, { ...options, headers, signal: controller.signal })
+    if (res.status === 401) {
+      return { success: false, error: 'Non autorise' }
+    }
+    return res.json()
+  } finally {
+    clearTimeout(timeout)
   }
-  return res.json()
 }
 
 // ============================================================
