@@ -6,8 +6,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { setAccessToken } from '@/lib/auth-client'
 import { Spinner } from '@/components/ui'
-
-const PUBLIC_ROUTES = ['/', '/login', '/register']
+import { isAuthEntryRoute, isPublicRoute } from '@/lib/public-routes'
 
 type AuthContextValue = {
   session: Session | null
@@ -56,12 +55,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!ready) return
-    const isPublic = PUBLIC_ROUTES.includes(pathname)
+    const isPublic = isPublicRoute(pathname)
     if (!session && !isPublic) router.replace('/login')
-    if (session && isPublic) router.replace('/dashboard')
+    if (session && isAuthEntryRoute(pathname)) router.replace('/dashboard')
   }, [ready, session, pathname, router])
 
-  const isPublic = PUBLIC_ROUTES.includes(pathname)
+  const isPublic = isPublicRoute(pathname)
 
   if (!ready) {
     return (

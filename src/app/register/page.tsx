@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Spinner } from '@/components/ui'
 
@@ -18,6 +19,21 @@ function passwordStrength(pw: string): { score: number; label: string; color: st
 }
 
 export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spinner /></div>}>
+      <RegisterForm />
+    </Suspense>
+  )
+}
+
+function RegisterForm() {
+  const searchParams = useSearchParams()
+  const redirect = searchParams.get('redirect')
+  const safeRedirect = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : null
+  const loginHref = safeRedirect
+    ? `/login?redirect=${encodeURIComponent(safeRedirect)}`
+    : '/login'
+
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -95,7 +111,7 @@ export default function RegisterPage() {
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 24 }}>
             Vérifie ta boîte mail et clique sur le lien de confirmation.
           </p>
-          <a href="/login" style={{ fontSize: 13, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
+          <a href={loginHref} style={{ fontSize: 13, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
             Retour à la connexion →
           </a>
         </div>
@@ -162,7 +178,7 @@ export default function RegisterPage() {
           </form>
           <div style={{ marginTop: 20, textAlign: 'center' }}>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Déjà un compte ? </span>
-            <a href="/login" style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Se connecter</a>
+            <a href={loginHref} style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Se connecter</a>
           </div>
         </div>
       </div>

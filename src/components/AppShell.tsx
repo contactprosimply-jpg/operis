@@ -7,12 +7,11 @@ import PwaInstaller from '@/components/PwaInstaller'
 import ProductTour from '@/components/ProductTour'
 import UserJourney from '@/components/UserJourney'
 import BillingGateBanner from '@/components/billing/BillingGateBanner'
-
-const PUBLIC_ROUTES = ['/', '/login', '/register']
+import { isPublicRoute } from '@/lib/public-routes'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const isPublic = PUBLIC_ROUTES.includes(pathname) || pathname.startsWith('/join/')
+  const isPublic = isPublicRoute(pathname)
 
   return (
     <AuthProvider>

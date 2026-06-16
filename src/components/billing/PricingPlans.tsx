@@ -44,6 +44,8 @@ type PricingPlansProps = {
   isOwner?: boolean
   onSelectPlan?: (plan: BillingPlan) => void
   loadingPlan?: BillingPlan | null
+  /** Lien inscription/connexion quand visiteur non connecté */
+  guestCtaHref?: string
 }
 
 export default function PricingPlans({
@@ -51,6 +53,7 @@ export default function PricingPlans({
   isOwner = true,
   onSelectPlan,
   loadingPlan,
+  guestCtaHref = '/register?redirect=/pricing',
 }: PricingPlansProps) {
   return (
     <div style={{
@@ -112,7 +115,7 @@ export default function PricingPlans({
             </ul>
             {onSelectPlan && isOwner ? (
               <Button
-                variant={isPopular ? 'primary' : 'secondary'}
+                variant={isPopular ? 'primary' : 'ghost'}
                 disabled={isCurrent || loadingPlan === plan.id}
                 onClick={() => onSelectPlan(plan.id)}
                 style={{ width: '100%' }}
@@ -123,7 +126,21 @@ export default function PricingPlans({
               <p style={{ fontSize: 13, color: 'var(--text-secondary)', textAlign: 'center' }}>
                 Contactez le créateur du groupe pour changer d&apos;offre.
               </p>
-            ) : null}
+            ) : (
+              <a
+                href={guestCtaHref}
+                style={{
+                  display: 'block', textAlign: 'center', textDecoration: 'none',
+                  background: isPopular ? 'var(--gradient-primary)' : 'var(--bg-secondary)',
+                  color: isPopular ? '#fff' : 'var(--text-primary)',
+                  border: isPopular ? 'none' : '1px solid var(--border-hi)',
+                  borderRadius: 9, padding: '10px 16px', fontSize: 12, fontWeight: 600,
+                  boxShadow: isPopular ? 'var(--shadow-glow)' : 'none',
+                }}
+              >
+                Créer un compte — essai 14 jours
+              </a>
+            )}
           </div>
         )
       })}

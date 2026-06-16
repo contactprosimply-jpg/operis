@@ -130,7 +130,7 @@ export default function LandingPage() {
           </div>
           <nav style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <a href="#fonctionnalites" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500, display: 'none' }} className="landing-nav-link">Fonctionnalités</a>
-            <a href="#tarifs" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500, display: 'none' }} className="landing-nav-link">Tarifs</a>
+            <a href="/pricing" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500, display: 'none' }} className="landing-nav-link">Tarifs</a>
             <a href="#appels-offres" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500 }} className="landing-nav-link">Appels d&apos;offres</a>
             <BtnGhost href="/login?redirect=/tenders">Se connecter</BtnGhost>
             <BtnPrimary href="/register">Créer un compte</BtnPrimary>
@@ -419,7 +419,7 @@ export default function LandingPage() {
                   </li>
                 ))}
               </ul>
-              <a href="/register" style={{
+              <a href="/pricing" style={{
                 display: 'block', textAlign: 'center', textDecoration: 'none',
                 background: plan.highlight ? 'var(--gradient-primary)' : 'var(--bg-secondary)',
                 color: plan.highlight ? '#fff' : 'var(--text-primary)',
