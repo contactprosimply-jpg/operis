@@ -130,7 +130,7 @@ export default function LandingPage() {
           </div>
           <nav style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <a href="#fonctionnalites" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500, display: 'none' }} className="landing-nav-link">Fonctionnalités</a>
-            <a href="/pricing" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500, display: 'none' }} className="landing-nav-link">Tarifs</a>
+            <a href="/pricing" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500 }} className="landing-nav-link">Tarifs</a>
             <a href="#appels-offres" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500 }} className="landing-nav-link">Appels d&apos;offres</a>
             <BtnGhost href="/login?redirect=/tenders">Se connecter</BtnGhost>
             <BtnPrimary href="/register">Créer un compte</BtnPrimary>
@@ -166,6 +166,7 @@ export default function LandingPage() {
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
           <BtnPrimary href="/register">Créer un compte gratuit</BtnPrimary>
+          <BtnGhost href="/pricing">Voir les tarifs</BtnGhost>
           <BtnGhost href="/login?redirect=/tenders">Se connecter</BtnGhost>
           <BtnGhost href="#appels-offres">Voir les appels d&apos;offres</BtnGhost>
         </div>
@@ -380,7 +381,10 @@ export default function LandingPage() {
             Abonnements simples et transparents
           </h2>
           <p style={{ fontSize: 15, color: 'var(--text-secondary)', margin: 0 }}>
-            Choisissez la formule adaptée à votre activité. Changez ou annulez à tout moment.
+            Choisissez la formule adaptée à votre activité.{' '}
+            <a href="/pricing" style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>
+              Voir les offres Pro et Business →
+            </a>
           </p>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20, alignItems: 'stretch' }}>
@@ -474,13 +478,22 @@ export default function LandingPage() {
         <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.85)', margin: '0 0 28px', maxWidth: 440, marginInline: 'auto' }}>
           Rejoignez les entreprises BTP qui centralisent leurs consultations avec Operis.
         </p>
-        <a href="/register" style={{
-          display: 'inline-flex', background: '#fff', color: 'var(--accent)',
-          borderRadius: 9, padding: '13px 28px', fontSize: 14, fontWeight: 700,
-          textDecoration: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-        }}>
-          Créer mon compte
-        </a>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <a href="/register" style={{
+            display: 'inline-flex', background: '#fff', color: 'var(--accent)',
+            borderRadius: 9, padding: '13px 28px', fontSize: 14, fontWeight: 700,
+            textDecoration: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+          }}>
+            Créer mon compte
+          </a>
+          <a href="/pricing" style={{
+            display: 'inline-flex', background: 'transparent', color: '#fff',
+            border: '1px solid rgba(255,255,255,0.5)', borderRadius: 9, padding: '13px 28px',
+            fontSize: 14, fontWeight: 600, textDecoration: 'none',
+          }}>
+            Voir les tarifs
+          </a>
+        </div>
       </section>
 
       {/* Footer */}
@@ -496,9 +509,10 @@ export default function LandingPage() {
           <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
             © {new Date().getFullYear()} Operis · Gestion des appels d&apos;offres BTP
           </p>
-          <div style={{ display: 'flex', gap: 16 }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <a href="/pricing" style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Tarifs</a>
             <a href="/login" style={{ fontSize: 12, color: 'var(--text-secondary)', textDecoration: 'none' }}>Connexion</a>
-            <a href="/register" style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Inscription</a>
+            <a href="/register" style={{ fontSize: 12, color: 'var(--text-secondary)', textDecoration: 'none' }}>Inscription</a>
           </div>
         </div>
       </footer>
