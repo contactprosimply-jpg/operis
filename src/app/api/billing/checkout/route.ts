@@ -34,27 +34,25 @@ export async function GET(req: NextRequest) {
 
     const { data: { user } } = await db.auth.admin.getUserById(userId)
     const customerEmail = user?.email ?? undefined
+    const existingCustomerId = sub?.stripe_customer_id as string | null
 
-    let customerId = sub?.stripe_customer_id as string | null
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: customerEmail,
-        metadata: { org_id: orgId, user_id: userId },
-      })
-      customerId = customer.id
-      await db.from('subscriptions').upsert({
-        org_id: orgId,
-        stripe_customer_id: customerId,
-        status: sub?.status ?? 'inactive',
-      }, { onConflict: 'org_id' })
+    if (!existingCustomerId && !customerEmail) {
+      return Response.json({ success: false, error: 'Email utilisateur introuvable' }, { status: 400 })
     }
 
-    console.info('[billing/checkout] creating session', { userId, orgId, plan, priceId })
+    console.info('[billing/checkout] creating session', {
+      userId,
+      orgId,
+      plan,
+      priceId,
+      hasCustomer: Boolean(existingCustomerId),
+    })
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
-      customer: customerId,
-      customer_email: customerEmail,
+      ...(existingCustomerId
+        ? { customer: existingCustomerId }
+        : { customer_email: customerEmail }),
       client_reference_id: userId,
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: urls.success,
