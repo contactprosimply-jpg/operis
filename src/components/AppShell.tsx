@@ -6,29 +6,29 @@ import Sidebar from '@/components/Sidebar'
 import PwaInstaller from '@/components/PwaInstaller'
 import ProductTour from '@/components/ProductTour'
 import UserJourney from '@/components/UserJourney'
-import BillingGateBanner from '@/components/billing/BillingGateBanner'
-import { isPublicRoute } from '@/lib/public-routes'
+import { isBillingExemptRoute, isPublicRoute } from '@/lib/public-routes'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isPublic = isPublicRoute(pathname)
+  const isPaywall = pathname === '/choose-plan'
+  const minimalShell = isPublic || isPaywall
 
   return (
     <AuthProvider>
       <PwaInstaller />
-      {isPublic ? (
+      {minimalShell ? (
         children
       ) : (
         <div style={{ display: 'flex', height: '100vh', width: '100vw' }}>
           <Sidebar />
           <main style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-secondary)', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            <BillingGateBanner />
             <div className="page-content" style={{ flex: 1 }}>
               {children}
             </div>
           </main>
-          <UserJourney />
-          <ProductTour />
+          {!isBillingExemptRoute(pathname) && <UserJourney />}
+          {!isBillingExemptRoute(pathname) && <ProductTour />}
         </div>
       )}
     </AuthProvider>

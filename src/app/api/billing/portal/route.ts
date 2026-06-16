@@ -4,7 +4,8 @@ import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import { resolveBillingOrg } from '@/lib/billing/subscription'
-import { getStripe, billingReturnUrls } from '@/lib/billing/stripe'
+import { getStripe } from '@/lib/billing/stripe'
+import { billingReturnUrlsFromOrigin, requestOrigin } from '@/lib/billing/request-origin'
 
 export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
@@ -32,12 +33,17 @@ export async function POST(req: NextRequest) {
     }, { status: 400 })
   }
 
-  const stripe = getStripe()
-  const urls = billingReturnUrls()
-  const session = await stripe.billingPortal.sessions.create({
-    customer: sub.stripe_customer_id,
-    return_url: urls.success,
-  })
-
-  return Response.json({ success: true, url: session.url })
+  try {
+    const stripe = getStripe()
+    const urls = billingReturnUrlsFromOrigin(requestOrigin(req))
+    const session = await stripe.billingPortal.sessions.create({
+      customer: sub.stripe_customer_id,
+      return_url: urls.success,
+    })
+    return Response.json({ success: true, url: session.url })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Erreur portail Stripe'
+    console.error('[billing/portal]', message, err)
+    return Response.json({ success: false, error: message }, { status: 500 })
+  }
 }

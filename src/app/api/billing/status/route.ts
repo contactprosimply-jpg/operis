@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
       },
       org_id: ctx.orgId,
       is_owner: ctx.isOwner,
+      is_billing_admin: ctx.isBillingAdmin ?? false,
     },
   })
 }

@@ -1,6 +1,5 @@
 import Stripe from 'stripe'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
-import { appBaseUrl } from '@/lib/organization'
 
 export function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY
@@ -20,12 +19,4 @@ export function planFromStripePriceId(priceId: string): BillingPlan | null {
   if (priceId === process.env.STRIPE_PRICE_PRO) return 'pro'
   if (priceId === process.env.STRIPE_PRICE_BUSINESS) return 'business'
   return null
-}
-
-export function billingReturnUrls() {
-  const base = appBaseUrl()
-  return {
-    success: `${base}/settings/billing?checkout=success`,
-    cancel: `${base}/pricing?checkout=cancel`,
-  }
 }

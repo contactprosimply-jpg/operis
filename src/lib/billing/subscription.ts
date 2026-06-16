@@ -4,6 +4,8 @@ import { planLimits, storageLimitBytes } from '@/lib/billing/plan-limits'
 import { getOrgStorageBytes } from '@/lib/billing/storage-usage'
 import { listOwnedOrganizations, userBelongsToOrganization } from '@/lib/organization'
 
+export const BILLING_ADMIN_EMAIL = 'contact@nikodex.fr'
+
 export type SubscriptionRow = {
   id: string
   org_id: string
@@ -25,6 +27,7 @@ export type BillingContext = {
   seatCount: number
   storageBytes: number
   hasAccess: boolean
+  isBillingAdmin?: boolean
 }
 
 const ACTIVE_STATUSES = new Set(['active', 'past_due'])
@@ -112,6 +115,9 @@ export function hasActiveSubscription(subscription: SubscriptionRow | null): boo
 }
 
 export async function getBillingContext(db: SupabaseClient, userId: string): Promise<BillingContext> {
+  const { data: { user } } = await db.auth.admin.getUserById(userId)
+  const isBillingAdmin = user?.email?.toLowerCase() === BILLING_ADMIN_EMAIL.toLowerCase()
+
   const { orgId, isOwner } = await resolveBillingOrg(db, userId)
 
   let subscription: SubscriptionRow | null = null
@@ -139,8 +145,10 @@ export async function getBillingContext(db: SupabaseClient, userId: string): Pro
     seatCount = 1
   }
 
-  const hasAccess = hasActiveSubscription(subscription)
-  const effectivePlan = hasAccess ? (subscription?.plan ?? null) : null
+  const hasAccess = isBillingAdmin || hasActiveSubscription(subscription)
+  const effectivePlan = hasAccess
+    ? (isBillingAdmin && !subscription?.plan ? 'business' : (subscription?.plan ?? null))
+    : null
 
   return {
     userId,
@@ -152,6 +160,7 @@ export async function getBillingContext(db: SupabaseClient, userId: string): Pro
     seatCount,
     storageBytes,
     hasAccess,
+    isBillingAdmin,
   }
 }
 

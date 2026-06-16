@@ -3,8 +3,9 @@ export const dynamic = 'force-dynamic'
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
-import { ensureBillingOrg } from '@/lib/billing/subscription'
-import { getStripe, getStripePriceId, billingReturnUrls } from '@/lib/billing/stripe'
+import { ensureBillingOrg, BILLING_ADMIN_EMAIL } from '@/lib/billing/subscription'
+import { getStripe, getStripePriceId } from '@/lib/billing/stripe'
+import { billingReturnUrlsFromOrigin, requestOrigin } from '@/lib/billing/request-origin'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
 
 function parsePlan(value: string | null): BillingPlan | null {
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
 
     const { data: sub } = await db.from('subscriptions').select('*').eq('org_id', orgId).maybeSingle()
     const stripe = getStripe()
-    const urls = billingReturnUrls()
+    const urls = billingReturnUrlsFromOrigin(requestOrigin(req))
     const priceId = getStripePriceId(plan)
 
     let customerId = sub?.stripe_customer_id as string | null
