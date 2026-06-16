@@ -7,14 +7,18 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
+const DISMISS_KEY = 'operis_pwa_install_dismissed'
+
 export default function PwaInstaller() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [installed, setInstalled] = useState(false)
   const [isStandalone, setIsStandalone] = useState(false)
   const [isIos, setIsIos] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    setDismissed(localStorage.getItem(DISMISS_KEY) === '1')
 
     const standalone =
       window.matchMedia('(display-mode: standalone)').matches ||
@@ -50,7 +54,16 @@ export default function PwaInstaller() {
     if (outcome === 'accepted') setInstallEvent(null)
   }
 
-  if (isStandalone || installed) return null
+  const handleDismiss = () => {
+    setDismissed(true)
+    try {
+      localStorage.setItem(DISMISS_KEY, '1')
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (isStandalone || installed || dismissed) return null
   if (!installEvent && !isIos) return null
 
   return (
@@ -61,8 +74,37 @@ export default function PwaInstaller() {
       padding: '14px 16px', boxShadow: 'var(--shadow-md)',
       animation: 'fadeUp 0.35s ease',
     }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
-        Installer Operis
+      <div style={{
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+        gap: 8, marginBottom: 6,
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+          Installer Operis
+        </div>
+        <button
+          type="button"
+          onClick={handleDismiss}
+          aria-label="Fermer"
+          style={{
+            flexShrink: 0,
+            width: 24,
+            height: 24,
+            border: 'none',
+            borderRadius: 6,
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0,
+            lineHeight: 1,
+          }}
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
       </div>
       <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 12 }}>
         {isIos
