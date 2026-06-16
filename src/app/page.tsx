@@ -56,7 +56,7 @@ const PLANS = [
     price: '99',
     desc: 'Le choix des entreprises BTP actives',
     features: ['AO illimités', '3 boîtes mail', 'Fournisseurs illimités', 'Analyse IA des devis', 'Support prioritaire'],
-    cta: 'Essai gratuit 14 jours',
+    cta: "S'abonner",
     highlight: true,
   },
   {
@@ -171,7 +171,7 @@ export default function LandingPage() {
           <BtnGhost href="#appels-offres">Voir les appels d&apos;offres</BtnGhost>
         </div>
         <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 16 }}>
-          Essai 14 jours · Sans carte bancaire · Annulation à tout moment
+          Abonnement mensuel · Annulation à tout moment
         </p>
 
         {/* Mock dashboard preview */}

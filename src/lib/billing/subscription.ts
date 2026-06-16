@@ -4,8 +4,6 @@ import { planLimits, storageLimitBytes } from '@/lib/billing/plan-limits'
 import { getOrgStorageBytes } from '@/lib/billing/storage-usage'
 import { listOwnedOrganizations, userBelongsToOrganization } from '@/lib/organization'
 
-export const TRIAL_DAYS = 14
-
 export type SubscriptionRow = {
   id: string
   org_id: string
@@ -26,23 +24,65 @@ export type BillingContext = {
   limits: ReturnType<typeof planLimits>
   seatCount: number
   storageBytes: number
-  soloTrialEndsAt: string | null
-  inTrial: boolean
   hasAccess: boolean
 }
+
+const ACTIVE_STATUSES = new Set(['active', 'past_due'])
 
 export async function ensureSubscriptionRow(db: SupabaseClient, orgId: string) {
   const { data: existing } = await db.from('subscriptions').select('id').eq('org_id', orgId).maybeSingle()
   if (existing) return
 
-  const trialEnds = new Date()
-  trialEnds.setDate(trialEnds.getDate() + TRIAL_DAYS)
-
   await db.from('subscriptions').insert({
     org_id: orgId,
-    status: 'trialing',
-    trial_ends_at: trialEnds.toISOString(),
+    status: 'inactive',
   })
+}
+
+/** Crée un groupe personnel si l'utilisateur n'a pas encore d'org (solo). */
+export async function ensureBillingOrg(
+  db: SupabaseClient,
+  userId: string,
+): Promise<{ orgId: string; isOwner: true }> {
+  const owned = await listOwnedOrganizations(db, userId)
+  if (owned.length) {
+    await ensureSubscriptionRow(db, owned[0].id)
+    return { orgId: owned[0].id, isOwner: true }
+  }
+
+  const membership = await userBelongsToOrganization(db, userId)
+  if (membership) {
+    const { data: org } = await db.from('organizations').select('owner_id').eq('id', membership.organizationId).single()
+    if (org?.owner_id === userId) {
+      await ensureSubscriptionRow(db, membership.organizationId)
+      return { orgId: membership.organizationId, isOwner: true }
+    }
+    throw new Error('Seul le créateur du groupe peut souscrire un abonnement')
+  }
+
+  const { data: profile } = await db.from('profiles').select('full_name, company').eq('id', userId).maybeSingle()
+  const { data: { user } } = await db.auth.admin.getUserById(userId)
+  const orgName = profile?.company?.trim() || profile?.full_name?.trim() || user?.email?.split('@')[0] || 'Mon espace Operis'
+
+  const { data: org, error } = await db
+    .from('organizations')
+    .insert({ name: orgName, owner_id: userId })
+    .select('id')
+    .single()
+
+  if (error || !org) throw new Error(error?.message ?? 'Impossible de créer le groupe de facturation')
+
+  await db.from('organization_members').insert({
+    organization_id: org.id,
+    user_id: userId,
+    role: 'owner',
+    display_name: profile?.full_name ?? user?.user_metadata?.full_name ?? user?.email,
+    email: user?.email ?? null,
+    color: '#3b7ef6',
+  })
+
+  await ensureSubscriptionRow(db, org.id)
+  return { orgId: org.id, isOwner: true }
 }
 
 export async function resolveBillingOrg(
@@ -62,43 +102,13 @@ export async function resolveBillingOrg(
   }
 }
 
-function soloTrialEndFromProfile(createdAt: string | null): string | null {
-  if (!createdAt) return null
-  const end = new Date(createdAt)
-  end.setDate(end.getDate() + TRIAL_DAYS)
-  return end.toISOString()
-}
-
-export function computeHasAccess(
-  subscription: SubscriptionRow | null,
-  soloTrialEndsAt: string | null,
-): { hasAccess: boolean; inTrial: boolean } {
-  const now = Date.now()
-
-  if (subscription?.trial_ends_at && now < new Date(subscription.trial_ends_at).getTime()) {
-    return { hasAccess: true, inTrial: true }
+export function hasActiveSubscription(subscription: SubscriptionRow | null): boolean {
+  if (!subscription?.stripe_subscription_id) return false
+  if (!ACTIVE_STATUSES.has(subscription.status)) return false
+  if (subscription.current_period_end && Date.now() >= new Date(subscription.current_period_end).getTime()) {
+    return false
   }
-
-  if (subscription?.status === 'active' && subscription.stripe_subscription_id) {
-    if (!subscription.current_period_end || now < new Date(subscription.current_period_end).getTime()) {
-      return { hasAccess: true, inTrial: false }
-    }
-  }
-
-  if (!subscription && soloTrialEndsAt && now < new Date(soloTrialEndsAt).getTime()) {
-    return { hasAccess: true, inTrial: true }
-  }
-
-  return { hasAccess: false, inTrial: false }
-}
-
-export function effectivePlanFromSubscription(
-  subscription: SubscriptionRow | null,
-  inTrial: boolean,
-): BillingPlan | null {
-  if (subscription?.plan) return subscription.plan
-  if (inTrial) return 'pro'
-  return null
+  return true
 }
 
 export async function getBillingContext(db: SupabaseClient, userId: string): Promise<BillingContext> {
@@ -129,10 +139,8 @@ export async function getBillingContext(db: SupabaseClient, userId: string): Pro
     seatCount = 1
   }
 
-  const { data: profile } = await db.from('profiles').select('created_at').eq('id', userId).maybeSingle()
-  const soloTrialEndsAt = soloTrialEndFromProfile(profile?.created_at ?? null)
-  const { hasAccess, inTrial } = computeHasAccess(subscription, soloTrialEndsAt)
-  const effectivePlan = effectivePlanFromSubscription(subscription, inTrial)
+  const hasAccess = hasActiveSubscription(subscription)
+  const effectivePlan = hasAccess ? (subscription?.plan ?? null) : null
 
   return {
     userId,
@@ -143,8 +151,6 @@ export async function getBillingContext(db: SupabaseClient, userId: string): Pro
     limits: planLimits(effectivePlan),
     seatCount,
     storageBytes,
-    soloTrialEndsAt,
-    inTrial,
     hasAccess,
   }
 }
@@ -155,7 +161,7 @@ export async function canAddOrgMember(db: SupabaseClient, orgId: string): Promis
 
   const ctx = await getBillingContext(db, org.owner_id)
   if (!ctx.hasAccess) {
-    return { ok: false, error: 'Abonnement requis pour inviter des membres' }
+    return { ok: false, error: 'Abonnement actif requis pour inviter des membres' }
   }
 
   if (ctx.seatCount >= ctx.limits.seats) {
@@ -174,7 +180,7 @@ export async function assertStorageQuota(
 ): Promise<{ ok: true; ctx: BillingContext } | { ok: false; error: string }> {
   const ctx = await getBillingContext(db, userId)
   if (!ctx.hasAccess) {
-    return { ok: false, error: 'Abonnement ou essai requis pour uploader des documents' }
+    return { ok: false, error: 'Abonnement actif requis pour uploader des documents' }
   }
 
   const limit = storageLimitBytes(ctx.effectivePlan)
@@ -189,15 +195,13 @@ export async function assertStorageQuota(
 }
 
 export function hasBusinessFeatures(ctx: BillingContext): boolean {
-  if (!ctx.hasAccess) return false
-  if (ctx.inTrial) return true
-  return ctx.effectivePlan === 'business'
+  return ctx.hasAccess && ctx.effectivePlan === 'business'
 }
 
 export function billingBlockedResponse() {
   return Response.json({
     success: false,
-    error: 'Choisissez une offre pour continuer',
+    error: 'Abonnement actif requis — souscrivez une offre pour continuer',
     code: 'BILLING_REQUIRED',
   }, { status: 403 })
 }

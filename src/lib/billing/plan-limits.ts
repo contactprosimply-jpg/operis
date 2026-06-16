@@ -7,7 +7,8 @@ export interface PlanLimits {
 
 export function planLimits(plan: BillingPlan | null): PlanLimits {
   if (plan === 'business') return { seats: 5, storageGb: 50 }
-  return { seats: 2, storageGb: 20 }
+  if (plan === 'pro') return { seats: 2, storageGb: 20 }
+  return { seats: 0, storageGb: 0 }
 }
 
 export function storageLimitBytes(plan: BillingPlan | null): number {

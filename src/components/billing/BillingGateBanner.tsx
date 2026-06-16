@@ -4,24 +4,19 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { authFetch } from '@/lib/auth-client'
 
-type BillingStatus = {
-  has_access: boolean
-  in_trial: boolean
-}
-
 export default function BillingGateBanner() {
-  const [status, setStatus] = useState<BillingStatus | null>(null)
+  const [blocked, setBlocked] = useState(false)
 
   useEffect(() => {
     authFetch('/api/billing/status')
       .then(r => r.json())
       .then(data => {
-        if (data.success) setStatus(data.data)
+        if (data.success) setBlocked(!data.data.has_access)
       })
       .catch(() => {})
   }, [])
 
-  if (!status || status.has_access) return null
+  if (!blocked) return null
 
   return (
     <div style={{
@@ -36,9 +31,9 @@ export default function BillingGateBanner() {
       fontSize: 14,
       fontWeight: 500,
     }}>
-      <span>Votre essai est terminé — choisissez une offre pour continuer à utiliser Operis.</span>
+      <span>Abonnement requis pour utiliser Operis.</span>
       <Link
-        href="/pricing"
+        href="/settings/billing"
         style={{
           background: '#fff',
           color: '#1e3a8a',
@@ -49,7 +44,7 @@ export default function BillingGateBanner() {
           fontSize: 13,
         }}
       >
-        Choisir une offre
+        S&apos;abonner
       </Link>
     </div>
   )

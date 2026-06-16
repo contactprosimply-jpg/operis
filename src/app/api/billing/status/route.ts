@@ -16,10 +16,8 @@ export async function GET(req: NextRequest) {
     success: true,
     data: {
       has_access: ctx.hasAccess,
-      in_trial: ctx.inTrial,
       plan: ctx.effectivePlan,
-      status: ctx.subscription?.status ?? (ctx.soloTrialEndsAt ? 'trialing' : null),
-      trial_ends_at: ctx.subscription?.trial_ends_at ?? ctx.soloTrialEndsAt,
+      status: ctx.subscription?.status ?? null,
       current_period_end: ctx.subscription?.current_period_end ?? null,
       stripe_subscription_id: ctx.subscription?.stripe_subscription_id ?? null,
       limits: ctx.limits,

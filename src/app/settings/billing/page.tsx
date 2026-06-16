@@ -9,14 +9,13 @@ import type { BillingPlan } from '@/lib/billing/plan-limits'
 
 type BillingData = {
   has_access: boolean
-  in_trial: boolean
   plan: BillingPlan | null
   status: string | null
-  trial_ends_at: string | null
   current_period_end: string | null
   limits: { seats: number; storageGb: number }
   usage: { seats: number; storage_gb: number }
   is_owner: boolean
+  org_id: string | null
   stripe_subscription_id: string | null
 }
 
@@ -30,6 +29,7 @@ export default function BillingSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [loadingPlan, setLoadingPlan] = useState<BillingPlan | null>(null)
   const [portalLoading, setPortalLoading] = useState(false)
+  const [checkoutError, setCheckoutError] = useState<string | null>(null)
 
   const load = async () => {
     const res = await authFetch('/api/billing/status')
@@ -42,10 +42,17 @@ export default function BillingSettingsPage() {
 
   const handleCheckout = async (plan: BillingPlan) => {
     setLoadingPlan(plan)
+    setCheckoutError(null)
     try {
       const res = await authFetch(`/api/billing/checkout?plan=${plan}`)
       const json = await res.json()
-      if (json.success && json.url) window.location.href = json.url
+      if (json.success && json.url) {
+        window.location.href = json.url
+        return
+      }
+      setCheckoutError(json.error ?? `Erreur checkout (${res.status})`)
+    } catch (e) {
+      setCheckoutError(e instanceof Error ? e.message : 'Erreur réseau')
     } finally {
       setLoadingPlan(null)
     }
@@ -53,10 +60,17 @@ export default function BillingSettingsPage() {
 
   const handlePortal = async () => {
     setPortalLoading(true)
+    setCheckoutError(null)
     try {
       const res = await authFetch('/api/billing/portal', { method: 'POST' })
       const json = await res.json()
-      if (json.success && json.url) window.location.href = json.url
+      if (json.success && json.url) {
+        window.location.href = json.url
+        return
+      }
+      setCheckoutError(json.error ?? 'Impossible d\'ouvrir le portail Stripe')
+    } catch (e) {
+      setCheckoutError(e instanceof Error ? e.message : 'Erreur réseau')
     } finally {
       setPortalLoading(false)
     }
@@ -70,7 +84,8 @@ export default function BillingSettingsPage() {
     )
   }
 
-  const planLabel = data?.plan === 'business' ? 'Business' : data?.plan === 'pro' ? 'Pro' : data?.in_trial ? 'Essai' : 'Aucun'
+  const planLabel = data?.plan === 'business' ? 'Business' : data?.plan === 'pro' ? 'Pro' : 'Aucun'
+  const canSubscribe = data?.is_owner || !data?.org_id
 
   return (
     <div style={{ padding: '24px 0', maxWidth: 960 }}>
@@ -85,6 +100,15 @@ export default function BillingSettingsPage() {
           Plan actuel, utilisation et gestion de l&apos;abonnement Stripe.
         </p>
       </div>
+
+      {checkoutError && (
+        <div style={{
+          background: '#fef2f2', color: '#b91c1c', padding: 14, borderRadius: 10,
+          marginBottom: 20, fontSize: 14, border: '1px solid #fecaca',
+        }}>
+          {checkoutError}
+        </div>
+      )}
 
       <div className="card" style={{ padding: 24, marginBottom: 24 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 20 }}>
@@ -108,34 +132,34 @@ export default function BillingSettingsPage() {
             </div>
           </div>
           <div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Fin essai / période</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Fin de période</div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>
-              {formatDate(data?.in_trial ? data.trial_ends_at : data?.current_period_end ?? null)}
+              {formatDate(data?.current_period_end ?? null)}
             </div>
           </div>
         </div>
 
-        {data?.is_owner && (
+        {data?.stripe_subscription_id && canSubscribe && (
           <div style={{ marginTop: 24, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {data.stripe_subscription_id && (
-              <Button variant="secondary" onClick={handlePortal} disabled={portalLoading}>
-                {portalLoading ? 'Ouverture…' : 'Portail Stripe'}
-              </Button>
-            )}
-            <Link href="/pricing">
-              <Button variant="primary">Voir les offres</Button>
-            </Link>
+            <Button variant="ghost" onClick={handlePortal} disabled={portalLoading}>
+              {portalLoading ? 'Ouverture…' : 'Portail Stripe'}
+            </Button>
           </div>
         )}
       </div>
 
-      {data?.is_owner && (
+      {canSubscribe ? (
         <PricingPlans
-          currentPlan={data.plan}
-          isOwner={data.is_owner}
+          currentPlan={data?.has_access ? data.plan : null}
+          isOwner={true}
           onSelectPlan={handleCheckout}
           loadingPlan={loadingPlan}
+          subscribeLabel="S'abonner"
         />
+      ) : (
+        <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+          Contactez le créateur du groupe pour gérer l&apos;abonnement.
+        </p>
       )}
     </div>
   )

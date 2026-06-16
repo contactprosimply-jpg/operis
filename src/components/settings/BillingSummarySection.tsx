@@ -7,7 +7,6 @@ import { Spinner } from '@/components/ui'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
 
 type BillingStatus = {
-  in_trial: boolean
   plan: BillingPlan | null
   limits: { seats: number; storageGb: number }
   usage: { seats: number; storage_gb: number }
@@ -16,7 +15,6 @@ type BillingStatus = {
 function planLabel(data: BillingStatus): string {
   if (data.plan === 'business') return 'Business'
   if (data.plan === 'pro') return 'Pro'
-  if (data.in_trial) return 'Essai gratuit'
   return 'Aucun abonnement'
 }
 
@@ -63,11 +61,6 @@ export default function BillingSummarySection() {
           </div>
           <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
             {planLabel(data)}
-            {data.in_trial && data.plan && (
-              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginLeft: 8 }}>
-                (essai 14 jours)
-              </span>
-            )}
           </div>
         </div>
         <div>
@@ -101,7 +94,7 @@ export default function BillingSummarySection() {
           background: 'var(--accent-soft)',
         }}
       >
-        Gérer l&apos;abonnement →
+        {data.plan ? 'Gérer l\'abonnement →' : "S'abonner →"}
       </Link>
     </div>
   )

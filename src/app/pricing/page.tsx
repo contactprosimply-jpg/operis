@@ -85,7 +85,7 @@ export default function PricingPage() {
             Tarifs Operis
           </h1>
           <p style={{ fontSize: 15, color: 'var(--text-secondary)', maxWidth: 520, margin: '0 auto' }}>
-            Deux offres simples. Essai gratuit 14 jours. Sans engagement.
+            Deux offres simples, par siège. Sans engagement.
           </p>
           {isLoggedIn && (
             <p style={{ marginTop: 16, fontSize: 13, color: 'var(--text-secondary)' }}>
@@ -109,7 +109,7 @@ export default function PricingPage() {
             marginBottom: 24, padding: '12px 16px', background: 'var(--bg-secondary)',
             borderRadius: 10, border: '1px solid var(--border)',
           }}>
-            Créez un compte ou connectez-vous pour souscrire. Vous bénéficiez de <strong>14 jours d&apos;essai</strong> avant paiement.
+            Créez un compte ou connectez-vous pour souscrire via Stripe Checkout.
           </p>
         )}
 
@@ -117,6 +117,7 @@ export default function PricingPage() {
           onSelectPlan={isLoggedIn ? handleSelectPlan : undefined}
           loadingPlan={loadingPlan}
           guestCtaHref="/register?redirect=/pricing"
+          subscribeLabel="S'abonner"
         />
       </div>
     </div>

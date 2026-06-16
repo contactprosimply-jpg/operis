@@ -46,6 +46,7 @@ type PricingPlansProps = {
   loadingPlan?: BillingPlan | null
   /** Lien inscription/connexion quand visiteur non connecté */
   guestCtaHref?: string
+  subscribeLabel?: string
 }
 
 export default function PricingPlans({
@@ -54,6 +55,7 @@ export default function PricingPlans({
   onSelectPlan,
   loadingPlan,
   guestCtaHref = '/register?redirect=/pricing',
+  subscribeLabel = "S'abonner",
 }: PricingPlansProps) {
   return (
     <div style={{
@@ -120,7 +122,7 @@ export default function PricingPlans({
                 onClick={() => onSelectPlan(plan.id)}
                 style={{ width: '100%' }}
               >
-                {loadingPlan === plan.id ? 'Redirection…' : isCurrent ? 'Offre actuelle' : 'Choisir cette offre'}
+                {loadingPlan === plan.id ? 'Redirection…' : isCurrent ? 'Offre actuelle' : subscribeLabel}
               </Button>
             ) : !isOwner ? (
               <p style={{ fontSize: 13, color: 'var(--text-secondary)', textAlign: 'center' }}>
@@ -138,7 +140,7 @@ export default function PricingPlans({
                   boxShadow: isPopular ? 'var(--shadow-glow)' : 'none',
                 }}
               >
-                Créer un compte — essai 14 jours
+                Créer un compte pour s&apos;abonner
               </a>
             )}
           </div>

@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
-import { getBillingContext, resolveBillingOrg } from '@/lib/billing/subscription'
+import { ensureBillingOrg } from '@/lib/billing/subscription'
 import { getStripe, getStripePriceId, billingReturnUrls } from '@/lib/billing/stripe'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
 
@@ -22,45 +22,53 @@ export async function GET(req: NextRequest) {
   }
 
   const db = createAdminClient()
-  const { orgId, isOwner } = await resolveBillingOrg(db, userId)
-  if (!orgId || !isOwner) {
-    return Response.json({
-      success: false,
-      error: 'Seul le createur du groupe peut souscrire un abonnement',
-    }, { status: 403 })
-  }
 
-  const { data: sub } = await db.from('subscriptions').select('*').eq('org_id', orgId).maybeSingle()
-  const stripe = getStripe()
-  const urls = billingReturnUrls()
+  try {
+    const { orgId } = await ensureBillingOrg(db, userId)
 
-  let customerId = sub?.stripe_customer_id as string | null
-  if (!customerId) {
-    const { data: { user } } = await db.auth.admin.getUserById(userId)
-    const customer = await stripe.customers.create({
-      email: user?.email ?? undefined,
-      metadata: { org_id: orgId, user_id: userId },
+    const { data: sub } = await db.from('subscriptions').select('*').eq('org_id', orgId).maybeSingle()
+    const stripe = getStripe()
+    const urls = billingReturnUrls()
+    const priceId = getStripePriceId(plan)
+
+    let customerId = sub?.stripe_customer_id as string | null
+    if (!customerId) {
+      const { data: { user } } = await db.auth.admin.getUserById(userId)
+      const customer = await stripe.customers.create({
+        email: user?.email ?? undefined,
+        metadata: { org_id: orgId, user_id: userId },
+      })
+      customerId = customer.id
+      await db.from('subscriptions').upsert({
+        org_id: orgId,
+        stripe_customer_id: customerId,
+        status: sub?.status ?? 'inactive',
+      }, { onConflict: 'org_id' })
+    }
+
+    console.info('[billing/checkout] creating session', { userId, orgId, plan, priceId })
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer: customerId,
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: urls.success,
+      cancel_url: urls.cancel,
+      metadata: { org_id: orgId, plan, user_id: userId },
+      subscription_data: {
+        metadata: { org_id: orgId, plan },
+      },
     })
-    customerId = customer.id
-    await db.from('subscriptions').upsert({
-      org_id: orgId,
-      stripe_customer_id: customerId,
-      status: sub?.status ?? 'trialing',
-      trial_ends_at: sub?.trial_ends_at ?? null,
-    }, { onConflict: 'org_id' })
+
+    if (!session.url) {
+      console.error('[billing/checkout] session sans URL', { sessionId: session.id })
+      return Response.json({ success: false, error: 'Stripe n\'a pas renvoyé une URL de paiement' }, { status: 500 })
+    }
+
+    return Response.json({ success: true, url: session.url })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Erreur checkout Stripe'
+    console.error('[billing/checkout]', message, err)
+    return Response.json({ success: false, error: message }, { status: 500 })
   }
-
-  const session = await stripe.checkout.sessions.create({
-    mode: 'subscription',
-    customer: customerId,
-    line_items: [{ price: getStripePriceId(plan), quantity: 1 }],
-    success_url: urls.success,
-    cancel_url: urls.cancel,
-    metadata: { org_id: orgId, plan, user_id: userId },
-    subscription_data: {
-      metadata: { org_id: orgId, plan },
-    },
-  })
-
-  return Response.json({ success: true, url: session.url })
 }
