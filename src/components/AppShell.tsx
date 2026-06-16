@@ -11,7 +11,7 @@ import { isBillingExemptRoute, isPublicRoute } from '@/lib/public-routes'
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isPublic = isPublicRoute(pathname)
-  const isPaywall = pathname === '/choose-plan'
+  const isPaywall = pathname === '/choose-plan' || pathname === '/billing/activating'
   const minimalShell = isPublic || isPaywall
 
   return (

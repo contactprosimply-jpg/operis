@@ -147,6 +147,14 @@ export async function POST(req: NextRequest) {
           fallbackPlan: plan,
           forceActive: true,
         })
+
+        console.info('[billing/webhook] checkout.session.completed — status=active pour utilisateur', {
+          userId,
+          orgId,
+          plan,
+          stripeSubscriptionId: stripeSub.id,
+          stripeCustomerId: session.customer,
+        })
         break
       }
       case 'customer.subscription.updated': {

@@ -35,19 +35,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [billingChecked, setBillingChecked] = useState(false)
   const [hasBillingAccess, setHasBillingAccess] = useState(false)
-  const [stripeReturnSuccess, setStripeReturnSuccess] = useState(false)
 
   const isPublic = isPublicRoute(pathname)
   const isBillingExempt = isBillingExemptRoute(pathname)
-
-  useEffect(() => {
-    if (pathname !== '/settings/billing') {
-      setStripeReturnSuccess(false)
-      return
-    }
-    const params = new URLSearchParams(window.location.search)
-    setStripeReturnSuccess(params.get('success') === '1')
-  }, [pathname])
 
   const refreshBillingAccess = useCallback(async () => {
     try {
@@ -115,23 +105,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => { cancelled = true }
   }, [ready, session?.user?.id])
-
-  useEffect(() => {
-    if (!ready || !session || hasBillingAccess) return
-    if (!isBillingExempt && !stripeReturnSuccess) return
-
-    let attempts = 0
-    const maxAttempts = stripeReturnSuccess ? 20 : 8
-    const interval = setInterval(async () => {
-      attempts += 1
-      const access = await refreshBillingAccess()
-      if (access || attempts >= maxAttempts) {
-        clearInterval(interval)
-      }
-    }, 3000)
-
-    return () => clearInterval(interval)
-  }, [ready, session, hasBillingAccess, isBillingExempt, stripeReturnSuccess, refreshBillingAccess])
 
   useEffect(() => {
     if (!ready || !session || !billingChecked) return

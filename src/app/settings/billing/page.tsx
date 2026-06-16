@@ -4,7 +4,6 @@ import { useEffect, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import PricingPlans from '@/components/billing/PricingPlans'
-import { useAuth } from '@/components/AuthProvider'
 import { authFetch } from '@/lib/auth-client'
 import { Button, Spinner } from '@/components/ui'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
@@ -31,8 +30,6 @@ function formatDate(iso: string | null) {
 
 function BillingSettingsContent() {
   const searchParams = useSearchParams()
-  const { refreshBillingAccess } = useAuth()
-  const success = searchParams.get('success') === '1'
   const canceled = searchParams.get('canceled') === '1'
 
   const [data, setData] = useState<BillingData | null>(null)
@@ -58,31 +55,8 @@ function BillingSettingsContent() {
   useEffect(() => {
     if (canceled) {
       setStatusMessage('Paiement annulé. Vous pouvez choisir une offre ci-dessous.')
-      return
     }
-    if (!success) return
-
-    setStatusMessage('Paiement reçu. Activation de votre abonnement en cours…')
-    let attempts = 0
-    const interval = setInterval(async () => {
-      attempts += 1
-      const res = await authFetch('/api/billing/status')
-      const json = await res.json()
-      if (json.success) {
-        setData(json.data)
-        if (json.data.has_access) {
-          setStatusMessage('Abonnement activé. Vous pouvez utiliser Operis.')
-          await refreshBillingAccess()
-          clearInterval(interval)
-        } else if (attempts >= 12) {
-          setStatusMessage('Paiement reçu. L\'activation peut prendre quelques minutes — rechargez cette page.')
-          clearInterval(interval)
-        }
-      }
-    }, 3000)
-
-    return () => clearInterval(interval)
-  }, [success, canceled, refreshBillingAccess])
+  }, [canceled])
 
   const handleCheckout = async (plan: BillingPlan) => {
     setLoadingPlan(plan)

@@ -15,7 +15,7 @@ export function requestOrigin(req: NextRequest): string {
 export function billingReturnUrlsFromOrigin(origin: string) {
   const base = origin.replace(/\/$/, '')
   return {
-    success: `${base}/settings/billing?success=1`,
+    success: `${base}/billing/activating`,
     cancel: `${base}/settings/billing?canceled=1`,
   }
 }
