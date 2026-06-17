@@ -155,10 +155,13 @@ async function fetchEnvelopeByUidRange(
   uids: number[],
   limit: number,
   accountUser: string,
+  preferHighest = true,
 ): Promise<ImapEnvelopeMeta[]> {
   if (!uids.length) return []
   const sorted = [...uids].sort((a, b) => a - b)
-  const targetUids = limit > 0 && sorted.length > limit ? sorted.slice(-limit) : sorted
+  const targetUids = limit > 0 && sorted.length > limit
+    ? (preferHighest ? sorted.slice(-limit) : sorted.slice(0, limit))
+    : sorted
   const messages: ImapEnvelopeMeta[] = []
   for (let i = 0; i < targetUids.length; i += UID_FETCH_CHUNK) {
     const chunk = targetUids.slice(i, i + UID_FETCH_CHUNK)
@@ -211,8 +214,8 @@ async function fetchEnvelopeBySequence(
   }
 
   return messages
-    .sort((a, b) => a.uid - b.uid)
-    .slice(-limit)
+    .sort((a, b) => b.uid - a.uid)
+    .slice(0, limit)
 }
 
 async function fetchEnvelopeBySinceStream(
@@ -237,7 +240,7 @@ async function fetchEnvelopeBySinceStream(
     ))
     if (messages.length >= limit * 2) break
   }
-  return messages.sort((a, b) => a.uid - b.uid).slice(-limit)
+  return messages.sort((a, b) => b.uid - a.uid).slice(0, limit)
 }
 
 export interface ResolvedMailboxes {
@@ -477,7 +480,7 @@ async function fetchEnvelopesInOpenMailbox(
     batches.push(await fetchEnvelopeBySequence(client, limit, accountUser, since))
     batches.push(await fetchEnvelopeBySinceStream(client, since, limit, accountUser))
     const merged = mergeEnvelopesByUid(batches)
-    return merged.slice(-limit)
+    return merged.sort((a, b) => b.uid - a.uid).slice(0, limit)
   }
 
   if (!fullScan) {
@@ -526,8 +529,64 @@ async function fetchEnvelopesInOpenMailbox(
     batches.push(await fetchEnvelopeBySinceStream(client, since, mergeCap, accountUser))
 
   const merged = mergeEnvelopesByUid(batches)
-  const resultCap = fullScan ? Math.max(limit, merged.length) : mergeCap
-  return merged.slice(-resultCap)
+  const sorted = merged.sort((a, b) => b.uid - a.uid)
+  const resultCap = fullScan ? Math.max(limit, sorted.length) : mergeCap
+  return sorted.slice(0, resultCap)
+}
+
+export type InboxBackfillBatch = {
+  envelopes: ImapEnvelopeMeta[]
+  mailboxTotal: number
+  maxUid: number
+  batchMinUid: number
+  hasMore: boolean
+}
+
+/** Lot de sync initiale INBOX : UID les plus récents en premier, puis descente. */
+export async function fetchInboxBackfillBatch(
+  config: MailAccountConfig,
+  mailboxPath: string,
+  options: { belowUid: number; limit: number },
+): Promise<InboxBackfillBatch> {
+  const accountUser = config.imap_user.trim()
+  const client = createImapClient(config)
+  await client.connect()
+  const lock = await client.getMailboxLock(mailboxPath)
+
+  try {
+    const exists = mailboxExists(client)
+    const allUidsRaw = await client.search({ all: true }, { uid: true })
+    const allUids = Array.isArray(allUidsRaw) ? allUidsRaw : []
+    const mailboxTotal = allUids.length || exists
+    const maxUid = allUids.length ? Math.max(...allUids) : 0
+
+    let candidates = allUids
+    if (options.belowUid > 0) {
+      candidates = allUids.filter(u => u < options.belowUid)
+    }
+
+    const batchUids = [...candidates].sort((a, b) => b - a).slice(0, options.limit)
+    const envelopes = batchUids.length
+      ? await fetchEnvelopeByUidRange(client, batchUids, 0, accountUser, true)
+      : []
+
+    const batchMinUid = batchUids.length ? Math.min(...batchUids) : 0
+    const minUidInMailbox = allUids.length ? Math.min(...allUids) : 0
+    const hasMore = batchUids.length > 0 && batchMinUid > minUidInMailbox
+
+    return {
+      envelopes: envelopes.sort((a, b) => b.uid - a.uid),
+      mailboxTotal,
+      maxUid,
+      batchMinUid,
+      hasMore,
+    }
+  } finally {
+    lock.release()
+    try {
+      await client.logout()
+    } catch { /* ignore */ }
+  }
 }
 
 /** Liste rapide des enveloppes (sans télécharger le corps — ~10x plus rapide). */

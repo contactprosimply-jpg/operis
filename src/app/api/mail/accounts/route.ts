@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserEmailFromRequest, getUserFromRequest, unauthorized } from '@/lib/auth'
 
-const ACCOUNT_FIELDS = 'id, imap_host, imap_port, imap_user, smtp_host, smtp_port, smtp_user, is_active, last_sync'
+const ACCOUNT_FIELDS = 'id, imap_host, imap_port, imap_user, smtp_host, smtp_port, smtp_user, is_active, last_sync, initial_sync_complete, mailbox_total'
 
 function pickPrimaryAccount(
   accounts: Array<{ imap_user?: string | null }>,

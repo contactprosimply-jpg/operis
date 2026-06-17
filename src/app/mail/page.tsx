@@ -144,6 +144,8 @@ export default function MailPage() {
   const [loadingDetailBody, setLoadingDetailBody] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [autoSyncStatus, setAutoSyncStatus] = useState<string | null>(null)
+  const [showMailWelcome, setShowMailWelcome] = useState(false)
+  const autoSyncBootRef = useRef(false)
   const [selected, setSelected] = useState<Email | null>(null)
   const [composing, setComposing] = useState(false)
   const [composeMinimized, setComposeMinimized] = useState(false)
@@ -587,12 +589,28 @@ export default function MailPage() {
     }
 
     const pollMailSyncRun = async (runId: string) => {
+      let pollCount = 0
       while (Date.now() - startedAt < SYNC_POLL_MAX_MS) {
         await new Promise(resolve => setTimeout(resolve, SYNC_POLL_INTERVAL_MS))
+        pollCount += 1
         try {
           const statusRes = await authFetch(`/api/mail/sync/status?run_id=${encodeURIComponent(runId)}`)
           const statusJson = await statusRes.json()
           if (!statusJson.success) continue
+
+          const progress = statusJson.data?.sync_progress as {
+            synced_count?: number
+            mailbox_total?: number
+            initial_sync_complete?: boolean
+          } | null
+
+          if (progress && (progress.mailbox_total ?? 0) > 0) {
+            setAutoSyncStatus(
+              `${(progress.synced_count ?? 0).toLocaleString('fr-FR')} / ${(progress.mailbox_total ?? 0).toLocaleString('fr-FR')} mails synchronisés`,
+            )
+          } else if (!statusJson.data?.run?.finished_at) {
+            setAutoSyncStatus('Synchronisation en cours…')
+          }
 
           const run = statusJson.data?.run as {
             finished_at?: string | null
@@ -600,7 +618,12 @@ export default function MailPage() {
             error_detail?: { fatal?: string; accounts?: Array<{ error: string }>; sync_result?: MailSyncOutcome }
           } | null
 
-          if (!run?.finished_at) continue
+          if (!run?.finished_at) {
+            if (pollCount % 3 === 0) {
+              await loadEmails(true)
+            }
+            continue
+          }
 
           if (run.status === 'error') {
             const fatal = run.error_detail?.fatal
@@ -633,10 +656,7 @@ export default function MailPage() {
 
       const res = await authFetch('/api/mail/sync', {
         method: 'POST',
-        body: JSON.stringify({
-          backfill: force && !silent,
-          quick: silent && !force,
-        }),
+        body: JSON.stringify({ backfill: force && !silent }),
       })
       const data = await res.json()
 
@@ -685,6 +705,37 @@ export default function MailPage() {
       setSyncing(false)
     }
   }, [loadEmails, loadEmailDetail, refreshFolders, folder, userId])
+
+  const dismissMailWelcome = useCallback(() => {
+    setShowMailWelcome(false)
+    void authFetch('/api/profile', {
+      method: 'PATCH',
+      body: JSON.stringify({ mail_welcome_seen: true }),
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!userId) return
+    void authFetch('/api/profile')
+      .then(r => r.json())
+      .then(d => {
+        if (d.success && d.data?.mail_welcome_seen !== true) setShowMailWelcome(true)
+      })
+      .catch(() => {})
+  }, [userId])
+
+  useEffect(() => {
+    if (!ready || !userId || autoSyncBootRef.current) return
+    autoSyncBootRef.current = true
+    void authFetch('/api/mail/accounts')
+      .then(r => r.json())
+      .then(d => {
+        if (!d.success || !d.data) return
+        if (d.data.initial_sync_complete === true) return
+        void runSync(true, true)
+      })
+      .catch(() => {})
+  }, [ready, userId, runSync])
 
   useEffect(() => {
     if (!userId) return
@@ -1455,6 +1506,43 @@ export default function MailPage() {
           fontFamily: 'DM Mono, monospace', boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
         }}>
           {toast}
+        </div>
+      )}
+
+      {showMailWelcome && (
+        <div style={{
+          flexShrink: 0,
+          margin: isMobile ? '0 0 8px' : '0 0 10px',
+          padding: '12px 14px',
+          background: 'rgba(59,126,246,0.1)',
+          border: '1px solid rgba(59,126,246,0.28)',
+          borderRadius: 10,
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 12,
+        }}>
+          <p style={{ flex: 1, margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--text-secondary)' }}>
+            Bienvenue dans votre messagerie 👋 Comme c&apos;est votre première visite, la synchronisation de vos mails peut prendre quelques minutes (les plus récents apparaissent en premier). Vous pouvez continuer à utiliser Operis pendant ce temps.
+          </p>
+          <button
+            type="button"
+            onClick={dismissMailWelcome}
+            aria-label="Fermer"
+            style={{
+              flexShrink: 0,
+              width: 28,
+              height: 28,
+              borderRadius: 6,
+              border: '1px solid var(--border-hi)',
+              background: 'var(--bg-card)',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              fontSize: 18,
+              lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
         </div>
       )}
 

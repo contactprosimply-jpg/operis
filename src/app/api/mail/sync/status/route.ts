@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
       in_progress: inProgress,
       run,
       sync_result: run?.finished_at ? run.error_detail?.sync_result ?? null : null,
+      sync_progress: run?.error_detail?.sync_progress ?? null,
     },
   })
 }

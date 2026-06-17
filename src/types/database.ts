@@ -21,6 +21,7 @@ export interface Profile {
   role: string
   onboarding_done?: boolean
   tour_done?: boolean
+  mail_welcome_seen?: boolean
   created_at: string
 }
 

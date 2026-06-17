@@ -15,6 +15,11 @@ export type SyncRunErrorDetail = {
   skipped?: boolean
   reason?: string
   sync_result?: Record<string, unknown>
+  sync_progress?: {
+    synced_count: number
+    mailbox_total: number
+    initial_sync_complete: boolean
+  }
 }
 
 export type SyncRunRow = {
@@ -80,6 +85,37 @@ export async function startSyncRun(
     return null
   }
   return data.id
+}
+
+export async function updateSyncRunProgress(
+  db: SupabaseClient,
+  runId: string,
+  payload: {
+    new_emails: number
+    accounts_synced: number
+    sync_progress: SyncRunErrorDetail['sync_progress']
+    partial_result?: Record<string, unknown>
+  },
+): Promise<void> {
+  const { data: existing } = await db
+    .from('sync_runs')
+    .select('error_detail')
+    .eq('id', runId)
+    .maybeSingle()
+
+  const prev = (existing?.error_detail as SyncRunErrorDetail | null) ?? {}
+  await db
+    .from('sync_runs')
+    .update({
+      new_emails: payload.new_emails,
+      accounts_synced: payload.accounts_synced,
+      error_detail: {
+        ...prev,
+        sync_progress: payload.sync_progress,
+        ...(payload.partial_result ? { sync_result: payload.partial_result } : {}),
+      },
+    })
+    .eq('id', runId)
 }
 
 export async function finishSyncRun(

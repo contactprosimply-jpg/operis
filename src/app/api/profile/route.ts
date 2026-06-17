@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   const { data, error } = await db
     .from('profiles')
-    .select('id, full_name, company, role, onboarding_done, tour_done, created_at')
+    .select('id, full_name, company, role, onboarding_done, tour_done, mail_welcome_seen, created_at')
     .eq('id', userId)
     .single()
 
@@ -28,7 +28,7 @@ export async function PATCH(req: NextRequest) {
   if (!body || typeof body !== 'object') return badRequest('Corps JSON requis')
 
   const fieldErr = rejectUnexpectedFields(body as Record<string, unknown>, [
-    'full_name', 'company', 'onboarding_done', 'tour_done',
+    'full_name', 'company', 'onboarding_done', 'tour_done', 'mail_welcome_seen',
   ])
   if (fieldErr) return badRequest(fieldErr)
 
@@ -57,6 +57,12 @@ export async function PATCH(req: NextRequest) {
     }
     updates.tour_done = body.tour_done
   }
+  if ('mail_welcome_seen' in body) {
+    if (typeof body.mail_welcome_seen !== 'boolean') {
+      return badRequest('mail_welcome_seen doit être un booléen')
+    }
+    updates.mail_welcome_seen = body.mail_welcome_seen
+  }
 
   if (Object.keys(updates).length === 0) return badRequest('Aucun champ à mettre à jour')
 
@@ -65,7 +71,7 @@ export async function PATCH(req: NextRequest) {
     .from('profiles')
     .update(updates)
     .eq('id', userId)
-    .select('id, full_name, company, role, onboarding_done, tour_done, created_at')
+    .select('id, full_name, company, role, onboarding_done, tour_done, mail_welcome_seen, created_at')
     .single()
 
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
