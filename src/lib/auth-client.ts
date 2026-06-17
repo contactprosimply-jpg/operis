@@ -12,6 +12,26 @@ export function setAccessToken(token: string | null) {
   cachedToken = token
 }
 
+function readSupabaseTokenFromStorage(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (!key?.startsWith('sb-') || !key.endsWith('-auth-token')) continue
+      const raw = localStorage.getItem(key)
+      if (!raw) continue
+      const parsed = JSON.parse(raw) as {
+        access_token?: string
+        currentSession?: { access_token?: string }
+      }
+      return parsed.access_token ?? parsed.currentSession?.access_token ?? null
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
 export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timeout (${ms}ms)`)), ms)
@@ -33,6 +53,11 @@ export async function getSessionWithTimeout() {
     )
   } catch (err) {
     console.warn('[auth] getSession failed or timed out', err)
+    const fallback = readSupabaseTokenFromStorage()
+    if (fallback) {
+      cachedToken = fallback
+      return { data: { session: null as Session | null }, error: null }
+    }
     return { data: { session: null as Session | null }, error: null }
   } finally {
     if (typeof console !== 'undefined' && console.timeEnd) console.timeEnd('[auth] getSession')
@@ -60,6 +85,12 @@ async function tryRefreshSession(): Promise<boolean> {
 export async function getAccessToken(): Promise<string | null> {
   if (cachedToken) return cachedToken
 
+  const stored = readSupabaseTokenFromStorage()
+  if (stored) {
+    cachedToken = stored
+    return cachedToken
+  }
+
   const { data: { session } } = await getSessionWithTimeout()
   if (session?.access_token) {
     cachedToken = session.access_token
@@ -73,8 +104,8 @@ export async function getAccessToken(): Promise<string | null> {
       settled = true
       subscription.unsubscribe()
       clearTimeout(timer)
-      cachedToken = token
-      resolve(token)
+      cachedToken = token ?? readSupabaseTokenFromStorage()
+      resolve(cachedToken)
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -83,7 +114,7 @@ export async function getAccessToken(): Promise<string | null> {
       }
     })
 
-    const timer = setTimeout(() => finish(null), AUTH_WAIT_TIMEOUT_MS)
+    const timer = setTimeout(() => finish(readSupabaseTokenFromStorage()), AUTH_WAIT_TIMEOUT_MS)
   })
 }
 
@@ -111,17 +142,24 @@ export async function authFetch(url: string, options: RequestInit = {}) {
     throw new Error('Non autorise')
   }
 
-  let res = await fetchWithAuth(url, options, token)
+  try {
+    let res = await fetchWithAuth(url, options, token)
 
-  if (res.status === 401) {
-    const refreshed = await tryRefreshSession()
-    if (refreshed && cachedToken) {
-      res = await fetchWithAuth(url, options, cachedToken)
-    }
     if (res.status === 401) {
-      throw new Error('Non autorise')
+      const refreshed = await tryRefreshSession()
+      if (refreshed && cachedToken) {
+        res = await fetchWithAuth(url, options, cachedToken)
+      }
+      if (res.status === 401) {
+        throw new Error('Non autorise')
+      }
     }
-  }
 
-  return res
+    return res
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`Timeout reseau (${NETWORK_TIMEOUT_MS}ms)`)
+    }
+    throw err
+  }
 }

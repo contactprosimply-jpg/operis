@@ -12,12 +12,15 @@ import { requestProductTour } from '@/lib/product-tour'
  * 2. Guide interactif spotlight (ProductTour)
  */
 export default function UserJourney() {
-  const { ready, userId } = useAuth()
+  const { userId } = useAuth()
   const [checked, setChecked] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
 
   useEffect(() => {
-    if (!ready || !userId) return
+    if (!userId) {
+      setChecked(true)
+      return
+    }
 
     const check = async () => {
       try {
@@ -41,7 +44,7 @@ export default function UserJourney() {
     }
 
     check()
-  }, [ready, userId])
+  }, [userId])
 
   if (!checked || !showOnboarding) return null
 

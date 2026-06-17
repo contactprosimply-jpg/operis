@@ -7,14 +7,13 @@ import { Spinner } from '@/components/ui'
 
 /** Utilisateurs connectés → AO ; visiteurs → page de présentation */
 export default function AppEntryPage() {
-  const { ready, session } = useAuth()
+  const { session } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
-    if (!ready) return
     if (session) router.replace('/tenders')
     else router.replace('/')
-  }, [ready, session, router])
+  }, [session, router])
 
   return (
     <div

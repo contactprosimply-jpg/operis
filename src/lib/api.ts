@@ -46,6 +46,11 @@ async function apiFetch<T>(
       return { success: false, error: 'Non autorise' }
     }
     return res.json()
+  } catch (err) {
+    const msg = err instanceof Error && err.name === 'AbortError'
+      ? `Timeout reseau (${NETWORK_TIMEOUT_MS}ms)`
+      : 'Erreur reseau'
+    return { success: false, error: msg }
   } finally {
     clearTimeout(timeout)
   }

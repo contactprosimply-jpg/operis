@@ -22,7 +22,7 @@ function timeSince(dateStr: string | null) {
 
 export default function AdminPage() {
   const router = useRouter()
-  const { session, ready } = useAuth()
+  const { session } = useAuth()
   const [authorized, setAuthorized] = useState<boolean | null>(null)
   const [stats, setStats] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -33,7 +33,6 @@ export default function AdminPage() {
   const [syncHealthLoading, setSyncHealthLoading] = useState(true)
 
   useEffect(() => {
-    if (!ready) return
     const init = async () => {
       if (!session) { router.push('/login'); return }
       if (session.user.email !== ADMIN_EMAIL) {
@@ -64,7 +63,7 @@ export default function AdminPage() {
       setSyncHealthLoading(false)
     }
     init()
-  }, [router, ready, session])
+  }, [router, session])
 
   const handleCheckAlerts = async () => {
     setCheckingAlerts(true)

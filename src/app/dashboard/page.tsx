@@ -52,7 +52,7 @@ function ResponseBarChart({ pct }: { pct: number }) {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { ready, userId, session } = useAuth()
+  const { userId, session } = useAuth()
   const { tenders, loading } = useTenders()
   const { show, ToastComponent } = useToast()
   const [emails, setEmails] = useState<Email[]>([])
@@ -63,35 +63,39 @@ export default function DashboardPage() {
   const currentUserId = session?.user?.id
 
   useEffect(() => {
-    if (!ready || !userId) return
+    if (!userId) return
     const load = async () => {
-      const [aoRes, unlinkedRes, notifRes, orgRes] = await Promise.all([
-        authFetch('/api/mail/emails?ao=true'),
-        authFetch('/api/mail/emails?unlinked=true&limit=150'),
-        authFetch('/api/notifications?limit=6'),
-        authFetch('/api/organization'),
-      ])
-      const aoData = await aoRes.json()
-      const unlinkedData = await unlinkedRes.json()
-      if (aoData.success) {
-        setEmails((aoData.data as Email[]).filter(e => !e.tender_id))
+      try {
+        const [aoRes, unlinkedRes, notifRes, orgRes] = await Promise.all([
+          authFetch('/api/mail/emails?ao=true'),
+          authFetch('/api/mail/emails?unlinked=true&limit=150'),
+          authFetch('/api/notifications?limit=6'),
+          authFetch('/api/organization'),
+        ])
+        const aoData = await aoRes.json()
+        const unlinkedData = await unlinkedRes.json()
+        if (aoData.success) {
+          setEmails((aoData.data as Email[]).filter(e => !e.tender_id))
+        }
+        if (unlinkedData.success) {
+          const devisLike = (unlinkedData.data as Email[]).filter(e =>
+            !e.is_ao && !e.tender_id && (
+              e.has_attachments ||
+              /devis|ponuda|chiffrage|offre|proposition/i.test(e.subject ?? '')
+            ),
+          )
+          setQuoteEmails(devisLike)
+        }
+        const notifData = await notifRes.json()
+        if (notifData.success) setNotifications(notifData.data ?? [])
+        const orgData = await orgRes.json()
+        if (orgData.success) setOrg(orgData.data ?? null)
+      } catch {
+        /* timeout/erreur réseau : garde le dernier état connu */
       }
-      if (unlinkedData.success) {
-        const devisLike = (unlinkedData.data as Email[]).filter(e =>
-          !e.is_ao && !e.tender_id && (
-            e.has_attachments ||
-            /devis|ponuda|chiffrage|offre|proposition/i.test(e.subject ?? '')
-          ),
-        )
-        setQuoteEmails(devisLike)
-      }
-      const notifData = await notifRes.json()
-      if (notifData.success) setNotifications(notifData.data ?? [])
-      const orgData = await orgRes.json()
-      if (orgData.success) setOrg(orgData.data ?? null)
     }
     load()
-  }, [ready, userId])
+  }, [userId])
 
   const handleCreateAo = async (email: Email) => {
     setCreatingAo(email.id)

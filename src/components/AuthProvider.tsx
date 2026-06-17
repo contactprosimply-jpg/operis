@@ -1,23 +1,28 @@
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import type { Session } from '@supabase/supabase-js'
-import { supabase } from '@/lib/supabase'
 import { authFetch, getSessionWithTimeout, setAccessToken } from '@/lib/auth-client'
 import {
   clearAuthSessionStore,
+  isAuthBootstrapped,
   markAuthBootstrapped,
   markBillingFetched,
   readAuthSessionStore,
+  subscribeAuthEvents,
+  syncAuthSessionSilent,
   wasBillingFetched,
 } from '@/lib/auth-session-store'
 import { readBillingCache, writeBillingCache, clearBillingCache } from '@/lib/billing/billing-cache'
 import { isAuthEntryRoute, isBillingExemptRoute, isPublicRoute } from '@/lib/public-routes'
 
+const LOADING_GUARD_MS = 8000
+
 type AuthContextValue = {
   session: Session | null
   userId: string | null
+  /** Toujours true après le 1er paint — ne bloque jamais l'UI */
   ready: boolean
   hasBillingAccess: boolean
   refreshBillingAccess: () => Promise<boolean>
@@ -26,7 +31,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue>({
   session: null,
   userId: null,
-  ready: false,
+  ready: true,
   hasBillingAccess: false,
   refreshBillingAccess: async () => false,
 })
@@ -42,7 +47,8 @@ async function fetchBillingAccess(userId: string): Promise<boolean> {
     return Boolean(json.success && json.data?.has_access)
   } catch (err) {
     console.warn('[auth] billing/status failed', err)
-    return readBillingCache(userId) === true
+    const cached = readBillingCache(userId)
+    return cached === true
   } finally {
     if (typeof console !== 'undefined' && console.timeEnd) console.timeEnd('[auth] billing/status')
   }
@@ -52,62 +58,84 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const initial = readAuthSessionStore()
+  const userIdRef = useRef<string | null>(initial.userId ?? initial.session?.user?.id ?? null)
 
   const [session, setSession] = useState<Session | null>(initial.session)
-  const [ready, setReady] = useState(initial.bootstrapped)
+  const [ready, setReady] = useState(true)
   const [hasBillingAccess, setHasBillingAccess] = useState(() => {
-    if (!initial.userId) return false
-    return readBillingCache(initial.userId) === true
+    const uid = initial.userId ?? initial.session?.user?.id
+    if (!uid) return false
+    return readBillingCache(uid) === true
   })
 
-  const userId = session?.user?.id ?? null
+  const userId = session?.user?.id ?? initial.userId ?? null
+  userIdRef.current = userId
+
   const isPublic = isPublicRoute(pathname)
   const isBillingExempt = isBillingExemptRoute(pathname)
 
   const refreshBillingAccess = useCallback(async () => {
-    if (!userId) return false
-    const access = await fetchBillingAccess(userId)
+    if (!userIdRef.current) return false
+    const access = await fetchBillingAccess(userIdRef.current)
     setHasBillingAccess(access)
-    writeBillingCache(userId, access)
-    markBillingFetched(userId)
+    writeBillingCache(userIdRef.current, access)
+    markBillingFetched(userIdRef.current)
     return access
-  }, [userId])
+  }, [])
 
-  // Bootstrap auth (timeout court) — état module survivant aux navigations
+  // Garde-fou : ready ne reste jamais bloqué (exigence #4)
+  useEffect(() => {
+    const guard = setTimeout(() => {
+      setReady(true)
+      if (!isAuthBootstrapped()) {
+        markAuthBootstrapped(session)
+      }
+      console.warn('[auth] loading guard — forced ready after 8s')
+    }, LOADING_GUARD_MS)
+    return () => clearTimeout(guard)
+  }, [session])
+
+  // Bootstrap auth en arrière-plan — jamais bloquant
   useEffect(() => {
     let mounted = true
-
-    if (initial.bootstrapped) {
-      if (typeof console !== 'undefined') console.info('[auth] bootstrap skipped (module cache)')
-      return
-    }
 
     if (typeof console !== 'undefined' && console.time) console.time('[auth] bootstrap')
 
     getSessionWithTimeout().then(({ data: { session: s } }) => {
       if (!mounted) return
-      setSession(s)
-      setAccessToken(s?.access_token ?? null)
+      if (s) {
+        setSession(s)
+        setAccessToken(s.access_token ?? null)
+        markAuthBootstrapped(s)
+      } else if (isAuthBootstrapped()) {
+        /* garde session/token du cache */
+      } else {
+        markAuthBootstrapped(null)
+      }
       setReady(true)
-      markAuthBootstrapped(s)
       if (typeof console !== 'undefined' && console.timeEnd) console.timeEnd('[auth] bootstrap')
+    }).catch(() => {
+      if (!mounted) return
+      setReady(true)
+      markAuthBootstrapped(session)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+    const unsub = subscribeAuthEvents((event, nextSession) => {
       if (!mounted) return
 
+      // #1 — TOKEN_REFRESHED : silencieux, pas de remount / pas de loading
       if (event === 'TOKEN_REFRESHED') {
-        setAccessToken(nextSession?.access_token ?? null)
+        syncAuthSessionSilent(nextSession)
         return
       }
 
       if (event === 'INITIAL_SESSION') {
         setAccessToken(nextSession?.access_token ?? null)
-        if (!readAuthSessionStore().bootstrapped) {
+        if (!isAuthBootstrapped()) {
           setSession(nextSession)
-          setReady(true)
           markAuthBootstrapped(nextSession)
         }
+        setReady(true)
         return
       }
 
@@ -121,28 +149,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      const nextUserId = nextSession?.user?.id ?? null
-      if (event === 'SIGNED_IN' && nextUserId) {
-        const cached = readBillingCache(nextUserId)
-        if (cached === true) setHasBillingAccess(true)
+      // #1 — SIGNED_IN après 1er chargement : mise à jour silencieuse
+      if (event === 'SIGNED_IN' && isAuthBootstrapped()) {
+        setAccessToken(nextSession?.access_token ?? null)
+        syncAuthSessionSilent(nextSession)
+        const sameUser = nextSession?.user?.id === userIdRef.current
+        if (!sameUser) {
+          setSession(nextSession)
+          const cached = readBillingCache(nextSession?.user?.id ?? '')
+          if (cached === true) setHasBillingAccess(true)
+        }
+        setReady(true)
+        return
       }
 
-      setSession(nextSession)
-      setAccessToken(nextSession?.access_token ?? null)
-      setReady(true)
-      markAuthBootstrapped(nextSession)
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        setSession(nextSession)
+        setAccessToken(nextSession?.access_token ?? null)
+        markAuthBootstrapped(nextSession)
+        setReady(true)
+      }
     })
 
     return () => {
       mounted = false
-      subscription.unsubscribe()
+      unsub()
     }
-  }, [initial.bootstrapped])
+  }, [])
 
-  // Billing : une seule vérif serveur par utilisateur (module store), jamais bloquant
+  // Billing : cache d'abord, fetch en arrière-plan, une fois par user
   useEffect(() => {
-    if (!ready || !userId) {
-      if (ready && !userId) setHasBillingAccess(false)
+    if (!userId) {
+      setHasBillingAccess(false)
       return
     }
 
@@ -157,12 +195,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setHasBillingAccess(access)
       writeBillingCache(userId, access)
     })
-  }, [ready, userId])
+  }, [userId])
 
   // Paywall : redirection sans bloquer le rendu
   useEffect(() => {
-    if (!ready) return
-
     if (!session && !isPublic) {
       router.replace('/login')
       return
@@ -179,20 +215,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!hasBillingAccess && !isPublic && !isBillingExempt && pathname !== '/choose-plan') {
       router.replace('/choose-plan')
     }
-  }, [ready, session, hasBillingAccess, pathname, router, isPublic, isBillingExempt])
+  }, [session, hasBillingAccess, pathname, router, isPublic, isBillingExempt])
 
-  // Log navigation timing
-  useEffect(() => {
-    if (typeof console !== 'undefined' && console.time) {
-      console.time(`[nav] ${pathname}`)
-      const id = requestAnimationFrame(() => {
-        console.timeEnd(`[nav] ${pathname}`)
-      })
-      return () => cancelAnimationFrame(id)
-    }
-  }, [pathname])
-
-  // Ne jamais bloquer le rendu global — shell + pages toujours montés
   return (
     <AuthContext.Provider value={{
       session,
