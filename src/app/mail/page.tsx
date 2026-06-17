@@ -14,6 +14,7 @@ import {
   labelTooltip,
   manualLabel,
 } from '@/lib/mail-smart-labels'
+import { emitMailUnreadChanged } from '@/lib/mail-unread-events'
 import { Spinner, useModalBodyLock } from '@/components/ui'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
@@ -787,13 +788,15 @@ export default function MailPage() {
           body_text: null, body_html: null,
           received_at: raw.received_at, is_read: raw.is_read, is_ao: raw.is_ao,
           ao_score: raw.ao_score, tender_id: raw.tender_id, has_attachments: raw.has_attachments,
-          created_at: raw.created_at,
+          created_at: raw.created_at, mail_folder: raw.mail_folder,
         }
         setEmails(prev => {
           if (prev.some(e => e.id === lite.id)) return prev
           return [lite, ...prev]
         })
         emailCountRef.current += 1
+        const isInboxUnread = !lite.is_read && (!lite.mail_folder || lite.mail_folder === 'inbox')
+        if (isInboxUnread) emitMailUnreadChanged()
         showToast(`Nouvel email : ${lite.subject?.slice(0, 40)}`)
       })
       .on('postgres_changes', {
@@ -801,12 +804,17 @@ export default function MailPage() {
         filter: `user_id=eq.${userId}`,
       }, (payload) => {
         const raw = payload.new as Email
+        const old = payload.old as Partial<Email>
         const prev = emailsRef.current.find(e => e.id === raw.id)
         const lite: Partial<Email> = {
           subject: raw.subject, from_address: raw.from_address, received_at: raw.received_at,
           is_read: raw.is_read, is_ao: raw.is_ao, ao_score: raw.ao_score,
           tender_id: raw.tender_id, has_attachments: raw.has_attachments,
+          mail_folder: raw.mail_folder,
         }
+        const folder = raw.mail_folder ?? prev?.mail_folder
+        const isInbox = !folder || folder === 'inbox'
+        if (isInbox && old.is_read !== raw.is_read) emitMailUnreadChanged()
         setEmails(prevList => prevList.map(e => e.id === raw.id ? { ...e, ...lite } : e))
         if (selectedIdRef.current === raw.id) {
           setSelected(prev => prev ? { ...prev, ...lite } : prev)
@@ -1237,12 +1245,14 @@ export default function MailPage() {
     if (email.is_read) return
     setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: true } : e))
     setSelected(prev => prev?.id === email.id ? { ...prev, is_read: true } : prev)
+    emitMailUnreadChanged()
     void authFetch('/api/mail/emails', {
       method: 'PATCH',
       body: JSON.stringify({ id: email.id, is_read: true }),
     }).catch(() => {
       setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: false } : e))
       setSelected(prev => prev?.id === email.id ? { ...prev, is_read: false } : prev)
+      emitMailUnreadChanged()
     })
   }
 
@@ -1255,6 +1265,7 @@ export default function MailPage() {
       })
       setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: false } : e))
       setSelected(prev => prev?.id === email.id ? { ...prev, is_read: false } : prev)
+      emitMailUnreadChanged()
       showToast('Marqué non lu')
     } catch {}
   }

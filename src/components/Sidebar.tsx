@@ -6,6 +6,11 @@ import { usePathname, useRouter } from 'next/navigation'
 import { getAccessToken } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
+import { MAIL_UNREAD_CHANGED_EVENT } from '@/lib/mail-unread-events'
+import NotificationPanelContent, {
+  type AppNotification,
+  formatBadgeCount,
+} from '@/components/NotificationPanelContent'
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: (a: boolean) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={a ? 2 : 1.6} width="20" height="20"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> },
@@ -44,26 +49,6 @@ function getAvatarColor(email: string): string {
   return colors[Math.abs(hash)]
 }
 
-const NOTIF_ICONS: Record<string, string> = {
-  deadline_urgent: '🔴',
-  deadline_warning: '🟡',
-  missing_quote: '📋',
-  no_response: '🔔',
-  new_ao: '📄',
-  quote_received: '✅',
-  relaunch_confirm: '📤',
-}
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
-  if (days > 0) return `il y a ${days}j`
-  if (hours > 0) return `il y a ${hours}h`
-  return mins <= 1 ? "à l'instant" : `il y a ${mins}min`
-}
-
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
@@ -75,7 +60,7 @@ export default function Sidebar() {
   const [switching, setSwitching] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const [notifCount, setNotifCount] = useState(0)
-  const [notifList, setNotifList] = useState<any[]>([])
+  const [notifList, setNotifList] = useState<AppNotification[]>([])
   const [showNotifPanel, setShowNotifPanel] = useState(false)
   const notifPanelRef = useRef<HTMLDivElement>(null)
 
@@ -107,42 +92,75 @@ export default function Sidebar() {
     load()
   }, [session])
 
-  // Compter les emails non lus toutes les 60 secondes
+  // Badge mail : comptage exact + temps réel
   useEffect(() => {
     if (!userId) return
+
     const fetchUnread = async () => {
       try {
         const token = await getAccessToken()
         if (!token) return
-        const res = await fetch('/api/mail/emails?unread=true', {
+        const res = await fetch('/api/mail/unread-count', {
           headers: { Authorization: `Bearer ${token}` },
         })
         const data = await res.json()
-        if (data.success) setUnreadCount(data.data.length)
-      } catch {}
+        if (data.success) setUnreadCount(data.data?.count ?? 0)
+      } catch { /* ignore */ }
     }
+
     fetchUnread()
-    const interval = setInterval(fetchUnread, 60000)
-    return () => clearInterval(interval)
+
+    const onUnreadChanged = () => { void fetchUnread() }
+    window.addEventListener(MAIL_UNREAD_CHANGED_EVENT, onUnreadChanged)
+
+    const channel = supabase
+      .channel(`mail-unread-${userId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'emails',
+        filter: `user_id=eq.${userId}`,
+      }, () => { void fetchUnread() })
+      .subscribe()
+
+    return () => {
+      window.removeEventListener(MAIL_UNREAD_CHANGED_EVENT, onUnreadChanged)
+      void supabase.removeChannel(channel)
+    }
   }, [userId])
 
-  // Notifications
+  // Centre de notifications
   useEffect(() => {
     if (!userId) return
     const fetchNotifs = async () => {
       try {
         const token = await getAccessToken()
         if (!token) return
-        const res = await fetch('/api/notifications?unread=true', {
+        const res = await fetch('/api/notifications', {
           headers: { Authorization: `Bearer ${token}` },
         })
         const data = await res.json()
-        if (data.success) { setNotifList(data.data); setNotifCount(data.data.length) }
-      } catch {}
+        if (data.success) {
+          setNotifList(data.data ?? [])
+          setNotifCount(data.unread_count ?? 0)
+        }
+      } catch { /* ignore */ }
     }
     fetchNotifs()
     const iv = setInterval(fetchNotifs, 30000)
-    return () => clearInterval(iv)
+    const channel = supabase
+      .channel(`notifications-${userId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${userId}`,
+      }, () => { void fetchNotifs() })
+      .subscribe()
+    return () => {
+      clearInterval(iv)
+      void supabase.removeChannel(channel)
+    }
   }, [userId])
 
   // Fermer panel notifications si clic extérieur
@@ -196,6 +214,48 @@ export default function Sidebar() {
 
   const initials = currentUser ? getInitials(currentUser.name, currentUser.email) : 'OP'
   const avatarColor = currentUser ? getAvatarColor(currentUser.email) : '#3b7ef6'
+
+  const handleOpenNotification = async (n: AppNotification) => {
+    if (!n.is_read) {
+      const token = await getAccessToken()
+      if (token) {
+        await fetch('/api/notifications', {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: n.id }),
+        })
+      }
+      setNotifList(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x))
+      setNotifCount(c => Math.max(0, c - 1))
+    }
+    setShowNotifPanel(false)
+    if (n.email_id) router.push(`/mail?email=${n.email_id}`)
+    else if (n.tender_id) router.push(`/tenders/${n.tender_id}`)
+  }
+
+  const handleMarkAllNotifsRead = async () => {
+    const token = await getAccessToken()
+    if (!token) return
+    await fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ all: true }),
+    })
+    setNotifList(prev => prev.map(n => ({ ...n, is_read: true })))
+    setNotifCount(0)
+  }
+
+  const handleRelaunchAction = async (id: string, action: 'send' | 'cancel') => {
+    const token = await getAccessToken()
+    if (!token) return
+    await fetch('/api/notifications/relaunch', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, action }),
+    })
+    setNotifList(prev => prev.filter(x => x.id !== id))
+    setNotifCount(c => Math.max(0, c - 1))
+  }
 
   const AccountPanel = ({ mobile = false }: { mobile?: boolean }) => (
     <div
@@ -366,7 +426,7 @@ export default function Sidebar() {
                   {item.icon(active)}
                   {isMail && unreadCount > 0 && (
                     <span style={{ position: 'absolute', top: 6, right: 6, minWidth: 16, height: 16, borderRadius: 8, background: '#ef4444', color: '#fff', fontSize: 9, fontWeight: 700, fontFamily: 'DM Mono, monospace', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '2px solid var(--bg-card)', animation: 'pulse 1.5s ease infinite' }}>
-                      {unreadCount > 99 ? '99+' : unreadCount}
+                      {formatBadgeCount(unreadCount)}
                     </span>
                   )}
                 </Link>
@@ -403,7 +463,7 @@ export default function Sidebar() {
                 fontFamily: 'DM Mono, monospace', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 padding: '0 3px', border: '2px solid var(--bg-card)', animation: 'pulse 1.5s ease infinite',
               }}>
-                {notifCount > 9 ? '9+' : notifCount}
+                {formatBadgeCount(notifCount)}
               </span>
             )}
           </button>
@@ -422,17 +482,7 @@ export default function Sidebar() {
                 {notifCount > 0 && (
                   <button
                     type="button"
-                    onClick={async () => {
-                      const token = await getAccessToken()
-                      if (!token) return
-                      await fetch('/api/notifications', {
-                        method: 'PATCH',
-                        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ all: true }),
-                      })
-                      setNotifList([])
-                      setNotifCount(0)
-                    }}
+                    onClick={() => void handleMarkAllNotifsRead()}
                     style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}
                   >
                     Tout marquer lu
@@ -440,106 +490,11 @@ export default function Sidebar() {
                 )}
               </div>
               <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                {notifList.length === 0 ? (
-                  <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
-                    Aucune notification
-                  </div>
-                ) : notifList.map((n: { id: string; type: string; title: string; message: string; created_at: string; tender_id?: string; supplier_id?: string }) => (
-                  n.type === 'relaunch_confirm' ? (
-                    <div
-                      key={n.id}
-                      style={{
-                        padding: '12px 16px', borderBottom: '1px solid var(--border)',
-                        fontFamily: 'DM Sans, system-ui',
-                      }}
-                    >
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                        <span style={{ fontSize: 14 }}>{NOTIF_ICONS[n.type] ?? '🔔'}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{n.title}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{n.message}</div>
-                          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const token = await getAccessToken()
-                                if (!token) return
-                                await fetch('/api/notifications/relaunch', {
-                                  method: 'POST',
-                                  headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ id: n.id, action: 'send' }),
-                                })
-                                setNotifList(prev => prev.filter(x => x.id !== n.id))
-                                setNotifCount(c => Math.max(0, c - 1))
-                              }}
-                              style={{
-                                fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 6,
-                                border: 'none', background: '#3B7FE8', color: '#fff', cursor: 'pointer',
-                              }}
-                            >
-                              Envoyer
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const token = await getAccessToken()
-                                if (!token) return
-                                await fetch('/api/notifications/relaunch', {
-                                  method: 'POST',
-                                  headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ id: n.id, action: 'cancel' }),
-                                })
-                                setNotifList(prev => prev.filter(x => x.id !== n.id))
-                                setNotifCount(c => Math.max(0, c - 1))
-                              }}
-                              style={{
-                                fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 6,
-                                border: '1px solid var(--border)', background: 'transparent',
-                                color: 'var(--text-secondary)', cursor: 'pointer',
-                              }}
-                            >
-                              Annuler
-                            </button>
-                          </div>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 6 }}>{timeAgo(n.created_at)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      key={n.id}
-                      type="button"
-                      onClick={async () => {
-                        const token = await getAccessToken()
-                        if (token) {
-                          await fetch('/api/notifications', {
-                            method: 'PATCH',
-                            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id: n.id }),
-                          })
-                        }
-                        setNotifList(prev => prev.filter(x => x.id !== n.id))
-                        setNotifCount(c => Math.max(0, c - 1))
-                        setShowNotifPanel(false)
-                        if (n.tender_id) router.push(`/tenders/${n.tender_id}`)
-                      }}
-                      style={{
-                        width: '100%', textAlign: 'left', padding: '12px 16px',
-                        background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)',
-                        cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
-                      }}
-                    >
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                        <span style={{ fontSize: 14 }}>{NOTIF_ICONS[n.type] ?? '🔔'}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{n.title}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{n.message}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 4 }}>{timeAgo(n.created_at)}</div>
-                        </div>
-                      </div>
-                    </button>
-                  )
-                ))}
+                <NotificationPanelContent
+                  notifList={notifList}
+                  onOpen={n => void handleOpenNotification(n)}
+                  onRelaunchAction={handleRelaunchAction}
+                />
               </div>
             </div>
           )}
@@ -571,7 +526,7 @@ export default function Sidebar() {
               <span className="mobile-nav-label">{item.label}</span>
               {isMail && unreadCount > 0 && (
                 <span style={{ position: 'absolute', top: 4, right: 2, minWidth: 14, height: 14, borderRadius: 7, background: '#ef4444', color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}>
-                  {unreadCount > 9 ? '9+' : unreadCount}
+                  {formatBadgeCount(unreadCount)}
                 </span>
               )}
             </Link>
@@ -590,7 +545,7 @@ export default function Sidebar() {
           </svg>
           {notifCount > 0 && (
             <span style={{ position: 'absolute', top: 4, right: 2, minWidth: 14, height: 14, borderRadius: 7, background: '#ef4444', color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}>
-              {notifCount > 9 ? '9+' : notifCount}
+              {formatBadgeCount(notifCount)}
             </span>
           )}
         </button>
@@ -626,17 +581,7 @@ export default function Sidebar() {
                 {notifCount > 0 && (
                   <button
                     type="button"
-                    onClick={async () => {
-                      const token = await getAccessToken()
-                      if (!token) return
-                      await fetch('/api/notifications', {
-                        method: 'PATCH',
-                        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ all: true }),
-                      })
-                      setNotifList([])
-                      setNotifCount(0)
-                    }}
+                    onClick={() => void handleMarkAllNotifsRead()}
                     style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}
                   >
                     Tout marquer lu
@@ -646,60 +591,11 @@ export default function Sidebar() {
               </div>
             </div>
             <div style={{ maxHeight: '60dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              {notifList.length === 0 ? (
-                <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
-                  Aucune notification
-                </div>
-              ) : notifList.map((n: { id: string; type: string; title: string; message: string; created_at: string; tender_id?: string; supplier_id?: string }) => (
-                n.type === 'relaunch_confirm' ? (
-                  <div key={n.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', fontFamily: 'DM Sans, system-ui' }}>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                      <span style={{ fontSize: 14 }}>{NOTIF_ICONS[n.type] ?? '🔔'}</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{n.title}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{n.message}</div>
-                        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                          <button type="button" onClick={async () => {
-                            const token = await getAccessToken()
-                            if (!token) return
-                            await fetch('/api/notifications/relaunch', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: n.id, action: 'send' }) })
-                            setNotifList(prev => prev.filter(x => x.id !== n.id))
-                            setNotifCount(c => Math.max(0, c - 1))
-                          }} style={{ fontSize: 11, fontWeight: 600, padding: '6px 12px', borderRadius: 6, border: 'none', background: '#3B7FE8', color: '#fff', cursor: 'pointer' }}>Envoyer</button>
-                          <button type="button" onClick={async () => {
-                            const token = await getAccessToken()
-                            if (!token) return
-                            await fetch('/api/notifications/relaunch', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: n.id, action: 'cancel' }) })
-                            setNotifList(prev => prev.filter(x => x.id !== n.id))
-                            setNotifCount(c => Math.max(0, c - 1))
-                          }} style={{ fontSize: 11, fontWeight: 600, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}>Annuler</button>
-                        </div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 6 }}>{timeAgo(n.created_at)}</div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <button key={n.id} type="button" onClick={async () => {
-                    const token = await getAccessToken()
-                    if (token) {
-                      await fetch('/api/notifications', { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: n.id }) })
-                    }
-                    setNotifList(prev => prev.filter(x => x.id !== n.id))
-                    setNotifCount(c => Math.max(0, c - 1))
-                    setShowNotifPanel(false)
-                    if (n.tender_id) router.push(`/tenders/${n.tender_id}`)
-                  }} style={{ width: '100%', textAlign: 'left', padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                      <span style={{ fontSize: 14 }}>{NOTIF_ICONS[n.type] ?? '🔔'}</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{n.title}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{n.message}</div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 4 }}>{timeAgo(n.created_at)}</div>
-                      </div>
-                    </div>
-                  </button>
-                )
-              ))}
+              <NotificationPanelContent
+                notifList={notifList}
+                onOpen={n => void handleOpenNotification(n)}
+                onRelaunchAction={handleRelaunchAction}
+              />
             </div>
           </div>
         </>

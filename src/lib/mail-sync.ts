@@ -32,6 +32,11 @@ import {
 import { detectAo } from '@/services/aoDetector.service'
 import { isDuplicateKeyError, normalizeMessageId } from '@/lib/mail-message-id'
 import { isMissingDbColumnError } from '@/lib/mail-api'
+import {
+  notifyAoDetectedAfterEnrich,
+  notifyInboundEmailStored,
+  notifyImportantThreadReply,
+} from '@/lib/user-notifications'
 import { customFolderLabel } from '@/lib/mail-folders'
 import type { AddressObject } from 'mailparser'
 
@@ -505,6 +510,7 @@ async function enrichEmailFromSource(
   result: MailSyncResult,
   aoCtx?: AoSyncContext,
   mailboxPath?: string,
+  mailFolder?: DbMailFolder,
 ) {
   const parsed = await simpleParser(source)
   const subject = parsed.subject ?? envelope.subject
@@ -528,12 +534,29 @@ async function enrichEmailFromSource(
 
   await db.from('emails').update(updates).eq('id', emailId)
 
+  const isInboxMail = mailFolder === 'inbox'
+
   if (aoCtx) {
     const { isAo } = await applyKeywordDetectionToEmail(
       db, userId, emailId, subject, bodyText, aoCtx, messageId,
       { inReplyTo: inReplyTo ?? undefined, references: referencesIds },
     )
-    if (isAo) result.aoDetected++
+    if (isAo) {
+      result.aoDetected++
+      if (isInboxMail) {
+        try {
+          await notifyAoDetectedAfterEnrich(
+            db,
+            userId,
+            emailId,
+            subject,
+            addressObjectText(parsed.from) || envelope.from,
+          )
+        } catch (err) {
+          console.error('[Mail sync] notification AO:', err)
+        }
+      }
+    }
   } else {
     const detection = detectAo(subject, bodyText)
     await db.from('emails').update({
@@ -541,6 +564,21 @@ async function enrichEmailFromSource(
       ao_score: detection.score,
     }).eq('id', emailId)
     if (detection.isAo) result.aoDetected++
+  }
+
+  if (isInboxMail && !envelope.isRead) {
+    try {
+      await notifyImportantThreadReply(
+        db,
+        userId,
+        emailId,
+        envelope,
+        inReplyTo,
+        referencesIds,
+      )
+    } catch (err) {
+      console.error('[Mail sync] notification reply:', err)
+    }
   }
 
   let savedAttachments = attachments
@@ -647,6 +685,13 @@ async function syncOneMailboxFolder(
         result.stored++
         result.quickStored = (result.quickStored ?? 0) + 1
         if (job.folder === 'inbox' && detectAo(envelope.subject, '').isAo) result.aoDetected++
+        if (job.folder === 'inbox') {
+          try {
+            await notifyInboundEmailStored(db, userId, emailId, envelope, job.folder)
+          } catch (err) {
+            console.error('[Mail sync] notification new mail:', err)
+          }
+        }
       } else {
         result.errors++
       }
@@ -727,7 +772,7 @@ async function syncOneMailboxFolder(
         const emailId = newEmailMap.get(uid)
         if (!envelope || !emailId) continue
         try {
-          await enrichEmailFromSource(db, userId, emailId, raw, envelope, account, result, aoCtx, job.mailboxPath)
+          await enrichEmailFromSource(db, userId, emailId, raw, envelope, account, result, aoCtx, job.mailboxPath, job.folder)
         } catch (err) {
           result.errors++
           console.error(`[Mail sync/${job.folder}] enrich:`, err)
@@ -789,7 +834,7 @@ async function syncOneMailboxFolder(
             const item = byUid.get(uid)
             if (!item) continue
             try {
-              await enrichEmailFromSource(db, userId, item.emailId, raw, item.envelope, account, result, aoCtx, item.mailboxPath)
+              await enrichEmailFromSource(db, userId, item.emailId, raw, item.envelope, account, result, aoCtx, item.mailboxPath, job.folder)
               result.updated++
             } catch (err) {
               result.errors++

@@ -57,6 +57,7 @@ export async function checkAlertsForUser(userId: string): Promise<number> {
             await db.from('notifications').insert({
               user_id: userId,
               type: isUrgent ? 'deadline_urgent' : 'deadline_warning',
+              priority: isUrgent ? 'important' : 'normal',
               title: isUrgent
                 ? `⚡ URGENT — Deadline dans ${daysLeft}j`
                 : `⚠️ Deadline dans ${daysLeft} jours`,
@@ -122,6 +123,7 @@ export async function checkAlertsForUser(userId: string): Promise<number> {
           await db.from('notifications').insert({
             user_id: userId,
             type: 'missing_quote',
+            priority: 'important',
             title: `📭 ${nonResponders.length} devis en attente`,
             message: `AO "${tender.title}" — ${nonResponders.length} fournisseur(s) n'ont pas encore répondu`,
             tender_id: tender.id,
