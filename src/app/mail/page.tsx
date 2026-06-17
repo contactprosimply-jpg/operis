@@ -1553,7 +1553,7 @@ export default function MailPage() {
         />
       )}
 
-      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div className="mail-page-body" style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden', alignItems: 'stretch' }}>
       {!isMobile && (
         <MailFolderSidebar
           accounts={mailAccounts}
@@ -1574,7 +1574,9 @@ export default function MailPage() {
           width: isMobile ? '100%' : 320,
           borderRight: isMobile ? 'none' : '1px solid var(--border)',
           display: 'flex', flexDirection: 'column',
-          background: 'var(--bg-secondary)', flexShrink: 0,
+          background: 'var(--bg-card)', flexShrink: 0,
+          minHeight: 0,
+          alignSelf: 'stretch',
         }}>
           <div style={{ padding: isMobile ? '12px 12px 10px' : '8px 14px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
             {folder === 'trash' && emails.length > 0 && (
@@ -2046,7 +2048,7 @@ export default function MailPage() {
 
       {/* Panel détail / compositeur */}
       {showPanel && (
-        <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg-primary)', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', background: 'var(--bg-card)', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column', alignSelf: 'stretch' }}>
           {selected ? (
             <div style={{ padding: isMobile ? '12px 14px' : '20px 24px' }}>
               {isMobile && (
