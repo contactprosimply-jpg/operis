@@ -132,7 +132,7 @@ export default function DashboardPage() {
   if (loading) return (
     <div className="animate-fade-in">
       <div style={{ marginBottom: 24 }}><Skeleton height={28} width={320} style={{ marginBottom: 8 }} /><Skeleton height={14} width={200} /></div>
-      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
+      <div className="kpi-grid" style={{ marginBottom: 24 }}>
         {[0,1,2,3].map(i => <div key={i} className="skeleton" style={{ height: 120, borderRadius: 14 }} />)}
       </div>
       <Card hover={false}><TableSkeleton rows={5} cols={6} /></Card>
@@ -144,7 +144,7 @@ export default function DashboardPage() {
       {ToastComponent}
 
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>
+        <h1 className="page-title">
           {greeting} {firstName}, {actifs.length} AO en cours
         </h1>
         <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
@@ -252,7 +252,8 @@ export default function DashboardPage() {
       </div>
 
       <Card hover={false} data-tour="dashboard-ao-table" style={{ padding: 0, overflow: 'hidden', marginBottom: 24 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <div className="table-scroll">
+        <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
               {['Titre', 'Client', 'Deadline', 'Statut', 'Fournisseurs', 'Reponses'].map(h => (
@@ -300,6 +301,7 @@ export default function DashboardPage() {
             )}
           </tbody>
         </table>
+        </div>
       </Card>
 
       {quoteEmails.length > 0 && (

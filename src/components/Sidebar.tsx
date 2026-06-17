@@ -197,15 +197,19 @@ export default function Sidebar() {
   const initials = currentUser ? getInitials(currentUser.name, currentUser.email) : 'OP'
   const avatarColor = currentUser ? getAvatarColor(currentUser.email) : '#3b7ef6'
 
-  const AccountPanel = () => (
-    <div ref={panelRef} style={{
-      position: 'absolute', bottom: 60, left: 10,
-      width: 280, background: 'var(--bg-card)',
-      border: '1px solid rgba(255,255,255,0.12)',
-      borderRadius: 14, boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-      zIndex: 200, overflow: 'hidden',
-      animation: 'fadeUp 0.15s ease',
-    }}>
+  const AccountPanel = ({ mobile = false }: { mobile?: boolean }) => (
+    <div
+      ref={mobile ? undefined : panelRef}
+      className={mobile ? 'mobile-sheet' : undefined}
+      style={mobile ? undefined : {
+        position: 'absolute', bottom: 60, left: 10,
+        width: 280, background: 'var(--bg-card)',
+        border: '1px solid rgba(255,255,255,0.12)',
+        borderRadius: 14, boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+        zIndex: 200, overflow: 'hidden',
+        animation: 'fadeUp 0.15s ease',
+      }}
+    >
       <style>{`@keyframes fadeUp { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }`}</style>
 
       {/* Header compte actif */}
@@ -279,8 +283,54 @@ export default function Sidebar() {
           font-family: 'DM Sans', system-ui, sans-serif;
         }
         .nav-item:hover .nav-tooltip { opacity: 1; visibility: visible; animation: fadeIn 0.2s ease; }
-        @media (min-width: 768px) { .desktop-sidebar { display: flex !important; } .mobile-bottom-bar { display: none !important; } }
-        @media (max-width: 767px) { .desktop-sidebar { display: none !important; } .mobile-bottom-bar { display: flex !important; } }
+        @media (min-width: 1025px) {
+          .desktop-sidebar { display: flex !important; }
+          .mobile-bottom-bar { display: none !important; }
+        }
+        @media (max-width: 1024px) {
+          .desktop-sidebar { display: none !important; }
+          .mobile-bottom-bar { display: flex !important; }
+        }
+        .mobile-bottom-bar {
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          z-index: 50;
+          align-items: center;
+          justify-content: space-around;
+          gap: 2px;
+          background: var(--bg-card);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border-top: 1px solid var(--border-hi);
+          box-shadow: var(--shadow-sm);
+          padding-top: 6px;
+          padding-left: max(4px, env(safe-area-inset-left, 0px));
+          padding-right: max(4px, env(safe-area-inset-right, 0px));
+          padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
+          min-height: calc(52px + env(safe-area-inset-bottom, 0px));
+        }
+        .mobile-nav-item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 0;
+          text-decoration: none;
+          padding: 6px 4px;
+          border-radius: 10px;
+          min-width: 36px;
+          min-height: 44px;
+          position: relative;
+          flex: 1;
+          max-width: 44px;
+          -webkit-tap-highlight-color: transparent;
+        }
+        .mobile-nav-label { display: none; }
+        @media (min-width: 1025px) {
+          .mobile-only-layer { display: none !important; }
+        }
       `}</style>
 
       {/* DESKTOP */}
@@ -508,29 +558,153 @@ export default function Sidebar() {
       </nav>
 
       {/* MOBILE */}
-      <nav className="mobile-bottom-bar" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 64, background: 'var(--bg-card)', backdropFilter: 'blur(16px)', borderTop: '1px solid var(--border-hi)', display: 'flex', alignItems: 'center', justifyContent: 'space-around', zIndex: 50, boxShadow: 'var(--shadow-sm)' }}>
+      <nav className="mobile-bottom-bar">
         {nav.map(item => {
-          const active = pathname.startsWith(item.href)
+          const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
           const isMail = item.href === '/mail'
           return (
-            <Link key={item.href} href={item.href} data-tour={`nav-${item.href.slice(1)}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, textDecoration: 'none', padding: '6px 10px', borderRadius: 10, color: active ? '#6ba3f9' : 'var(--text-muted)', background: active ? 'var(--accent-soft)' : 'transparent', minWidth: 48, position: 'relative' }}>
-              <div style={{ transform: 'scale(1.1)' }}>{item.icon(active)}</div>
-              {active && <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--gradient-primary)' }} />}
+            <Link key={item.href} href={item.href} data-tour={`nav-${item.href.slice(1)}`} className="mobile-nav-item" style={{
+              color: active ? '#6ba3f9' : 'var(--text-muted)',
+              background: active ? 'var(--accent-soft)' : 'transparent',
+            }}>
+              {item.icon(active)}
+              <span className="mobile-nav-label">{item.label}</span>
               {isMail && unreadCount > 0 && (
-                <span style={{ position: 'absolute', top: 4, right: 4, minWidth: 14, height: 14, borderRadius: 7, background: '#ef4444', color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}>
+                <span style={{ position: 'absolute', top: 4, right: 2, minWidth: 14, height: 14, borderRadius: 7, background: '#ef4444', color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}>
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
-              <span style={{ fontSize: 9, fontFamily: 'DM Mono, monospace', whiteSpace: 'nowrap' }}>{item.label.slice(0, 6)}</span>
             </Link>
           )
         })}
-        {/* Icône compte mobile */}
-        <button onClick={() => setShowAccountPanel(v => !v)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 10px' }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff' }}>{initials}</div>
-          <span style={{ fontSize: 9, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>Compte</span>
+        {/* Notifications mobile */}
+        <button
+          type="button"
+          className="mobile-nav-item"
+          onClick={() => { setShowNotifPanel(v => !v); setShowAccountPanel(false) }}
+          style={{ background: showNotifPanel ? 'var(--accent-soft)' : 'transparent', border: 'none', cursor: 'pointer', color: showNotifPanel ? '#6ba3f9' : 'var(--text-muted)' }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20">
+            <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 01-3.46 0" />
+          </svg>
+          {notifCount > 0 && (
+            <span style={{ position: 'absolute', top: 4, right: 2, minWidth: 14, height: 14, borderRadius: 7, background: '#ef4444', color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}>
+              {notifCount > 9 ? '9+' : notifCount}
+            </span>
+          )}
+        </button>
+        {/* Compte mobile */}
+        <button
+          type="button"
+          className="mobile-nav-item"
+          onClick={() => { setShowAccountPanel(v => !v); setShowNotifPanel(false) }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6 }}
+        >
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff', border: showAccountPanel ? '2px solid var(--accent)' : '2px solid transparent' }}>{initials}</div>
         </button>
       </nav>
+
+      {/* Panneaux mobile (overlay) */}
+      <div className="mobile-only-layer">
+      {showAccountPanel && (
+        <>
+          <div className="mobile-panel-backdrop" onClick={() => setShowAccountPanel(false)} />
+          <AccountPanel mobile />
+        </>
+      )}
+      {showNotifPanel && (
+        <>
+          <div className="mobile-panel-backdrop" onClick={() => setShowNotifPanel(false)} />
+          <div className="mobile-sheet" ref={notifPanelRef}>
+            <div style={{
+              padding: '14px 16px', borderBottom: '1px solid var(--border)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>Notifications</span>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {notifCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const token = await getAccessToken()
+                      if (!token) return
+                      await fetch('/api/notifications', {
+                        method: 'PATCH',
+                        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ all: true }),
+                      })
+                      setNotifList([])
+                      setNotifCount(0)
+                    }}
+                    style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}
+                  >
+                    Tout marquer lu
+                  </button>
+                )}
+                <button type="button" onClick={() => setShowNotifPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 22, lineHeight: 1, cursor: 'pointer', padding: 4 }}>×</button>
+              </div>
+            </div>
+            <div style={{ maxHeight: '60dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              {notifList.length === 0 ? (
+                <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
+                  Aucune notification
+                </div>
+              ) : notifList.map((n: { id: string; type: string; title: string; message: string; created_at: string; tender_id?: string; supplier_id?: string }) => (
+                n.type === 'relaunch_confirm' ? (
+                  <div key={n.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', fontFamily: 'DM Sans, system-ui' }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <span style={{ fontSize: 14 }}>{NOTIF_ICONS[n.type] ?? '🔔'}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{n.title}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{n.message}</div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                          <button type="button" onClick={async () => {
+                            const token = await getAccessToken()
+                            if (!token) return
+                            await fetch('/api/notifications/relaunch', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: n.id, action: 'send' }) })
+                            setNotifList(prev => prev.filter(x => x.id !== n.id))
+                            setNotifCount(c => Math.max(0, c - 1))
+                          }} style={{ fontSize: 11, fontWeight: 600, padding: '6px 12px', borderRadius: 6, border: 'none', background: '#3B7FE8', color: '#fff', cursor: 'pointer' }}>Envoyer</button>
+                          <button type="button" onClick={async () => {
+                            const token = await getAccessToken()
+                            if (!token) return
+                            await fetch('/api/notifications/relaunch', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: n.id, action: 'cancel' }) })
+                            setNotifList(prev => prev.filter(x => x.id !== n.id))
+                            setNotifCount(c => Math.max(0, c - 1))
+                          }} style={{ fontSize: 11, fontWeight: 600, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}>Annuler</button>
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 6 }}>{timeAgo(n.created_at)}</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <button key={n.id} type="button" onClick={async () => {
+                    const token = await getAccessToken()
+                    if (token) {
+                      await fetch('/api/notifications', { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: n.id }) })
+                    }
+                    setNotifList(prev => prev.filter(x => x.id !== n.id))
+                    setNotifCount(c => Math.max(0, c - 1))
+                    setShowNotifPanel(false)
+                    if (n.tender_id) router.push(`/tenders/${n.tender_id}`)
+                  }} style={{ width: '100%', textAlign: 'left', padding: '12px 16px', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <span style={{ fontSize: 14 }}>{NOTIF_ICONS[n.type] ?? '🔔'}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{n.title}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{n.message}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 4 }}>{timeAgo(n.created_at)}</div>
+                      </div>
+                    </div>
+                  </button>
+                )
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+      </div>
     </>
   )
 }

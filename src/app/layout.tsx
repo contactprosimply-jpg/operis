@@ -46,10 +46,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body style={{ fontFamily: "'DM Sans', system-ui, sans-serif", overflow: 'hidden' }}>
         <ThemeBootstrap />
         <AppShell>{children}</AppShell>
-        <style>{`
-          .page-content { padding: 24px 28px 80px; }
-          @media (max-width: 767px) { .page-content { padding: 16px 16px 80px; } }
-        `}</style>
       </body>
     </html>
   )

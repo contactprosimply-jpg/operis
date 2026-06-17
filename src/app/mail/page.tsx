@@ -232,7 +232,7 @@ export default function MailPage() {
   }
 
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768)
+    const check = () => setIsMobile(window.innerWidth < 1025)
     check()
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
@@ -1379,13 +1379,14 @@ export default function MailPage() {
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      height: isMobile ? 'calc(100vh - 56px)' : 'calc(100vh - 0px)',
-      margin: isMobile ? '-16px -12px' : '-24px -28px',
+      height: isMobile ? 'calc(100dvh - 52px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 72px)' : 'calc(100dvh - 48px)',
+      margin: isMobile ? '-12px -12px 0' : '-24px -28px',
       overflow: 'hidden',
+      maxWidth: '100%',
     }}>
       {toast && (
         <div style={{
-          position: 'fixed', bottom: 24, right: 24, left: isMobile ? 12 : 'auto', zIndex: 200,
+          position: 'fixed', bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))', right: 12, left: isMobile ? 12 : 'auto', zIndex: 200,
           background: 'var(--bg-card)', border: '1px solid var(--border-hi)', borderRadius: 10,
           padding: '10px 16px', fontSize: 12, color: 'var(--text-primary)',
           fontFamily: 'DM Mono, monospace', boxShadow: '0 8px 32px rgba(0,0,0,0.3)',

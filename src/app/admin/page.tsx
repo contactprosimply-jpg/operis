@@ -144,7 +144,7 @@ export default function AdminPage() {
       </div>
 
       {/* KPIs globaux */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
+      <div className="kpi-grid" style={{ marginBottom: 28 }}>
         {[
           { label: 'Utilisateurs', value: totalUsers, color: '#60a5fa' },
           { label: 'AO actifs', value: totalAoActifs, color: '#fbbf24' },

@@ -93,7 +93,7 @@ export default function TendersPage() {
 
   if (loading) return (
     <div className="animate-fade-in">
-      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
+      <div className="kpi-grid" style={{ marginBottom: 24 }}>
         {[0,1,2,3].map(i => <div key={i} className="skeleton" style={{ height: 100, borderRadius: 14 }} />)}
       </div>
       <Card hover={false}><TableSkeleton rows={8} cols={9} /></Card>
@@ -113,15 +113,15 @@ export default function TendersPage() {
     <div className="animate-fade">
       {ToastComponent}
 
-      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
+      <div className="kpi-grid" style={{ marginBottom: 24 }}>
         <KpiCard label="Actifs" value={stats.actifs} color="blue" delay={0} />
         <KpiCard label="Gagnes" value={stats.gagnes} color="green" delay={60} />
         <KpiCard label="Perdus" value={stats.perdus} color="amber" delay={120} />
         <KpiCard label="Total" value={stats.total} color="purple" delay={180} />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+      <div className="page-toolbar">
+        <div className="page-toolbar-tabs">
           {filters.map(f => (
             <button key={f.key} onClick={() => setFilter(f.key)} style={{
               padding: '8px 16px', fontSize: 12, cursor: 'pointer', border: 'none', background: 'transparent',

@@ -241,10 +241,133 @@ body.modal-open {
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
 
+/* ── App shell & mobile layout ── */
+.app-shell {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
+  position: relative;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+}
+
+.page-content {
+  flex: 1;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding:
+    max(16px, env(safe-area-inset-top, 0px))
+    max(16px, env(safe-area-inset-right, 0px))
+    calc(72px + env(safe-area-inset-bottom, 0px))
+    max(16px, env(safe-area-inset-left, 0px));
+}
+
+@media (min-width: 768px) {
+  .page-content {
+    padding:
+      24px
+      28px
+      32px
+      28px;
+  }
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+@media (max-width: 1024px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
+@media (max-width: 420px) {
+  .kpi-grid { grid-template-columns: 1fr !important; }
+}
+
+.page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.page-toolbar-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.page-toolbar-tabs::-webkit-scrollbar { display: none; }
+
+.page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+@media (max-width: 767px) {
+  .page-title { font-size: 18px; }
+}
+
+.mobile-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 190;
+  background: rgba(8, 13, 24, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.mobile-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  background: var(--bg-card);
+  border: 1px solid var(--border-hi);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+  max-height: min(85dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 16px));
+  overflow: hidden;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: slideUp 0.22s ease forwards;
+}
+
 /* Mode application installée (PWA standalone) */
 @media (display-mode: standalone) {
   body {
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  .page-content {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   }
 }

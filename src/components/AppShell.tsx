@@ -20,10 +20,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {minimalShell ? (
         children
       ) : (
-        <div style={{ display: 'flex', height: '100vh', width: '100vw' }}>
+        <div className="app-shell">
           <Sidebar />
-          <main style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-secondary)', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            <div className="page-content" style={{ flex: 1 }}>
+          <main className="app-main">
+            <div className="page-content">
               {children}
             </div>
           </main>
