@@ -19,6 +19,7 @@ import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
 import { AO_CATEGORY_BADGE, type AoKeywordCategory } from '@/lib/ao-email-analysis'
 import MailFolderSidebar from '@/components/mail/MailFolderSidebar'
+import MailAddressLines from '@/components/mail/MailAddressLines'
 import MailComposePopup from '@/components/mail/MailComposePopup'
 import MailToolbar from '@/components/mail/MailToolbar'
 import { MailListSkeleton, MailBodySkeleton } from '@/components/mail/MailSkeletons'
@@ -197,6 +198,8 @@ export default function MailPage() {
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [mobileShowDetail, setMobileShowDetail] = useState(false)
+  const [mobileFolderSidebarOpen, setMobileFolderSidebarOpen] = useState(false)
+  const [listSortOrder, setListSortOrder] = useState<'desc' | 'asc'>('desc')
   const emailCountRef = useRef(0)
   const selectedIdRef = useRef<string | null>(null)
   const syncInProgressRef = useRef(false)
@@ -316,7 +319,10 @@ export default function MailPage() {
     setEmails([])
     setSelected(null)
     setComposing(false)
-    if (isMobile) setMobileShowDetail(false)
+    if (isMobile) {
+      setMobileShowDetail(false)
+      setMobileFolderSidebarOpen(false)
+    }
     if (sel.kind === 'drafts' && userId) {
       setDrafts(loadDrafts(userId))
       authFetch('/api/mail/drafts').then(r => r.json()).then(d => {
@@ -452,6 +458,7 @@ export default function MailPage() {
         limit: String(MAIL_LIST_PAGE_SIZE),
         offset: String(offset),
         folder: activeFolder,
+        order: listSortOrder,
       })
       if (activeSelection.kind === 'custom' && activeSelection.customPath) {
         params.set('imap_path', activeSelection.customPath)
@@ -513,7 +520,7 @@ export default function MailPage() {
         loadingMoreRef.current = false
       }
     }
-  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, folder, folderSelection, searchQuery, listListFilter])
+  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, folder, folderSelection, searchQuery, listListFilter, listSortOrder])
 
   const handleDeleteFolder = useCallback(async (path: string) => {
     setFolderActionLoading(true)
@@ -1579,6 +1586,80 @@ export default function MailPage() {
         />
       )}
 
+      {isMobile && mobileFolderSidebarOpen && (
+        <>
+          <button
+            type="button"
+            aria-label="Fermer le menu dossiers"
+            onClick={() => setMobileFolderSidebarOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 120,
+              background: 'rgba(0,0,0,0.45)',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          />
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            bottom: 0,
+            width: 'min(86vw, 280px)',
+            zIndex: 121,
+            display: 'flex',
+            flexDirection: 'column',
+            background: 'var(--mail-sidebar-bg, #12151c)',
+            boxShadow: '4px 0 24px rgba(0,0,0,0.35)',
+            paddingTop: 'env(safe-area-inset-top, 0px)',
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 12px 8px',
+              borderBottom: '1px solid rgba(255,255,255,0.08)',
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#e8eaef', fontFamily: 'DM Sans, system-ui' }}>
+                Dossiers
+              </span>
+              <button
+                type="button"
+                onClick={() => setMobileFolderSidebarOpen(false)}
+                aria-label="Fermer"
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'transparent',
+                  color: '#e8eaef',
+                  fontSize: 18,
+                  cursor: 'pointer',
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              <MailFolderSidebar
+                accounts={mailAccounts}
+                accountEmail={mailAccountEmail}
+                selection={folderSelection}
+                onSelectionChange={handleSelectionChange}
+                badges={folderBadges}
+                customFolders={customFolders}
+                onCreateFolder={handleCreateFolder}
+                onDeleteFolder={handleDeleteFolder}
+                folderActionLoading={folderActionLoading}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Liste emails */}
       {showList && (
         <div style={{
@@ -1596,24 +1677,34 @@ export default function MailPage() {
               </button>
             )}
             {isMobile && (
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>
-                {(['inbox', 'drafts', 'sent', 'spam', 'trash'] as const).map(f => (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => handleSelectionChange({ kind: f })}
-                    style={{
-                      padding: '5px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
-                      border: 'none',
-                      background: folder === f ? 'var(--accent-soft)' : 'var(--bg-hover)',
-                      color: folder === f ? 'var(--accent)' : 'var(--text-muted)',
-                      fontFamily: 'DM Sans, system-ui',
-                    }}
-                  >
-                    {f === 'inbox' ? 'Entrant' : f === 'drafts' ? 'Brouillons' : f === 'sent' ? 'Envoyés' : f === 'spam' ? 'Spam' : 'Corbeille'}
-                  </button>
-                ))}
-              </div>
+              <button
+                type="button"
+                onClick={() => setMobileFolderSidebarOpen(true)}
+                aria-label="Ouvrir les dossiers"
+                style={{
+                  marginBottom: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-hi)',
+                  background: 'var(--bg-hover)',
+                  color: 'var(--text-secondary)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'DM Sans, system-ui',
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" aria-hidden>
+                  <line x1="4" y1="6" x2="20" y2="6" />
+                  <line x1="4" y1="12" x2="20" y2="12" />
+                  <line x1="4" y1="18" x2="20" y2="18" />
+                </svg>
+                Dossiers
+              </button>
             )}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 10 }}>
               <div style={{ minWidth: 0, flex: '1 1 auto' }}>
@@ -1637,42 +1728,67 @@ export default function MailPage() {
                   </div>
                 )}
               </div>
-              {isMobile && (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    data-tour="mail-sync"
-                    onClick={handleSync}
-                    disabled={syncing}
-                    title="Synchroniser la boîte mail"
-                    style={{
-                      background: syncing ? 'var(--bg-hover)' : 'transparent',
-                      border: '1px solid var(--border-hi)',
-                      color: syncing ? 'var(--text-muted)' : 'var(--text-secondary)',
-                      borderRadius: 8,
-                      padding: '8px 12px',
-                      minHeight: 36,
-                      minWidth: 44,
-                      fontSize: 11,
-                      cursor: syncing ? 'wait' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      fontFamily: 'DM Sans, system-ui',
-                      fontWeight: 600,
-                      flexShrink: 0,
-                      WebkitTapHighlightColor: 'transparent',
-                    }}
-                  >
-                    {syncing ? <Spinner size={12} /> : <span style={{ fontSize: 13, lineHeight: 1 }}>↻</span>}
-                    <span>Synchroniser</span>
-                  </button>
-                  <button onClick={() => openCompose()} style={{
-                    background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
-                    padding: '5px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
-                  }}>+ Nouveau mail</button>
-                </div>
-              )}
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setListSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')
+                    void loadEmails(false)
+                  }}
+                  title={listSortOrder === 'desc' ? 'Tri : plus récent en premier' : 'Tri : plus ancien en premier'}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--border-hi)',
+                    color: 'var(--text-secondary)',
+                    borderRadius: 8,
+                    padding: isMobile ? '8px 10px' : '5px 10px',
+                    minHeight: isMobile ? 36 : undefined,
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    fontFamily: 'DM Mono, monospace',
+                    fontWeight: 600,
+                    flexShrink: 0,
+                  }}
+                >
+                  {listSortOrder === 'desc' ? '↓ Récent' : '↑ Ancien'}
+                </button>
+                {isMobile && (
+                  <>
+                    <button
+                      type="button"
+                      data-tour="mail-sync"
+                      onClick={handleSync}
+                      disabled={syncing}
+                      title="Synchroniser la boîte mail"
+                      style={{
+                        background: syncing ? 'var(--bg-hover)' : 'transparent',
+                        border: '1px solid var(--border-hi)',
+                        color: syncing ? 'var(--text-muted)' : 'var(--text-secondary)',
+                        borderRadius: 8,
+                        padding: '8px 12px',
+                        minHeight: 36,
+                        minWidth: 44,
+                        fontSize: 11,
+                        cursor: syncing ? 'wait' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        fontFamily: 'DM Sans, system-ui',
+                        fontWeight: 600,
+                        flexShrink: 0,
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                    >
+                      {syncing ? <Spinner size={12} /> : <span style={{ fontSize: 13, lineHeight: 1 }}>↻</span>}
+                      <span>Synchroniser</span>
+                    </button>
+                    <button onClick={() => openCompose()} style={{
+                      background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
+                      padding: '5px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
+                    }}>+ Nouveau mail</button>
+                  </>
+                )}
+              </div>
             </div>
 
             {folder === 'inbox' && (
@@ -2129,9 +2245,6 @@ export default function MailPage() {
 
               {(() => {
                 const isSentView = folder === 'sent' || selected.mail_folder === 'sent'
-                const party = isSentView
-                  ? (selected.to_address || '—')
-                  : (selected.from_address || '—')
                 const detailIconBtn: React.CSSProperties = {
                   width: 32,
                   height: 32,
@@ -2149,8 +2262,22 @@ export default function MailPage() {
                 }
                 return (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
-                      <div style={{ fontSize: isMobile ? 14 : 15, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.35, minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+                      <div style={{ fontSize: isMobile ? 15 : 16, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.35, minWidth: 0, flex: 1 }}>
+                        {selected.subject || '(sans objet)'}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        <button type="button" title="Répondre" onClick={() => openReply(selected)} style={detailIconBtn}>↩</button>
+                        <button type="button" title="Transférer" onClick={() => openForward(selected)} style={detailIconBtn}>→</button>
+                        {folder === 'spam' ? (
+                          <button type="button" title="Pas un indésirable" onClick={() => handleNotSpam(selected)} style={{ ...detailIconBtn, color: 'var(--accent)', borderColor: 'rgba(59,126,246,0.35)' }}>✓</button>
+                        ) : folder !== 'trash' && (
+                          <button type="button" title="Indésirable" onClick={() => handleMoveToFolder(selected, 'spam')} style={{ ...detailIconBtn, color: '#f87171', borderColor: 'rgba(239,68,68,0.35)' }}>🚫</button>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
                         {!isSentView && (
                           <button
                             type="button"
@@ -2165,20 +2292,14 @@ export default function MailPage() {
                             {senderFavorite ? '★' : '☆'}
                           </button>
                         )}
-                        <span style={{ minWidth: 0 }}>
-                          <span style={{ color: '#021246', fontWeight: 700 }}>{party}</span>
-                          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> — </span>
-                          <span>{selected.subject || '(sans objet)'}</span>
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                        <button type="button" title="Répondre" onClick={() => openReply(selected)} style={detailIconBtn}>↩</button>
-                        <button type="button" title="Transférer" onClick={() => openForward(selected)} style={detailIconBtn}>→</button>
-                        {folder === 'spam' ? (
-                          <button type="button" title="Pas un indésirable" onClick={() => handleNotSpam(selected)} style={{ ...detailIconBtn, color: 'var(--accent)', borderColor: 'rgba(59,126,246,0.35)' }}>✓</button>
-                        ) : folder !== 'trash' && (
-                          <button type="button" title="Indésirable" onClick={() => handleMoveToFolder(selected, 'spam')} style={{ ...detailIconBtn, color: '#f87171', borderColor: 'rgba(239,68,68,0.35)' }}>🚫</button>
-                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <MailAddressLines label="De" value={selected.from_address} />
+                          <MailAddressLines label="À" value={selected.to_address} />
+                          <MailAddressLines label="Cc" value={selected.cc_address} />
+                          {isSentView && (
+                            <MailAddressLines label="Cci" value={selected.bcc_address} />
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>

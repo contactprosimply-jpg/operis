@@ -317,6 +317,15 @@ async function loadExistingMessageIds(
   return found
 }
 
+function envelopeAddressPatch(envelope: ImapEnvelopeMeta): Record<string, string | null> {
+  const patch: Record<string, string | null> = {}
+  if (envelope.from) patch.from_address = envelope.from
+  if (envelope.to) patch.to_address = envelope.to
+  if (envelope.cc) patch.cc_address = envelope.cc
+  if (envelope.bcc) patch.bcc_address = envelope.bcc
+  return patch
+}
+
 async function quickInsertFromEnvelope(
   db: SupabaseClient,
   userId: string,
@@ -333,6 +342,8 @@ async function quickInsertFromEnvelope(
     subject: envelope.subject,
     from_address: envelope.from,
     to_address: envelope.to,
+    cc_address: envelope.cc || null,
+    bcc_address: envelope.bcc || null,
     body_text: '',
     body_html: '',
     received_at: envelope.date.toISOString(),
@@ -364,6 +375,8 @@ async function quickInsertFromEnvelope(
     delete fallback.mail_folder
     delete fallback.imap_uid
     delete fallback.imap_mailbox
+    delete fallback.cc_address
+    delete fallback.bcc_address
     const retry = await db.from('emails').insert(fallback).select('id, mail_folder').single()
     inserted = retry.data
     error = retry.error
@@ -402,6 +415,7 @@ async function mergeDuplicateEnvelopeRow(
     is_read: envelope.isRead,
     imap_uid: envelope.uid,
     imap_mailbox: mailboxPath,
+    ...envelopeAddressPatch(envelope),
   }
   if (mailFolder === 'sent' || existing.mail_folder !== 'sent') {
     patch.mail_folder = mailFolder
@@ -504,6 +518,8 @@ async function enrichEmailFromSource(
     subject,
     from_address: addressObjectText(parsed.from) || envelope.from,
     to_address: addressObjectText(parsed.to) || envelope.to,
+    cc_address: addressObjectText(parsed.cc) || envelope.cc || null,
+    bcc_address: addressObjectText(parsed.bcc) || envelope.bcc || null,
     body_text: bodyText,
     body_html: parsed.html || '',
     received_at: (parsed.date ?? envelope.date).toISOString(),
@@ -649,6 +665,7 @@ async function syncOneMailboxFolder(
       mail_folder: job.folder,
       imap_uid: envelope.uid,
       imap_mailbox: job.mailboxPath,
+      ...envelopeAddressPatch(envelope),
     }
     if (job.folder === 'inbox') {
       const d = detectAo(envelope.subject, '')

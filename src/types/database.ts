@@ -135,6 +135,8 @@ export interface Email {
   subject: string | null
   from_address: string | null
   to_address: string | null
+  cc_address?: string | null
+  bcc_address?: string | null
   body_text: string | null
   body_html: string | null
   received_at: string | null

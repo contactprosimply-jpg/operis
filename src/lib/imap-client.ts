@@ -14,6 +14,8 @@ export interface ImapEnvelopeMeta {
   subject: string
   from: string
   to: string
+  cc: string
+  bcc: string
   date: Date
   isRead: boolean
 }
@@ -117,6 +119,8 @@ function envelopeToMeta(
     subject?: string
     from?: { address?: string; name?: string }[]
     to?: { address?: string; name?: string }[]
+    cc?: { address?: string; name?: string }[]
+    bcc?: { address?: string; name?: string }[]
     date?: Date
   } | undefined,
   internalDate?: Date | string,
@@ -135,6 +139,8 @@ function envelopeToMeta(
     subject: envelope?.subject?.trim() || '(sans objet)',
     from: formatAddressList(envelope?.from),
     to: formatAddressList(envelope?.to),
+    cc: formatAddressList(envelope?.cc),
+    bcc: formatAddressList(envelope?.bcc),
     date: envelope?.date ?? internal ?? new Date(),
     isRead: flags?.has('\\Seen') ?? false,
   }

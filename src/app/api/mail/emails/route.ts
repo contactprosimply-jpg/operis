@@ -108,10 +108,12 @@ export async function GET(req: NextRequest) {
   const sentFolder = folder === 'sent'
   const mailAccount = sentFolder ? await resolveMailAccount(userId) : null
 
+  const orderAsc = searchParams.get('order') === 'asc'
+
   const buildQuery = (fields: string, opts: FolderQueryOpts, useV8Filters: boolean) => {
     let q = db.from('emails')
       .select(fields)
-      .order('received_at', { ascending: false })
+      .order('received_at', { ascending: orderAsc })
       .range(offset, offset + limit - 1)
       .eq('user_id', userId)
 
@@ -195,7 +197,7 @@ export async function GET(req: NextRequest) {
     rows.sort((a, b) => {
       const ta = a.received_at ? new Date(a.received_at).getTime() : 0
       const tb = b.received_at ? new Date(b.received_at).getTime() : 0
-      return tb - ta
+      return orderAsc ? ta - tb : tb - ta
     })
     rows = rows.slice(0, limit)
   }

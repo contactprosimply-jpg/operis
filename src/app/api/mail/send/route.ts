@@ -246,6 +246,8 @@ export async function POST(req: NextRequest) {
       attachments: [],
       has_attachments: mailAttachments.length > 0,
       mail_folder: 'sent',
+      cc_address: typeof cc === 'string' ? cc.slice(0, 2000) : null,
+      bcc_address: typeof bcc === 'string' ? bcc.slice(0, 2000) : null,
     }
 
     let { error: sentEmailError } = await db.from('emails').insert(sentInsert)
