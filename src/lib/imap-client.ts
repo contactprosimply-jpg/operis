@@ -99,6 +99,17 @@ function mailboxExists(client: ImapFlow): number {
   return mb.exists ?? 0
 }
 
+function mailboxUidValidity(client: ImapFlow): number {
+  const mb = client.mailbox
+  if (!mb || typeof mb === 'boolean') return 0
+  return Number(mb.uidValidity ?? 0)
+}
+
+/** UIDVALIDITY a changé → les UID ne sont plus comparables, resync du dossier. */
+export function imapUidValidityChanged(stored: number, current: number): boolean {
+  return stored > 0 && current > 0 && stored !== current
+}
+
 function envelopeToMeta(
   uid: number,
   envelope: {
@@ -477,8 +488,29 @@ async function fetchEnvelopesInOpenMailbox(
   const uidFetchLimit = fullScan ? 0 : mergeCap
 
   if (!isInbox) {
+    if (minUid > 0) {
+      try {
+        const newUids = await client.search({ uid: incrementalUidSearchRange(minUid) }, { uid: true })
+        if (Array.isArray(newUids) && newUids.length) {
+          batches.push(await fetchEnvelopeByUidRange(client, newUids, uidFetchLimit, accountUser))
+        }
+      } catch {
+        /* search UID range non supporté */
+      }
+    }
+
     batches.push(await fetchEnvelopeBySequence(client, limit, accountUser, since))
     batches.push(await fetchEnvelopeBySinceStream(client, since, limit, accountUser))
+
+    try {
+      const uids = await client.search({ since }, { uid: true })
+      if (Array.isArray(uids) && uids.length) {
+        batches.push(await fetchEnvelopeByUidRange(client, uids, uidFetchLimit, accountUser))
+      }
+    } catch {
+      /* fallback */
+    }
+
     const merged = mergeEnvelopesByUid(batches)
     return merged.sort((a, b) => b.uid - a.uid).slice(0, limit)
   }
@@ -508,10 +540,14 @@ async function fetchEnvelopesInOpenMailbox(
       }
     }
 
-    if (minUid > 0 && fullScan) {
-      const newUids = await client.search({ uid: incrementalUidSearchRange(minUid) }, { uid: true })
-      if (Array.isArray(newUids) && newUids.length) {
-        batches.push(await fetchEnvelopeByUidRange(client, newUids, uidFetchLimit, accountUser))
+    if (minUid > 0) {
+      try {
+        const newUids = await client.search({ uid: incrementalUidSearchRange(minUid) }, { uid: true })
+        if (Array.isArray(newUids) && newUids.length) {
+          batches.push(await fetchEnvelopeByUidRange(client, newUids, uidFetchLimit, accountUser))
+        }
+      } catch {
+        /* search UID range non supporté */
       }
     }
 
@@ -534,20 +570,24 @@ async function fetchEnvelopesInOpenMailbox(
   return sorted.slice(0, resultCap)
 }
 
-export type InboxBackfillBatch = {
+export type MailboxBackfillBatch = {
   envelopes: ImapEnvelopeMeta[]
   mailboxTotal: number
   maxUid: number
   batchMinUid: number
   hasMore: boolean
+  uidValidity: number
 }
 
-/** Lot de sync initiale INBOX : UID les plus récents en premier, puis descente. */
-export async function fetchInboxBackfillBatch(
+/** @deprecated Alias — utiliser MailboxBackfillBatch */
+export type InboxBackfillBatch = MailboxBackfillBatch
+
+/** Lot de sync initiale (INBOX ou Envoyés) : UID les plus récents en premier, puis descente. */
+export async function fetchMailboxBackfillBatch(
   config: MailAccountConfig,
   mailboxPath: string,
   options: { belowUid: number; limit: number },
-): Promise<InboxBackfillBatch> {
+): Promise<MailboxBackfillBatch> {
   const accountUser = config.imap_user.trim()
   const client = createImapClient(config)
   await client.connect()
@@ -573,6 +613,7 @@ export async function fetchInboxBackfillBatch(
     const batchMinUid = batchUids.length ? Math.min(...batchUids) : 0
     const minUidInMailbox = allUids.length ? Math.min(...allUids) : 0
     const hasMore = batchUids.length > 0 && batchMinUid > minUidInMailbox
+    const uidValidity = mailboxUidValidity(client)
 
     return {
       envelopes: envelopes.sort((a, b) => b.uid - a.uid),
@@ -580,6 +621,7 @@ export async function fetchInboxBackfillBatch(
       maxUid,
       batchMinUid,
       hasMore,
+      uidValidity,
     }
   } finally {
     lock.release()
@@ -587,6 +629,15 @@ export async function fetchInboxBackfillBatch(
       await client.logout()
     } catch { /* ignore */ }
   }
+}
+
+/** Lot de sync initiale INBOX — alias de fetchMailboxBackfillBatch. */
+export async function fetchInboxBackfillBatch(
+  config: MailAccountConfig,
+  mailboxPath: string,
+  options: { belowUid: number; limit: number },
+): Promise<MailboxBackfillBatch> {
+  return fetchMailboxBackfillBatch(config, mailboxPath, options)
 }
 
 /** Liste rapide des enveloppes (sans télécharger le corps — ~10x plus rapide). */

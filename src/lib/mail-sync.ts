@@ -3,8 +3,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   fetchRecentEnvelopes,
   fetchMessageSources,
-  fetchInboxBackfillBatch,
+  fetchMailboxBackfillBatch,
   formatImapError,
+  imapUidValidityChanged,
   resolveSpecialMailboxes,
   type MailAccountConfig,
   type ImapEnvelopeMeta,
@@ -60,6 +61,7 @@ export interface MailSyncResult {
   duplicates: number
   errors: number
   maxUid: number
+  sentMaxUid?: number
   quickStored?: number
   skippedOutbound?: number
   mailboxes?: ResolvedMailboxes
@@ -70,21 +72,32 @@ export type MailAccountWithId = MailAccountConfig & {
   id?: string
   smtp_user?: string | null
   last_sync_uid?: number | null
+  inbox_uidvalidity?: number | null
   initial_sync_complete?: boolean
   backfill_cursor_uid?: number
   mailbox_total?: number
+  sent_last_sync_uid?: number | null
+  sent_uidvalidity?: number | null
+  sent_initial_sync_complete?: boolean
+  sent_backfill_cursor_uid?: number
+  sent_mailbox_total?: number
 }
 
 /** Plafond nouveaux messages par compte pour un run cron cloud (backlog rattrapé au run suivant). */
 export const CLOUD_CRON_MAX_NEW_MESSAGES_PER_ACCOUNT = 100
 
-/** Taille des lots pour la sync initiale INBOX (récent → ancien). */
+/** Taille des lots pour la sync initiale INBOX / Envoyés (récent → ancien). */
 export const INITIAL_BACKFILL_BATCH_SIZE = 300
+
+export type MailSyncPhase = 'inbox' | 'sent' | 'incremental'
 
 export type MailSyncProgress = {
   synced_count: number
   mailbox_total: number
   initial_sync_complete: boolean
+  phase?: MailSyncPhase
+  sent_synced_count?: number
+  sent_mailbox_total?: number
 }
 
 export type MailSyncStepResult = {
@@ -107,8 +120,15 @@ function mergeSyncResults(target: MailSyncResult, part: MailSyncResult) {
   target.duplicates += part.duplicates
   target.errors += part.errors
   target.maxUid = Math.max(target.maxUid, part.maxUid)
+  target.sentMaxUid = Math.max(target.sentMaxUid ?? 0, part.sentMaxUid ?? 0)
   target.quickStored = (target.quickStored ?? 0) + (part.quickStored ?? 0)
   if (part.mailboxes) target.mailboxes = part.mailboxes
+}
+
+function isAccountInitialSyncComplete(acc: MailAccountWithId, sentMailboxPath?: string | null): boolean {
+  const inboxDone = acc.initial_sync_complete === true
+  const sentDone = acc.sent_initial_sync_complete === true || !sentMailboxPath
+  return inboxDone && sentDone
 }
 
 export function mapMailAccountRow(account: {
@@ -119,9 +139,15 @@ export function mapMailAccountRow(account: {
   imap_pass?: string | null
   smtp_user?: string | null
   last_sync_uid?: number | null
+  inbox_uidvalidity?: number | null
   initial_sync_complete?: boolean | null
   backfill_cursor_uid?: number | null
   mailbox_total?: number | null
+  sent_last_sync_uid?: number | null
+  sent_uidvalidity?: number | null
+  sent_initial_sync_complete?: boolean | null
+  sent_backfill_cursor_uid?: number | null
+  sent_mailbox_total?: number | null
 }): MailAccountWithId | null {
   if (!account.imap_user || !account.imap_pass) return null
   return {
@@ -132,9 +158,15 @@ export function mapMailAccountRow(account: {
     imap_pass: account.imap_pass,
     smtp_user: account.smtp_user ?? null,
     last_sync_uid: account.last_sync_uid ?? 0,
+    inbox_uidvalidity: account.inbox_uidvalidity ?? 0,
     initial_sync_complete: account.initial_sync_complete === true,
     backfill_cursor_uid: account.backfill_cursor_uid ?? 0,
     mailbox_total: account.mailbox_total ?? 0,
+    sent_last_sync_uid: account.sent_last_sync_uid ?? 0,
+    sent_uidvalidity: account.sent_uidvalidity ?? 0,
+    sent_initial_sync_complete: account.sent_initial_sync_complete === true,
+    sent_backfill_cursor_uid: account.sent_backfill_cursor_uid ?? 0,
+    sent_mailbox_total: account.sent_mailbox_total ?? 0,
   }
 }
 
@@ -531,6 +563,7 @@ async function syncOneMailboxFolder(
     limit: number
     skipOutbound: boolean
     fullScan: boolean
+    minUid?: number
   },
   quick: boolean,
   source?: MailSourceMeta,
@@ -543,12 +576,15 @@ async function syncOneMailboxFolder(
   const envelopes = prefetchedEnvelopes ?? await fetchEnvelopesWithFallback(account, job.mailboxPath, {
     sinceDays: job.sinceDays,
     limit: job.limit,
-    minUid: 0,
+    minUid: job.minUid ?? 0,
     fullScan: job.fullScan,
   })
   result.fetched += envelopes.length
   if (envelopes.length && job.folder === 'inbox') {
     result.maxUid = Math.max(result.maxUid, ...envelopes.map(m => m.uid))
+  }
+  if (envelopes.length && job.folder === 'sent') {
+    result.sentMaxUid = Math.max(result.sentMaxUid ?? 0, ...envelopes.map(m => m.uid))
   }
 
   const addrAliases = aliases ?? accountAliases(account)
@@ -758,6 +794,7 @@ export async function syncMailAccount(
     quick?: boolean
     loginEmail?: string | null
     maxNewMessages?: number
+    excludeMailFolders?: DbMailFolder[]
   } = {},
   source?: MailSourceMeta,
 ): Promise<MailSyncResult> {
@@ -805,6 +842,9 @@ export async function syncMailAccount(
   }
   const inboxSince = fullScan ? 180 : quick ? 35 : 45
   const inboxLimit = fullScan ? 300 : quick ? 200 : 150
+  const inboxMinUid = fullScan ? 0 : (account.last_sync_uid ?? 0)
+  const sentMinUid = fullScan ? 0 : (account.sent_last_sync_uid ?? 0)
+  const exclude = new Set(options.excludeMailFolders ?? [])
 
   const jobs: Array<{
     folder: DbMailFolder
@@ -812,17 +852,33 @@ export async function syncMailAccount(
     sinceDays: number
     limit: number
     skipOutbound: boolean
+    minUid?: number
   }> = [
-    { folder: 'inbox', mailboxPath: mailboxes.inbox, sinceDays: inboxSince, limit: inboxLimit, skipOutbound: true },
-    { folder: 'sent', mailboxPath: mailboxes.sent, sinceDays: fullScan ? 365 : 180, limit: fullScan ? 250 : 150, skipOutbound: false },
+    { folder: 'inbox', mailboxPath: mailboxes.inbox, sinceDays: inboxSince, limit: inboxLimit, skipOutbound: true, minUid: inboxMinUid },
+  ]
+
+  if (mailboxes.sent && account.sent_initial_sync_complete && !exclude.has('sent')) {
+    jobs.push({
+      folder: 'sent',
+      mailboxPath: mailboxes.sent,
+      sinceDays: fullScan ? 365 : 180,
+      limit: fullScan ? 250 : 150,
+      skipOutbound: false,
+      minUid: sentMinUid,
+    })
+  }
+
+  jobs.push(
     { folder: 'drafts', mailboxPath: mailboxes.drafts, sinceDays: 90, limit: 40, skipOutbound: false },
     { folder: 'trash', mailboxPath: mailboxes.trash, sinceDays: 60, limit: 60, skipOutbound: false },
     { folder: 'spam', mailboxPath: mailboxes.spam, sinceDays: 60, limit: 60, skipOutbound: false },
-  ]
+  )
+
+  const filteredJobs = jobs.filter(j => !exclude.has(j.folder))
 
   const maxNewMessages = options.maxNewMessages
 
-  for (const job of jobs) {
+  for (const job of filteredJobs) {
     if (!job.mailboxPath) continue
     if (maxNewMessages != null && result.stored >= maxNewMessages) break
     try {
@@ -904,13 +960,14 @@ export async function syncMailAccount(
   }
 
   if (account.id) {
-    await db
-      .from('mail_accounts')
-      .update({
-        last_sync: new Date().toISOString(),
-        last_sync_uid: result.maxUid,
-      })
-      .eq('id', account.id)
+    const updates: Record<string, unknown> = {
+      last_sync: new Date().toISOString(),
+      last_sync_uid: result.maxUid,
+    }
+    if ((result.sentMaxUid ?? 0) > 0) {
+      updates.sent_last_sync_uid = Math.max(result.sentMaxUid ?? 0, account.sent_last_sync_uid ?? 0)
+    }
+    await db.from('mail_accounts').update(updates).eq('id', account.id)
   }
 
   try {
@@ -987,58 +1044,16 @@ async function reloadMailAccount(db: SupabaseClient, accountId: string): Promise
   return mapMailAccountRow(data)
 }
 
-/** Un lot de sync initiale INBOX (récent → ancien) ou sync incrémentale si déjà terminée. */
-export async function syncMailAccountStep(
-  userId: string,
-  account: MailAccountWithId,
-  options: { loginEmail?: string | null } = {},
-): Promise<MailSyncStepResult> {
-  const db = createAdminClient()
-  const fresh = account.id ? await reloadMailAccount(db, account.id) : account
-  const acc = fresh ?? account
+async function countSyncedSentEmails(db: SupabaseClient, userId: string): Promise<number> {
+  const { count } = await db
+    .from('emails')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('mail_folder', 'sent')
+  return count ?? 0
+}
 
-  if (acc.initial_sync_complete) {
-    const result = await syncMailAccount(userId, acc, {
-      backfill: false,
-      quick: false,
-      loginEmail: options.loginEmail,
-    })
-    const synced_count = await countSyncedInboxEmails(db, userId)
-    return {
-      result,
-      needs_more: false,
-      initial_sync_complete: true,
-      progress: {
-        synced_count,
-        mailbox_total: acc.mailbox_total ?? synced_count,
-        initial_sync_complete: true,
-      },
-    }
-  }
-
-  const mailboxes = await resolveSpecialMailboxes(acc)
-  const inboxPath = mailboxes.inbox
-  const belowUid = acc.backfill_cursor_uid ?? 0
-
-  const batch = await fetchInboxBackfillBatch(acc, inboxPath, {
-    belowUid,
-    limit: INITIAL_BACKFILL_BATCH_SIZE,
-  })
-
-  const result: MailSyncResult = {
-    fetched: 0,
-    stored: 0,
-    updated: 0,
-    aoDetected: 0,
-    duplicates: 0,
-    errors: 0,
-    maxUid: acc.last_sync_uid ?? 0,
-    quickStored: 0,
-    skippedOutbound: 0,
-    mailboxes,
-  }
-
-  const aliases = accountAliases(acc, options.loginEmail)
+async function loadAoSyncContext(db: SupabaseClient, userId: string): Promise<AoSyncContext> {
   const { getUserSettings } = await import('@/lib/user-settings')
   const userSettings = await getUserSettings(db, userId)
   let keywords = await listAoKeywords(db)
@@ -1050,83 +1065,361 @@ export async function syncMailAccountStep(
       created_at: new Date().toISOString(),
     }))
   }
-  const aoCtx: AoSyncContext = {
+  return {
     keywords,
     threshold: userSettings.ao_detection_threshold ?? 5,
   }
+}
 
-  if (batch.envelopes.length) {
+function buildStepProgress(
+  acc: MailAccountWithId,
+  phase: MailSyncPhase,
+  inboxSynced: number,
+  sentSynced: number,
+  inboxTotal: number,
+  sentTotal: number,
+  sentMailboxPath?: string | null,
+): MailSyncProgress {
+  const fullyComplete = isAccountInitialSyncComplete(acc, sentMailboxPath)
+  if (phase === 'sent') {
+    return {
+      phase: 'sent',
+      synced_count: inboxSynced,
+      mailbox_total: inboxTotal,
+      sent_synced_count: sentSynced,
+      sent_mailbox_total: sentTotal,
+      initial_sync_complete: fullyComplete,
+    }
+  }
+  if (phase === 'inbox') {
+    return {
+      phase: 'inbox',
+      synced_count: inboxSynced,
+      mailbox_total: inboxTotal,
+      sent_synced_count: sentSynced,
+      sent_mailbox_total: sentTotal,
+      initial_sync_complete: fullyComplete,
+    }
+  }
+  return {
+    phase: 'incremental',
+    synced_count: inboxSynced,
+    mailbox_total: inboxTotal || inboxSynced,
+    sent_synced_count: sentSynced,
+    sent_mailbox_total: sentTotal || sentSynced,
+    initial_sync_complete: fullyComplete,
+  }
+}
+
+/** Un lot de sync initiale INBOX ou Envoyés, puis incrémentale si terminée. */
+export async function syncMailAccountStep(
+  userId: string,
+  account: MailAccountWithId,
+  options: { loginEmail?: string | null } = {},
+): Promise<MailSyncStepResult> {
+  const db = createAdminClient()
+  const fresh = account.id ? await reloadMailAccount(db, account.id) : account
+  const acc = fresh ?? account
+  const mailboxes = await resolveSpecialMailboxes(acc)
+  const sentPath = mailboxes.sent
+  const aoCtx = await loadAoSyncContext(db, userId)
+  const aliases = accountAliases(acc, options.loginEmail)
+
+  const inboxSynced = await countSyncedInboxEmails(db, userId)
+  const sentSynced = await countSyncedSentEmails(db, userId)
+
+  // —— Phase 1 : backfill INBOX ——
+  if (!acc.initial_sync_complete) {
+    const inboxPath = mailboxes.inbox
+    let belowUid = acc.backfill_cursor_uid ?? 0
+
+    const batch = await fetchMailboxBackfillBatch(acc, inboxPath, {
+      belowUid,
+      limit: INITIAL_BACKFILL_BATCH_SIZE,
+    })
+
+    if (imapUidValidityChanged(acc.inbox_uidvalidity ?? 0, batch.uidValidity)) {
+      belowUid = 0
+      if (acc.id) {
+        await db.from('mail_accounts').update({
+          last_sync_uid: 0,
+          backfill_cursor_uid: 0,
+          initial_sync_complete: false,
+          inbox_uidvalidity: batch.uidValidity,
+        }).eq('id', acc.id)
+      }
+    }
+
+    const result: MailSyncResult = {
+      fetched: 0,
+      stored: 0,
+      updated: 0,
+      aoDetected: 0,
+      duplicates: 0,
+      errors: 0,
+      maxUid: acc.last_sync_uid ?? 0,
+      quickStored: 0,
+      skippedOutbound: 0,
+      mailboxes,
+    }
+
+    if (batch.envelopes.length) {
+      await syncOneMailboxFolder(
+        db,
+        userId,
+        acc,
+        result,
+        {
+          folder: 'inbox',
+          mailboxPath: inboxPath,
+          sinceDays: 180,
+          limit: INITIAL_BACKFILL_BATCH_SIZE,
+          skipOutbound: true,
+          fullScan: true,
+        },
+        false,
+        undefined,
+        aliases,
+        aoCtx,
+        undefined,
+        batch.envelopes,
+      )
+    }
+
+    const inboxBackfillDone = !batch.hasMore || batch.envelopes.length === 0
+    if (acc.id) {
+      const updates: Record<string, unknown> = {
+        mailbox_total: batch.mailboxTotal,
+        last_sync: new Date().toISOString(),
+        last_sync_uid: Math.max(result.maxUid, batch.maxUid, acc.last_sync_uid ?? 0),
+        inbox_uidvalidity: batch.uidValidity || (acc.inbox_uidvalidity ?? 0),
+      }
+      if (batch.batchMinUid > 0) updates.backfill_cursor_uid = batch.batchMinUid
+      if (inboxBackfillDone) {
+        updates.initial_sync_complete = true
+        updates.backfill_cursor_uid = 0
+      }
+      await db.from('mail_accounts').update(updates).eq('id', acc.id)
+    }
+
+    const updatedAcc = acc.id ? await reloadMailAccount(db, acc.id) : { ...acc, initial_sync_complete: inboxBackfillDone }
+    const progressAcc = updatedAcc ?? acc
+    const mailbox_total = batch.mailboxTotal || progressAcc.mailbox_total || inboxSynced
+    const synced_count = await countSyncedInboxEmails(db, userId)
+
+    return {
+      result,
+      needs_more: !inboxBackfillDone,
+      initial_sync_complete: isAccountInitialSyncComplete(
+        { ...progressAcc, initial_sync_complete: inboxBackfillDone },
+        sentPath,
+      ),
+      progress: buildStepProgress(
+        { ...progressAcc, initial_sync_complete: inboxBackfillDone },
+        'inbox',
+        synced_count,
+        sentSynced,
+        mailbox_total,
+        progressAcc.sent_mailbox_total ?? sentSynced,
+        sentPath,
+      ),
+    }
+  }
+
+  // —— Phase 2 : backfill Envoyés ——
+  if (!sentPath && !acc.sent_initial_sync_complete && acc.id) {
+    await db.from('mail_accounts').update({ sent_initial_sync_complete: true }).eq('id', acc.id)
+    acc.sent_initial_sync_complete = true
+  }
+
+  if (sentPath && !acc.sent_initial_sync_complete) {
+    let belowUid = acc.sent_backfill_cursor_uid ?? 0
+
+    const batch = await fetchMailboxBackfillBatch(acc, sentPath, {
+      belowUid,
+      limit: INITIAL_BACKFILL_BATCH_SIZE,
+    })
+
+    if (imapUidValidityChanged(acc.sent_uidvalidity ?? 0, batch.uidValidity)) {
+      belowUid = 0
+      if (acc.id) {
+        await db.from('mail_accounts').update({
+          sent_last_sync_uid: 0,
+          sent_backfill_cursor_uid: 0,
+          sent_initial_sync_complete: false,
+          sent_uidvalidity: batch.uidValidity,
+        }).eq('id', acc.id)
+      }
+    }
+
+    const result: MailSyncResult = {
+      fetched: 0,
+      stored: 0,
+      updated: 0,
+      aoDetected: 0,
+      duplicates: 0,
+      errors: 0,
+      maxUid: acc.last_sync_uid ?? 0,
+      sentMaxUid: acc.sent_last_sync_uid ?? 0,
+      quickStored: 0,
+      skippedOutbound: 0,
+      mailboxes,
+    }
+
+    if (batch.envelopes.length) {
+      await syncOneMailboxFolder(
+        db,
+        userId,
+        acc,
+        result,
+        {
+          folder: 'sent',
+          mailboxPath: sentPath,
+          sinceDays: 365,
+          limit: INITIAL_BACKFILL_BATCH_SIZE,
+          skipOutbound: false,
+          fullScan: true,
+        },
+        false,
+        undefined,
+        aliases,
+        aoCtx,
+        undefined,
+        batch.envelopes,
+      )
+    }
+
+    const sentBackfillDone = !batch.hasMore || batch.envelopes.length === 0
+    if (acc.id) {
+      const updates: Record<string, unknown> = {
+        sent_mailbox_total: batch.mailboxTotal,
+        last_sync: new Date().toISOString(),
+        sent_last_sync_uid: Math.max(result.sentMaxUid ?? 0, batch.maxUid, acc.sent_last_sync_uid ?? 0),
+        sent_uidvalidity: batch.uidValidity || (acc.sent_uidvalidity ?? 0),
+      }
+      if (batch.batchMinUid > 0) updates.sent_backfill_cursor_uid = batch.batchMinUid
+      if (sentBackfillDone) {
+        updates.sent_initial_sync_complete = true
+        updates.sent_backfill_cursor_uid = 0
+      }
+      await db.from('mail_accounts').update(updates).eq('id', acc.id)
+    }
+
+    const updatedAcc = acc.id ? await reloadMailAccount(db, acc.id) : { ...acc, sent_initial_sync_complete: sentBackfillDone }
+    const progressAcc = updatedAcc ?? acc
+    const sent_mailbox_total = batch.mailboxTotal || progressAcc.sent_mailbox_total || sentSynced
+    const sent_synced_count = await countSyncedSentEmails(db, userId)
+
+    return {
+      result,
+      needs_more: !sentBackfillDone,
+      initial_sync_complete: isAccountInitialSyncComplete(
+        { ...progressAcc, sent_initial_sync_complete: sentBackfillDone },
+        sentPath,
+      ),
+      progress: buildStepProgress(
+        { ...progressAcc, sent_initial_sync_complete: sentBackfillDone },
+        'sent',
+        inboxSynced,
+        sent_synced_count,
+        acc.mailbox_total ?? inboxSynced,
+        sent_mailbox_total,
+        sentPath,
+      ),
+    }
+  }
+
+  // —— Phase 3 : incrémentale (INBOX + Envoyés + autres dossiers) ——
+  const result = await syncMailAccount(userId, acc, {
+    backfill: false,
+    quick: false,
+    loginEmail: options.loginEmail,
+    excludeMailFolders: ['inbox', 'sent'],
+  })
+
+  const inboxResult: MailSyncResult = {
+    fetched: 0,
+    stored: 0,
+    updated: 0,
+    aoDetected: 0,
+    duplicates: 0,
+    errors: 0,
+    maxUid: acc.last_sync_uid ?? 0,
+    sentMaxUid: acc.sent_last_sync_uid ?? 0,
+    mailboxes,
+  }
+
+  await syncOneMailboxFolder(
+    db,
+    userId,
+    acc,
+    inboxResult,
+    {
+      folder: 'inbox',
+      mailboxPath: mailboxes.inbox,
+      sinceDays: 45,
+      limit: 150,
+      skipOutbound: true,
+      fullScan: false,
+      minUid: acc.last_sync_uid ?? 0,
+    },
+    false,
+    undefined,
+    aliases,
+    aoCtx,
+  )
+
+  if (sentPath && acc.sent_initial_sync_complete) {
     await syncOneMailboxFolder(
       db,
       userId,
       acc,
-      result,
+      inboxResult,
       {
-        folder: 'inbox',
-        mailboxPath: inboxPath,
+        folder: 'sent',
+        mailboxPath: sentPath,
         sinceDays: 180,
-        limit: INITIAL_BACKFILL_BATCH_SIZE,
-        skipOutbound: true,
-        fullScan: true,
+        limit: 150,
+        skipOutbound: false,
+        fullScan: false,
+        minUid: acc.sent_last_sync_uid ?? 0,
       },
       false,
       undefined,
       aliases,
       aoCtx,
-      undefined,
-      batch.envelopes,
     )
   }
 
-  const inboxBackfillDone = !batch.hasMore || batch.envelopes.length === 0
-  let initial_sync_complete = inboxBackfillDone
+  mergeSyncResults(result, inboxResult)
 
   if (acc.id) {
     const updates: Record<string, unknown> = {
-      mailbox_total: batch.mailboxTotal,
       last_sync: new Date().toISOString(),
-      last_sync_uid: Math.max(result.maxUid, batch.maxUid, acc.last_sync_uid ?? 0),
+      last_sync_uid: Math.max(inboxResult.maxUid, acc.last_sync_uid ?? 0),
     }
-    if (batch.batchMinUid > 0) {
-      updates.backfill_cursor_uid = batch.batchMinUid
-    }
-    if (inboxBackfillDone) {
-      updates.initial_sync_complete = true
-      updates.backfill_cursor_uid = 0
+    if ((inboxResult.sentMaxUid ?? 0) > 0) {
+      updates.sent_last_sync_uid = Math.max(inboxResult.sentMaxUid ?? 0, acc.sent_last_sync_uid ?? 0)
     }
     await db.from('mail_accounts').update(updates).eq('id', acc.id)
   }
 
-  if (inboxBackfillDone) {
-    initial_sync_complete = true
-    if (acc.id) {
-      await db.from('mail_accounts').update({ initial_sync_complete: true, backfill_cursor_uid: 0 }).eq('id', acc.id)
-    }
-    try {
-      const otherFolders = await syncMailAccount(userId, { ...acc, initial_sync_complete: true }, {
-        backfill: false,
-        quick: false,
-        loginEmail: options.loginEmail,
-      })
-      mergeSyncResults(result, otherFolders)
-    } catch (err) {
-      console.error('[Mail sync] dossiers secondaires après backfill:', err)
-      result.errors++
-    }
-  }
-
   const synced_count = await countSyncedInboxEmails(db, userId)
-  const mailbox_total = batch.mailboxTotal || acc.mailbox_total || synced_count
+  const sent_synced_count = await countSyncedSentEmails(db, userId)
 
   return {
     result,
-    needs_more: !initial_sync_complete,
-    initial_sync_complete,
-    progress: {
+    needs_more: false,
+    initial_sync_complete: isAccountInitialSyncComplete(acc, sentPath),
+    progress: buildStepProgress(
+      acc,
+      'incremental',
       synced_count,
-      mailbox_total,
-      initial_sync_complete,
-    },
+      sent_synced_count,
+      acc.mailbox_total ?? synced_count,
+      acc.sent_mailbox_total ?? sent_synced_count,
+      sentPath,
+    ),
   }
 }
 

@@ -602,12 +602,23 @@ export default function MailPage() {
             synced_count?: number
             mailbox_total?: number
             initial_sync_complete?: boolean
+            phase?: 'inbox' | 'sent' | 'incremental'
+            sent_synced_count?: number
+            sent_mailbox_total?: number
           } | null
 
-          if (progress && (progress.mailbox_total ?? 0) > 0) {
-            setAutoSyncStatus(
-              `${(progress.synced_count ?? 0).toLocaleString('fr-FR')} / ${(progress.mailbox_total ?? 0).toLocaleString('fr-FR')} mails synchronisés`,
-            )
+          if (progress) {
+            if (progress.phase === 'sent' && (progress.sent_mailbox_total ?? 0) > 0) {
+              setAutoSyncStatus(
+                `Envoyés : ${(progress.sent_synced_count ?? 0).toLocaleString('fr-FR')} / ${(progress.sent_mailbox_total ?? 0).toLocaleString('fr-FR')} mails synchronisés`,
+              )
+            } else if ((progress.mailbox_total ?? 0) > 0) {
+              setAutoSyncStatus(
+                `${(progress.synced_count ?? 0).toLocaleString('fr-FR')} / ${(progress.mailbox_total ?? 0).toLocaleString('fr-FR')} mails synchronisés`,
+              )
+            } else if (!statusJson.data?.run?.finished_at) {
+              setAutoSyncStatus('Synchronisation en cours…')
+            }
           } else if (!statusJson.data?.run?.finished_at) {
             setAutoSyncStatus('Synchronisation en cours…')
           }
@@ -731,7 +742,7 @@ export default function MailPage() {
       .then(r => r.json())
       .then(d => {
         if (!d.success || !d.data) return
-        if (d.data.initial_sync_complete === true) return
+        if (d.data.initial_sync_complete === true && d.data.sent_initial_sync_complete === true) return
         void runSync(true, true)
       })
       .catch(() => {})

@@ -139,7 +139,9 @@ export async function POST(req: NextRequest) {
   const quick = body?.quick === true
 
   const account = await resolveMailAccount(userId, { loginEmail })
-  const needsFullBackfill = account && !account.initial_sync_complete
+  const needsFullBackfill = account && (
+    !account.initial_sync_complete || !account.sent_initial_sync_complete
+  )
   const rate = (backfill || needsFullBackfill)
     ? { allowed: true, retryAfterMinutes: 0 }
     : checkRateLimit(userId)
