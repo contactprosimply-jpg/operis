@@ -27,12 +27,20 @@ function createSyncRunsMock(initial: SyncRunsMockState = { runs: [] }) {
       return {
         select: (_cols: string, opts?: { count?: string; head?: boolean }) => ({
           is: (col: string, val: null) => ({
-            gte: async (_c: string, threshold: string) => {
-              const count = state.runs.filter(
-                r => r.finished_at === val && r.started_at >= threshold,
-              ).length
-              return { count, error: null }
-            },
+            gte: (_c: string, threshold: string) => ({
+              is: async (_c2: string, _null: null) => {
+                const count = state.runs.filter(
+                  r => r.finished_at === val && r.started_at >= threshold,
+                ).length
+                return { count, error: null }
+              },
+              eq: async (_c2: string, _userId: string) => {
+                const count = state.runs.filter(
+                  r => r.finished_at === val && r.started_at >= threshold,
+                ).length
+                return { count, error: null }
+              },
+            }),
           }),
         }),
         insert: (row: Record<string, unknown>) => ({

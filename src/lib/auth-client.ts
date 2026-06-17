@@ -118,25 +118,43 @@ export async function getAccessToken(): Promise<string | null> {
   })
 }
 
-async function fetchWithAuth(url: string, options: RequestInit, token: string) {
+export type AuthFetchOptions = RequestInit & {
+  /** Délai max en ms. `null` = pas de timeout (sync IMAP longue). Défaut : NETWORK_TIMEOUT_MS. */
+  timeoutMs?: number | null
+}
+
+async function fetchWithAuth(
+  url: string,
+  options: AuthFetchOptions,
+  token: string,
+) {
+  const timeoutMs = options.timeoutMs === undefined ? NETWORK_TIMEOUT_MS : options.timeoutMs
+  const { timeoutMs: _omit, ...fetchOptions } = options
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS)
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  if (timeoutMs !== null) {
+    timeout = setTimeout(() => controller.abort(), timeoutMs)
+  }
+  const userSignal = fetchOptions.signal
+  if (userSignal) {
+    userSignal.addEventListener('abort', () => controller.abort(), { once: true })
+  }
   try {
     return await fetch(url, {
-      ...options,
+      ...fetchOptions,
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
-        ...(options.headers ?? {}),
+        ...(fetchOptions.headers ?? {}),
       },
     })
   } finally {
-    clearTimeout(timeout)
+    if (timeout) clearTimeout(timeout)
   }
 }
 
-export async function authFetch(url: string, options: RequestInit = {}) {
+export async function authFetch(url: string, options: AuthFetchOptions = {}) {
   const token = await getAccessToken()
   if (!token) {
     throw new Error('Non autorise')
@@ -158,7 +176,8 @@ export async function authFetch(url: string, options: RequestInit = {}) {
     return res
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error(`Timeout reseau (${NETWORK_TIMEOUT_MS}ms)`)
+      const ms = options.timeoutMs === undefined ? NETWORK_TIMEOUT_MS : options.timeoutMs
+      throw new Error(ms === null ? 'Requête annulée' : `Timeout reseau (${ms}ms)`)
     }
     throw err
   }

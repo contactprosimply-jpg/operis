@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { authFetch, getAccessToken, NETWORK_TIMEOUT_MS } from '@/lib/auth-client'
+import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
 import { Email, EmailAttachment, EmailLabel, EmailPriority } from '@/types/database'
 import { PRESET_EMAIL_LABELS } from '@/lib/mail-api'
@@ -107,6 +107,21 @@ function appendSignatureToBody(body: string, signatureHtml: string, signatureTex
   return body.trim() ? `${body.trim()}\n\n--\n${plainSig}` : plainSig
 }
 
+const SYNC_POLL_INTERVAL_MS = 2000
+const SYNC_POLL_MAX_MS = 310000
+
+type MailSyncOutcome = {
+  stored?: number
+  updated?: number
+  quickStored?: number
+  fetched?: number
+  errors?: number
+  duplicates?: number
+  skippedOutbound?: number
+  mailboxes?: { sent?: boolean }
+  accounts?: Array<{ user_id: string; status: string; reason?: string; email?: string }>
+}
+
 async function fileToBase64(file: File): Promise<string> {
   const buffer = await file.arrayBuffer()
   const bytes = new Uint8Array(buffer)
@@ -183,7 +198,6 @@ export default function MailPage() {
   const emailCountRef = useRef(0)
   const selectedIdRef = useRef<string | null>(null)
   const syncInProgressRef = useRef(false)
-  const syncAbortRef = useRef<AbortController | null>(null)
   const emailsRef = useRef<Email[]>([])
   const mailCache = useRef<Record<string, EmailWithQuote>>({})
   const prefetchingRef = useRef<Set<string>>(new Set())
@@ -526,71 +540,109 @@ export default function MailPage() {
 
   const runSync = useCallback(async (silent = true, force = false) => {
     if (syncInProgressRef.current && !force) return
-    if (force && syncAbortRef.current) {
-      syncAbortRef.current.abort()
-      syncInProgressRef.current = false
-    }
     syncInProgressRef.current = true
-    const abortController = new AbortController()
-    syncAbortRef.current = abortController
-    const syncTimeout = setTimeout(() => abortController.abort(), force ? 55000 : NETWORK_TIMEOUT_MS)
+    const startedAt = Date.now()
+
+    const applySyncOutcome = (outcome: MailSyncOutcome | null | undefined) => {
+      if (!outcome) return { stored: 0, updated: 0 }
+      const {
+        stored = 0,
+        updated = 0,
+        quickStored = 0,
+        fetched = 0,
+        errors = 0,
+        duplicates = 0,
+        skippedOutbound = 0,
+        mailboxes,
+        accounts,
+      } = outcome
+      const total = stored + updated
+      const myReport = accounts?.find(a => a.user_id === userId)
+      if (myReport?.status === 'skipped' && myReport.reason === 'compte_mail_non_configure') {
+        const msg = 'Paramètres → Messagerie : configurez IMAP pour ce compte'
+        if (!silent) showToast(msg)
+        setAutoSyncStatus('Messagerie non configurée')
+      } else {
+        const summary = `${fetched} lus · ${stored} nouveaux · ${updated} maj · ${errors} err`
+        if (!silent && errors > 0) {
+          showToast(`Sync : ${summary}`)
+        } else if (!silent && total === 0 && fetched === 0) {
+          showToast('IMAP : aucun mail récupéré — vérifiez Paramètres → Messagerie')
+        } else if (!silent && total === 0) {
+          const skipHint = skippedOutbound > 0 ? `, ${skippedOutbound} envoyés ignorés` : ''
+          showToast(`Boîte à jour (${fetched} vérifiés, ${duplicates} déjà en base${skipHint})`)
+        } else if (!silent && total > 0) {
+          showToast(`${total} email(s) synchronisé(s) · ${summary}`)
+        } else if (!silent && quickStored > 0) {
+          showToast(`${quickStored} nouveau(x) email(s)`)
+        }
+        const syncTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+        if (folder === 'sent' && mailboxes && !mailboxes.sent) {
+          setAutoSyncStatus(`Synchro ${syncTime} — dossier Envoyés introuvable sur IMAP`)
+        } else {
+          setAutoSyncStatus(`Synchro : ${syncTime}`)
+        }
+      }
+      return { stored, updated }
+    }
+
+    const pollMailSyncRun = async (runId: string) => {
+      while (Date.now() - startedAt < SYNC_POLL_MAX_MS) {
+        await new Promise(resolve => setTimeout(resolve, SYNC_POLL_INTERVAL_MS))
+        try {
+          const statusRes = await authFetch(`/api/mail/sync/status?run_id=${encodeURIComponent(runId)}`)
+          const statusJson = await statusRes.json()
+          if (!statusJson.success) continue
+
+          const run = statusJson.data?.run as {
+            finished_at?: string | null
+            status?: string
+            error_detail?: { fatal?: string; accounts?: Array<{ error: string }>; sync_result?: MailSyncOutcome }
+          } | null
+
+          if (!run?.finished_at) continue
+
+          if (run.status === 'error') {
+            const fatal = run.error_detail?.fatal
+            const failed = run.error_detail?.accounts?.[0]
+            if (!silent) {
+              if (fatal) showToast(`Erreur IMAP : ${fatal}`)
+              else if (failed?.error) showToast(`Erreur IMAP : ${failed.error}`)
+              else showToast('Erreur de synchronisation')
+            } else if (fatal) {
+              setAutoSyncStatus(`Erreur sync : ${fatal.slice(0, 40)}`)
+            } else if (failed?.error) {
+              setAutoSyncStatus(`Erreur sync : ${failed.error.slice(0, 40)}`)
+            }
+            return { stored: 0, updated: 0 }
+          }
+
+          const syncResult = (statusJson.data?.sync_result ?? run.error_detail?.sync_result) as MailSyncOutcome | null
+          return applySyncOutcome(syncResult)
+        } catch {
+          /* poll court — réessayer */
+        }
+      }
+      setAutoSyncStatus('Synchronisation en cours…')
+      return { stored: 0, updated: 0 }
+    }
+
     try {
       setSyncing(true)
+      setAutoSyncStatus('Synchronisation en cours…')
+
       const res = await authFetch('/api/mail/sync', {
         method: 'POST',
         body: JSON.stringify({
           backfill: force && !silent,
           quick: silent && !force,
         }),
-        signal: abortController.signal,
       })
       const data = await res.json()
-      if (data.success) {
-        const {
-          stored = 0,
-          updated = 0,
-          quickStored = 0,
-          fetched = 0,
-          errors = 0,
-          duplicates = 0,
-          skippedOutbound = 0,
-          mailboxes,
-          accounts,
-        } = data.data ?? {}
-        const total = stored + updated
-        const myReport = accounts?.find((a: { user_id: string }) => a.user_id === userId)
-        if (myReport?.status === 'skipped' && myReport.reason === 'compte_mail_non_configure') {
-          const msg = 'Paramètres → Messagerie : configurez IMAP pour ce compte'
-          if (!silent) showToast(msg)
-          setAutoSyncStatus('Messagerie non configurée')
-        } else {
-          const summary = `${fetched} lus · ${stored} nouveaux · ${updated} maj · ${errors} err`
-          if (!silent && errors > 0) {
-            showToast(`Sync : ${summary}`)
-          } else if (!silent && total === 0 && fetched === 0) {
-            showToast('IMAP : aucun mail récupéré — vérifiez Paramètres → Messagerie')
-          } else if (!silent && total === 0) {
-            const skipHint = skippedOutbound > 0 ? `, ${skippedOutbound} envoyés ignorés` : ''
-            showToast(`Boîte à jour (${fetched} vérifiés, ${duplicates} déjà en base${skipHint})`)
-          } else if (!silent && total > 0) {
-            showToast(`${total} email(s) synchronisé(s) · ${summary}`)
-          } else if (!silent && quickStored > 0) {
-            showToast(`${quickStored} nouveau(x) email(s)`)
-          }
-          const syncTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-          if (folder === 'sent' && mailboxes && !mailboxes.sent) {
-            setAutoSyncStatus(`Synchro ${syncTime} — dossier Envoyés introuvable sur IMAP`)
-          } else {
-            setAutoSyncStatus(`Synchro : ${syncTime}`)
-          }
-        }
-        refreshFolders()
-        await loadEmails(true)
-        const sid = selectedIdRef.current
-        if (sid && (updated > 0 || stored > 0)) await loadEmailDetail(sid, true)
-      } else {
+
+      if (!data.success) {
         const err = data.error ?? 'Synchronisation impossible'
-        const accounts = data.data?.accounts as Array<{ status: string; reason?: string; email?: string }> | undefined
+        const accounts = data.data?.accounts as Array<{ status: string; reason?: string }> | undefined
         const failed = accounts?.find(a => a.status === 'error')
         if (!silent) {
           if (err.includes('compte mail') || err.includes('Messagerie')) {
@@ -607,18 +659,29 @@ export default function MailPage() {
         } else if (failed?.reason) {
           setAutoSyncStatus(`Erreur sync : ${failed.reason.slice(0, 40)}`)
         }
+        return
       }
+
+      const runId = data.data?.run_id as string | undefined
+      let counts = { stored: 0, updated: 0 }
+
+      if (runId && (data.data?.in_progress || data.data?.already_running)) {
+        counts = await pollMailSyncRun(runId) ?? counts
+      } else if (data.data) {
+        counts = applySyncOutcome(data.data as MailSyncOutcome) ?? counts
+      }
+
+      refreshFolders()
+      await loadEmails(true)
+      const sid = selectedIdRef.current
+      if (sid && (counts.updated > 0 || counts.stored > 0)) await loadEmailDetail(sid, true)
     } catch (e: unknown) {
-      const err = e as { name?: string; message?: string }
-      if (err.name === 'AbortError') {
-        if (!silent) showToast('Sync trop longue — réessayez')
-      } else if (!silent) {
-        showToast(`Erreur : ${err.message ?? 'réseau'}`)
+      const err = e as { message?: string }
+      if (!silent && err.message) {
+        showToast(`Erreur : ${err.message}`)
       }
     } finally {
-      clearTimeout(syncTimeout)
       syncInProgressRef.current = false
-      if (syncAbortRef.current === abortController) syncAbortRef.current = null
       setSyncing(false)
     }
   }, [loadEmails, loadEmailDetail, refreshFolders, folder, userId])

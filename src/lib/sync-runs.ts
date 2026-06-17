@@ -14,10 +14,12 @@ export type SyncRunErrorDetail = {
   fatal?: string
   skipped?: boolean
   reason?: string
+  sync_result?: Record<string, unknown>
 }
 
 export type SyncRunRow = {
   id: string
+  user_id: string | null
   started_at: string
   finished_at: string | null
   status: SyncRunStatus
@@ -38,18 +40,29 @@ const ADMIN_ALERT_EMAIL = 'contact@nikodex.fr'
 export async function isSyncRunInProgress(
   db: SupabaseClient,
   lockMinutes = SYNC_LOCK_MINUTES,
+  options?: { userId?: string | null },
 ): Promise<boolean> {
   const threshold = new Date(Date.now() - lockMinutes * 60 * 1000).toISOString()
-  const { count } = await db
+  let query = db
     .from('sync_runs')
     .select('id', { count: 'exact', head: true })
     .is('finished_at', null)
     .gte('started_at', threshold)
 
+  if (options?.userId) {
+    query = query.eq('user_id', options.userId)
+  } else {
+    query = query.is('user_id', null)
+  }
+
+  const { count } = await query
   return (count ?? 0) > 0
 }
 
-export async function startSyncRun(db: SupabaseClient): Promise<string | null> {
+export async function startSyncRun(
+  db: SupabaseClient,
+  options?: { userId?: string },
+): Promise<string | null> {
   const { data, error } = await db
     .from('sync_runs')
     .insert({
@@ -57,6 +70,7 @@ export async function startSyncRun(db: SupabaseClient): Promise<string | null> {
       status: 'success',
       accounts_synced: 0,
       new_emails: 0,
+      user_id: options?.userId ?? null,
     })
     .select('id')
     .single()
@@ -106,9 +120,37 @@ export async function getRecentSyncRuns(
   return (data ?? []) as SyncRunRow[]
 }
 
+export async function getSyncRunById(
+  db: SupabaseClient,
+  runId: string,
+): Promise<SyncRunRow | null> {
+  const { data } = await db.from('sync_runs').select('*').eq('id', runId).maybeSingle()
+  return (data as SyncRunRow | null) ?? null
+}
+
+export async function getActiveUserSyncRun(
+  db: SupabaseClient,
+  userId: string,
+  lockMinutes = SYNC_LOCK_MINUTES,
+): Promise<SyncRunRow | null> {
+  const threshold = new Date(Date.now() - lockMinutes * 60 * 1000).toISOString()
+  const { data } = await db
+    .from('sync_runs')
+    .select('*')
+    .eq('user_id', userId)
+    .is('finished_at', null)
+    .gte('started_at', threshold)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  return (data as SyncRunRow | null) ?? null
+}
+
 export async function getSyncHealthSummary(db: SupabaseClient) {
   const runs = await getRecentSyncRuns(db, 30)
-  const completed = runs.filter(r => r.finished_at)
+  const cronRuns = runs.filter(r => !r.user_id)
+  const completed = cronRuns.filter(r => r.finished_at)
   const lastRun = completed[0] ?? null
   const lastSuccess = completed.find(r => r.status === 'success' || r.status === 'partial') ?? null
   const errorRuns = completed.filter(r => r.status === 'error').slice(0, 10)
@@ -117,12 +159,14 @@ export async function getSyncHealthSummary(db: SupabaseClient) {
     ? Math.floor((Date.now() - new Date(lastSuccess.finished_at).getTime()) / 60000)
     : null
 
+  const inProgress = await isSyncRunInProgress(db)
+
   return {
     last_run: lastRun,
     last_success: lastSuccess,
     minutes_since_success: minutesSinceSuccess,
     recent_errors: errorRuns,
-    in_progress: runs.some(r => !r.finished_at),
+    in_progress: inProgress,
   }
 }
 
