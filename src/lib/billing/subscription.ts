@@ -53,16 +53,6 @@ export async function ensureBillingOrg(
     return { orgId: owned[0].id, isOwner: true }
   }
 
-  const membership = await userBelongsToOrganization(db, userId)
-  if (membership) {
-    const { data: org } = await db.from('organizations').select('owner_id').eq('id', membership.organizationId).single()
-    if (org?.owner_id === userId) {
-      await ensureSubscriptionRow(db, membership.organizationId)
-      return { orgId: membership.organizationId, isOwner: true }
-    }
-    throw new Error('Seul le créateur du groupe peut souscrire un abonnement')
-  }
-
   const { data: profile } = await db.from('profiles').select('full_name, company').eq('id', userId).maybeSingle()
   const { data: { user } } = await db.auth.admin.getUserById(userId)
   const orgName = profile?.company?.trim() || profile?.full_name?.trim() || user?.email?.split('@')[0] || 'Mon espace Operis'
