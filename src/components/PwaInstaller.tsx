@@ -71,40 +71,38 @@ export default function PwaInstaller() {
       position: 'fixed', bottom: 80, right: 20, zIndex: 150,
       maxWidth: 320, background: 'var(--bg-card)',
       border: '1px solid var(--border-hi)', borderRadius: 12,
-      padding: '14px 16px', boxShadow: 'var(--shadow-md)',
+      padding: '14px 16px 14px 14px', boxShadow: 'var(--shadow-md)',
       animation: 'fadeUp 0.35s ease',
     }}>
-      <div style={{
-        display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-        gap: 8, marginBottom: 6,
-      }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-          Installer Operis
-        </div>
-        <button
-          type="button"
-          onClick={handleDismiss}
-          aria-label="Fermer"
-          style={{
-            flexShrink: 0,
-            width: 24,
-            height: 24,
-            border: 'none',
-            borderRadius: 6,
-            background: 'transparent',
-            color: 'var(--text-secondary)',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 0,
-            lineHeight: 1,
-          }}
-        >
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
+      <button
+        type="button"
+        onClick={handleDismiss}
+        aria-label="Fermer"
+        title="Fermer"
+        style={{
+          position: 'absolute',
+          top: 8,
+          right: 8,
+          width: 28,
+          height: 28,
+          border: '1px solid var(--border-hi)',
+          borderRadius: 8,
+          background: 'var(--bg-secondary)',
+          color: 'var(--text-primary)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 0,
+          lineHeight: 1,
+        }}
+      >
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+          <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
+      </button>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6, paddingRight: 28 }}>
+        Installer Operis
       </div>
       <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 12 }}>
         {isIos
