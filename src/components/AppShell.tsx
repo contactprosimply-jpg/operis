@@ -13,6 +13,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isPublic = isPublicRoute(pathname)
   const isPaywall = pathname === '/choose-plan' || pathname === '/billing/activating'
   const minimalShell = isPublic || isPaywall
+  const isFillPage = pathname === '/mail' || pathname.startsWith('/mail/')
 
   return (
     <AuthProvider>
@@ -22,8 +23,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       ) : (
         <div className="app-shell">
           <Sidebar />
-          <main className="app-main">
-            <div className="page-content">
+          <main className={`app-main${isFillPage ? ' app-main--fill' : ''}`}>
+            <div className={`page-content${isFillPage ? ' page-content--fill' : ''}`}>
               {children}
             </div>
           </main>

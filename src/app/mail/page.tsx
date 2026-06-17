@@ -1490,14 +1490,7 @@ export default function MailPage() {
   ]
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: isMobile ? 'calc(100dvh - 52px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 72px)' : 'calc(100dvh - 48px)',
-      margin: isMobile ? '-12px -12px 0' : '-24px -28px',
-      overflow: 'hidden',
-      maxWidth: '100%',
-    }}>
+    <div className="mail-page-root">
       {toast && (
         <div style={{
           position: 'fixed', bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))', right: 12, left: isMobile ? 12 : 'auto', zIndex: 200,
@@ -1512,7 +1505,7 @@ export default function MailPage() {
       {showMailWelcome && (
         <div style={{
           flexShrink: 0,
-          margin: isMobile ? '0 0 8px' : '0 0 10px',
+          margin: isMobile ? '8px 8px 0' : '10px 12px 0',
           padding: '12px 14px',
           background: 'rgba(59,126,246,0.1)',
           border: '1px solid rgba(59,126,246,0.28)',

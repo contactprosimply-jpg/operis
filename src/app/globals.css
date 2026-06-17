@@ -242,12 +242,25 @@ body.modal-open {
 }
 
 /* ── App shell & mobile layout ── */
+html {
+  height: 100%;
+  height: 100dvh;
+}
+
+body {
+  height: 100%;
+  height: 100dvh;
+  margin: 0;
+  overflow: hidden;
+}
+
 .app-shell {
   display: flex;
   width: 100%;
   max-width: 100%;
   min-height: 100dvh;
   height: 100dvh;
+  min-height: -webkit-fill-available;
   overflow: hidden;
   position: relative;
 }
@@ -255,6 +268,7 @@ body.modal-open {
 .app-main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -264,8 +278,19 @@ body.modal-open {
   flex-direction: column;
 }
 
+.app-main--fill {
+  overflow: hidden;
+}
+
+@media (max-width: 1024px) {
+  .app-main--fill {
+    padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 .page-content {
   flex: 1;
+  min-height: 0;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
@@ -274,6 +299,26 @@ body.modal-open {
     max(16px, env(safe-area-inset-right, 0px))
     calc(72px + env(safe-area-inset-bottom, 0px))
     max(16px, env(safe-area-inset-left, 0px));
+}
+
+.page-content--fill {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.mail-page-root {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-secondary);
 }
 
 @media (min-width: 768px) {

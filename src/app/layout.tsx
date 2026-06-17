@@ -43,7 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <link rel="manifest" href="/manifest.webmanifest" />
       </head>
-      <body style={{ fontFamily: "'DM Sans', system-ui, sans-serif", overflow: 'hidden' }}>
+      <body style={{ fontFamily: "'DM Sans', system-ui, sans-serif" }}>
         <ThemeBootstrap />
         <AppShell>{children}</AppShell>
       </body>
