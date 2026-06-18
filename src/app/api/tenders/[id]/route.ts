@@ -46,11 +46,21 @@ export async function GET(
     .from('tender_stats')
     .select('*')
     .eq('tender_id', id)
-    .single()
+    .maybeSingle()
 
-  const documents = await collectTenderDocuments(
-    db, tender.user_id as string, id, consultations ?? [], quotes ?? []
-  )
+  let documents: Awaited<ReturnType<typeof collectTenderDocuments>> = {
+    received: [],
+    sent: [],
+    optional_png: [],
+    document_groups: [],
+  }
+  try {
+    documents = await collectTenderDocuments(
+      db, tender.user_id as string, id, consultations ?? [], quotes ?? []
+    )
+  } catch (err) {
+    console.error('[tenders/id] collectTenderDocuments failed', err)
+  }
 
   const memberLabels = buildTenderMemberLabels(tender, access.scope)
   if (!memberLabels.creator_label && tender.user_id && tender.user_id !== userId) {

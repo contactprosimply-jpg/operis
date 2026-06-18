@@ -76,8 +76,8 @@ export default function TenderDetailPage() {
   const params = useParams<{ id: string }>()
   const id = Array.isArray(params.id) ? params.id[0] : params.id
   const router = useRouter()
-  const { session } = useAuth()
-  const currentUserId = session?.user?.id
+  const { userId, ready } = useAuth()
+  const currentUserId = userId
   const { show, ToastComponent } = useToast()
   const showRef = useRef(show)
   const routerRef = useRef(router)
@@ -144,7 +144,7 @@ export default function TenderDetailPage() {
     if (silent) setRefreshing(true)
     else setLoading(true)
     try {
-      const res = await authFetch(`/api/tenders/${id}`)
+      const res = await authFetch(`/api/tenders/${id}`, { timeoutMs: 55000 })
       const data = await res.json()
       if (data.success) {
         setLoadError(null)
@@ -164,10 +164,12 @@ export default function TenderDetailPage() {
       } else if (!silent) {
         setLoadError(data.error ?? 'AO introuvable')
         showRef.current(`Erreur : ${data.error}`)
-        routerRef.current.push('/tenders')
       }
-    } catch {
-      if (!silent) setLoadError('Impossible de charger cet AO')
+    } catch (err) {
+      if (!silent) {
+        const msg = err instanceof Error ? err.message : 'Impossible de charger cet AO'
+        setLoadError(msg.includes('Timeout') ? 'Chargement trop long — réessayez' : msg)
+      }
     }
     if (silent) setRefreshing(false)
     else setLoading(false)
@@ -419,11 +421,20 @@ export default function TenderDetailPage() {
   }, [])
 
   useEffect(() => {
+    if (!id) return
+    if (!userId) {
+      if (ready) {
+        setLoading(false)
+        setLoadError('Session expirée — reconnectez-vous')
+      }
+      return
+    }
     setTender(null)
+    setLoadError(null)
     setLoading(true)
     loadTender(false)
     loadAllSuppliers()
-  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, userId, ready, loadTender, loadAllSuppliers])
 
   const handleQuickStatus = async (status: string) => {
     if (!tender || tender.status === status) return
@@ -743,7 +754,12 @@ export default function TenderDetailPage() {
     return (
       <div style={{ padding: 32, textAlign: 'center' }}>
         <p style={{ color: 'var(--text-secondary)', marginBottom: 16 }}>{loadError ?? 'AO introuvable'}</p>
-        <Button variant="ghost" onClick={() => router.push('/tenders')}>← Retour aux AO</Button>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+          {userId && (
+            <Button variant="primary" onClick={() => void loadTender(false)}>Réessayer</Button>
+          )}
+          <Button variant="ghost" onClick={() => router.push('/tenders')}>← Retour aux AO</Button>
+        </div>
       </div>
     )
   }
