@@ -28,27 +28,30 @@ async function getAuthHeaders(): Promise<HeadersInit | null> {
 }
 
 // ── Helper fetch générique ────────────────────────────────────
+type ApiFetchOptions = RequestInit & { timeoutMs?: number }
+
 async function apiFetch<T>(
   url: string,
-  options: RequestInit = {}
+  options: ApiFetchOptions = {}
 ): Promise<ApiResponse<T>> {
+  const { timeoutMs = NETWORK_TIMEOUT_MS, ...fetchOptions } = options
   const headers = await getAuthHeaders()
   if (!headers) {
     return { success: false, error: 'Non autorise' }
   }
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    const res = await fetch(url, { ...options, headers, signal: controller.signal })
+    const res = await fetch(url, { ...fetchOptions, headers, signal: controller.signal })
     if (res.status === 401) {
       return { success: false, error: 'Non autorise' }
     }
     return res.json()
   } catch (err) {
     const msg = err instanceof Error && err.name === 'AbortError'
-      ? `Timeout reseau (${NETWORK_TIMEOUT_MS}ms)`
+      ? `Timeout reseau (${timeoutMs}ms)`
       : 'Erreur reseau'
     return { success: false, error: msg }
   } finally {
@@ -160,5 +163,6 @@ export const mailApi = {
     apiFetch<{ tender_id: string }>(`/api/mail/emails/${emailId}/ao`, {
       method: 'POST',
       body: JSON.stringify({}),
+      timeoutMs: 30000,
     }),
 }

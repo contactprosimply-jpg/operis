@@ -1352,7 +1352,7 @@ export default function MailPage() {
     if (!target) return
     if (target.tender_id) {
       try {
-        const checkRes = await authFetch(`/api/tenders/${target.tender_id}`)
+        const checkRes = await authFetch(`/api/tenders/${target.tender_id}`, { timeoutMs: 20000 })
         const checkData = await checkRes.json()
         if (checkData.success && checkData.data?.source_email_id === target.id) {
           router.push(`/tenders/${target.tender_id}`)
@@ -1363,7 +1363,11 @@ export default function MailPage() {
     setCreatingAoId(target.id)
     if (!email) setCreating(true)
     try {
-      const res = await authFetch(`/api/mail/emails/${target.id}/ao`, { method: 'POST', body: JSON.stringify({}) })
+      const res = await authFetch(`/api/mail/emails/${target.id}/ao`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+        timeoutMs: 30000,
+      })
       const data = await res.json()
       if (data.success) {
         const tenderId = data.data.tender_id

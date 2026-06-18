@@ -100,7 +100,11 @@ export default function DashboardPage() {
   const handleCreateAo = async (email: Email) => {
     setCreatingAo(email.id)
     try {
-      const res = await authFetch(`/api/mail/emails/${email.id}/ao`, { method: 'POST', body: JSON.stringify({}) })
+      const res = await authFetch(`/api/mail/emails/${email.id}/ao`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+        timeoutMs: 30000,
+      })
       const data = await res.json()
       if (data.success) {
         show('AO cree')

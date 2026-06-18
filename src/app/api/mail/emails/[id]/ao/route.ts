@@ -1,8 +1,14 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest } from 'next/server'
-import { createTenderFromEmail } from '@/services/mailSync.service'
+import { after } from 'next/server'
+import {
+  completeTenderFromEmailSetup,
+  createTenderFromEmail,
+} from '@/services/mailSync.service'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
+
+export const maxDuration = 60
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getUserFromRequest(req)
@@ -12,5 +18,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!result) {
     return Response.json({ success: false, error: 'Email introuvable' }, { status: 404 })
   }
+
+  after(() => {
+    void completeTenderFromEmailSetup(id, userId, result.tender_id).catch(err => {
+      console.error('[ao/create] background setup failed', err)
+    })
+  })
+
   return Response.json({ success: true, data: result }, { status: 201 })
 }

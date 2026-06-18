@@ -120,9 +120,40 @@ export async function getEmails(
 }
 
 // ── Créer un AO directement depuis un email ──────────────────
+/** Enrichissement IMAP + PJ AO (peut prendre plusieurs secondes). */
+export async function completeTenderFromEmailSetup(
+  emailId: string,
+  userId: string,
+  tenderId: string,
+): Promise<void> {
+  const db = createAdminClient()
+  const { data: email } = await db
+    .from('emails')
+    .select('*')
+    .eq('id', emailId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (!email) return
+
+  try {
+    if (isEmailIncompleteForEnrich(email)) {
+      await reEnrichEmailIfNeeded(db, email.user_id, emailId)
+    }
+  } catch (err) {
+    console.error('[completeTenderFromEmailSetup] enrich:', err)
+  }
+
+  try {
+    await persistAoInboundDocuments(db, userId, tenderId, emailId)
+  } catch (err) {
+    console.error('[completeTenderFromEmailSetup] persist PJ:', err)
+  }
+}
+
 export async function createTenderFromEmail(
   emailId: string,
-  userId: string
+  userId: string,
 ): Promise<{ tender_id: string } | null> {
   const db = createAdminClient()
   const { getMailUserScope } = await import('@/lib/mail-access')
@@ -138,18 +169,6 @@ export async function createTenderFromEmail(
 
   if (error || !email) return null
 
-  try {
-    await reEnrichEmailIfNeeded(db, email.user_id, emailId, { force: true })
-    const { data: refreshed } = await db
-      .from('emails')
-      .select('*')
-      .eq('id', emailId)
-      .single()
-    if (refreshed) Object.assign(email, refreshed)
-  } catch (err) {
-    console.error('[createTenderFromEmail] enrich:', err)
-  }
-
   const { data: existingFromSource } = await db
     .from('tenders')
     .select('id')
@@ -162,11 +181,6 @@ export async function createTenderFromEmail(
       .from('emails')
       .update({ tender_id: existingFromSource.id, is_read: true })
       .eq('id', emailId)
-    try {
-      await persistAoInboundDocuments(db, userId, existingFromSource.id, emailId)
-    } catch (err) {
-      console.error('[createTenderFromEmail] persist PJ existing:', err)
-    }
     return { tender_id: existingFromSource.id }
   }
 
@@ -198,12 +212,6 @@ export async function createTenderFromEmail(
     .from('emails')
     .update({ tender_id: tender.id, is_read: true, is_ao: true, ao_score: Math.max(email.ao_score ?? 0, 80) })
     .eq('id', emailId)
-
-  try {
-    await persistAoInboundDocuments(db, userId, tender.id, emailId)
-  } catch (err) {
-    console.error('[createTenderFromEmail] persist PJ:', err)
-  }
 
   return { tender_id: tender.id }
 }
