@@ -129,7 +129,7 @@ export default function DashboardPage() {
   )
   const unreadNotifs = notifications.filter(n => !n.is_read)
 
-  if (loading) return (
+  if (loading && tenders.length === 0) return (
     <div className="animate-fade-in">
       <div style={{ marginBottom: 24 }}><Skeleton height={28} width={320} style={{ marginBottom: 8 }} /><Skeleton height={14} width={200} /></div>
       <div className="kpi-grid" style={{ marginBottom: 24 }}>

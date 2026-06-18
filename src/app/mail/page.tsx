@@ -41,6 +41,17 @@ import {
 import { extractEmailAddress } from '@/lib/mail-attachments'
 import type { OperisContact } from '@/lib/contacts'
 import { cacheUserSettingsLocally } from '@/lib/user-settings'
+import {
+  mailListQueryKey,
+  readMailListCache,
+  writeMailListCache,
+} from '@/lib/mail-list-cache'
+import {
+  getMailDetailCache,
+  setMailDetailCache,
+  hasMailBodyCached,
+} from '@/lib/mail-detail-cache'
+import MailVirtualList from '@/components/mail/MailVirtualList'
 
 const MAIL_LIST_PAGE_SIZE = 30
 
@@ -205,7 +216,6 @@ export default function MailPage() {
   const selectedIdRef = useRef<string | null>(null)
   const syncInProgressRef = useRef(false)
   const emailsRef = useRef<Email[]>([])
-  const mailCache = useRef<Record<string, EmailWithQuote>>({})
   const prefetchingRef = useRef<Set<string>>(new Set())
   const listScrollRef = useRef<HTMLDivElement>(null)
   const listHasMoreRef = useRef(false)
@@ -216,6 +226,27 @@ export default function MailPage() {
   emailsRef.current = emails
 
   const userId = session?.user?.id
+
+  const getListCacheKey = useCallback((selection?: MailFolderSelection) => {
+    if (!userId) return null
+    const activeSelection = selection ?? folderSelection
+    const activeFolder = activeSelection.kind
+    const listFilter = activeFolder === 'inbox' ? (listListFilter === 'all' ? filter : listListFilter) : 'all'
+    return mailListQueryKey(userId, activeSelection, {
+      q: searchQuery.trim(),
+      order: listSortOrder,
+      listFilter,
+      priority: priorityFilter || '',
+      from: fromFilter.trim(),
+      tender_id: tenderFilter,
+      label: labelFilter,
+      since: sinceFilter,
+      until: untilFilter,
+    })
+  }, [
+    userId, folderSelection, searchQuery, listSortOrder, listListFilter, filter,
+    priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter,
+  ])
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
@@ -317,7 +348,6 @@ export default function MailPage() {
 
   const handleSelectionChange = (sel: MailFolderSelection) => {
     setFolderSelection(sel)
-    setEmails([])
     setSelected(null)
     setComposing(false)
     if (isMobile) {
@@ -332,7 +362,20 @@ export default function MailPage() {
         }
       }).catch(() => {})
     }
-    loadEmails(false, sel)
+    const cacheKey = getListCacheKey(sel)
+    const cached = cacheKey ? readMailListCache(cacheKey) : null
+    if (cached?.emails?.length) {
+      setEmails(cached.emails)
+      emailsRef.current = cached.emails
+      setListHasMore(cached.hasMore)
+      listHasMoreRef.current = cached.hasMore
+      setLoading(false)
+    } else {
+      setEmails([])
+      emailsRef.current = []
+      setLoading(true)
+    }
+    loadEmails(Boolean(cached?.emails?.length), sel)
   }
 
   const mailAction = async (action: string, payload: Record<string, unknown> = {}) => {
@@ -375,11 +418,11 @@ export default function MailPage() {
       const merged: EmailWithQuote = {
         ...full,
         tender_id: full.tender_id ?? null,
-        quote_analysis: full.quote_analysis ?? mailCache.current[emailId]?.quote_analysis,
+        quote_analysis: full.quote_analysis ?? getMailDetailCache(emailId)?.quote_analysis,
       }
-      mailCache.current[emailId] = { ...mailCache.current[emailId], ...merged }
+      setMailDetailCache(emailId, merged)
       if (selectedIdRef.current === emailId) {
-        setSelected(mailCache.current[emailId])
+        setSelected(getMailDetailCache(emailId))
       }
       setEmails(prev => prev.map(e => e.id === full.id ? {
         ...e,
@@ -396,7 +439,7 @@ export default function MailPage() {
       } else if (!silent && analyze && full.has_attachments && !full.quote_analysis?.price_ht) {
         showToast('Prix non trouvé dans le PDF — saisie manuelle sur l\'AO')
       }
-      return mailCache.current[emailId]
+      return getMailDetailCache(emailId) as EmailWithQuote | null
     } catch (e) {
       console.error(e)
       return null
@@ -413,7 +456,7 @@ export default function MailPage() {
       if (local) setSelected(local)
       return
     }
-    const cached = mailCache.current[emailId]
+    const cached = getMailDetailCache(emailId) as EmailWithQuote | null
     if (options?.analyzeOnly && cached) {
       void fetchEmailDetail(emailId, { analyze: true, silent: true })
       return
@@ -442,7 +485,7 @@ export default function MailPage() {
       loadingMoreRef.current = true
       setLoadingMore(true)
     } else if (!silent) {
-      setLoading(true)
+      if (emailsRef.current.length === 0) setLoading(true)
     }
     const safetyTimer = setTimeout(() => {
       if (!silent && !append) setLoading(false)
@@ -502,6 +545,8 @@ export default function MailPage() {
           emailsRef.current = newEmails
           setAllEmails(newEmails)
           setEmails(newEmails)
+          const cacheKey = getListCacheKey(activeSelection)
+          if (cacheKey) writeMailListCache(cacheKey, { emails: newEmails, hasMore })
         }
         if (activeFolder === 'inbox' && !append) {
           setInboxUnread(newEmails.filter((e: Email) => !e.is_read).length)
@@ -521,7 +566,7 @@ export default function MailPage() {
         loadingMoreRef.current = false
       }
     }
-  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, folder, folderSelection, searchQuery, listListFilter, listSortOrder])
+  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, folder, folderSelection, searchQuery, listListFilter, listSortOrder, getListCacheKey])
 
   const handleDeleteFolder = useCallback(async (path: string) => {
     setFolderActionLoading(true)
@@ -770,8 +815,19 @@ export default function MailPage() {
       setLoading(false)
       return
     }
-    void loadEmails(false)
-  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, ready, userId, loadEmails])
+    const cacheKey = getListCacheKey()
+    const cached = cacheKey ? readMailListCache(cacheKey) : null
+    if (cached?.emails?.length) {
+      setEmails(cached.emails)
+      emailsRef.current = cached.emails
+      setListHasMore(cached.hasMore)
+      listHasMoreRef.current = cached.hasMore
+      setLoading(false)
+      void loadEmails(true)
+    } else {
+      void loadEmails(false)
+    }
+  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, ready, userId, loadEmails, getListCacheKey])
 
   // Sync IMAP : uniquement via cron serveur ou bouton manuel — pas au chargement de page
   useEffect(() => {
@@ -832,8 +888,7 @@ export default function MailPage() {
 
   const prefetchEmail = useCallback((emailId: string) => {
     if (emailId.startsWith('elog-')) return
-    const cached = mailCache.current[emailId]
-    if (cached?.body_html || cached?.body_text) return
+    if (hasMailBodyCached(emailId)) return
     if (prefetchingRef.current.has(emailId)) return
     prefetchingRef.current.add(emailId)
     void fetchEmailDetail(emailId, { analyze: false, silent: true }).finally(() => {
@@ -841,8 +896,12 @@ export default function MailPage() {
     })
   }, [fetchEmailDetail])
 
+  useEffect(() => {
+    emails.slice(0, 15).forEach(e => prefetchEmail(e.id))
+  }, [emails, prefetchEmail])
+
   const selectEmail = (email: Email) => {
-    const cached = mailCache.current[email.id]
+    const cached = getMailDetailCache(email.id) as EmailWithQuote | null
     setSelected(cached ? { ...email, ...cached } : email)
     setComposing(false)
     if (isMobile) setMobileShowDetail(true)
@@ -1972,27 +2031,26 @@ export default function MailPage() {
                 </button>
                 )}
               </div>
-            ) : grouped.map(group => (
-              <div key={group.label}>
-                <div style={{
-                  padding: '8px 14px 4px', fontSize: 10, fontWeight: 600,
-                  color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace',
-                  textTransform: 'uppercase', letterSpacing: '0.06em',
-                  background: 'var(--bg-secondary)', position: 'sticky', top: 0, zIndex: 1,
-                }}>
-                  {group.label}
-                </div>
-                {group.emails.map(email => (
-                  <div key={email.id} onClick={() => selectEmail(email)}
-                    onMouseEnter={() => prefetchEmail(email.id)}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      setContextMenuEmailId(email.id)
-                    }}
+            ) : (
+              <MailVirtualList
+                grouped={grouped}
+                scrollRef={listScrollRef}
+                isMobile={isMobile}
+                selectedId={selected?.id ?? null}
+                onSelect={selectEmail}
+                onHover={prefetchEmail}
+                onContextMenu={setContextMenuEmailId}
+                onNearBottom={() => {
+                  if (!loadingMoreRef.current && listHasMoreRef.current && !loading) {
+                    void loadEmails(true, undefined, true)
+                  }
+                }}
+                renderEmailRow={(email, isSelected) => (
+                  <div
                     style={{
                       padding: isMobile ? '14px 12px' : '12px 14px',
                       borderBottom: '1px solid var(--border)', cursor: 'pointer',
-                      background: selected?.id === email.id ? 'var(--bg-hover)' : 'transparent',
+                      background: isSelected ? 'var(--bg-hover)' : 'transparent',
                       position: 'relative',
                     }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
@@ -2172,9 +2230,9 @@ export default function MailPage() {
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
-            ))}
+                )}
+              />
+            )}
             {loadingMore && (
               <div style={{ padding: '8px 0' }}>
                 <MailListSkeleton rows={3} />

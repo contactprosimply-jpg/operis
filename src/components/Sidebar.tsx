@@ -412,7 +412,7 @@ export default function Sidebar() {
             const isMail = item.href === '/mail'
             return (
               <div key={item.href} className="nav-item" style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-                <Link href={item.href} data-tour={`nav-${item.href.slice(1)}`} style={{
+                <Link href={item.href} prefetch={true} data-tour={`nav-${item.href.slice(1)}`} style={{
                   width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   borderRadius: 11, textDecoration: 'none',
                   color: active ? '#6ba3f9' : 'var(--text-muted)',
@@ -518,7 +518,7 @@ export default function Sidebar() {
           const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
           const isMail = item.href === '/mail'
           return (
-            <Link key={item.href} href={item.href} data-tour={`nav-${item.href.slice(1)}`} className="mobile-nav-item" style={{
+            <Link key={item.href} href={item.href} prefetch={true} data-tour={`nav-${item.href.slice(1)}`} className="mobile-nav-item" style={{
               color: active ? '#6ba3f9' : 'var(--text-muted)',
               background: active ? 'var(--accent-soft)' : 'transparent',
             }}>

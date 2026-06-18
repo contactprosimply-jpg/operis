@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '@/components/AuthProvider'
 import { tendersApi, suppliersApi, mailApi } from '@/lib/api'
+import { readCache, writeCache, cacheKeyForUser } from '@/lib/client-cache'
 import {
   TenderStats,
   TenderDetail,
@@ -62,11 +63,15 @@ export function useRefreshOnFocus(refetch: (silent?: boolean) => void, enabled =
   }, [enabled])
 }
 
+export { useCachedQuery } from './useCachedQuery'
+
 // ── Hook : liste des AO ──────────────────────────────────────
 export function useTenders() {
   const { userId } = useAuth()
-  const [tenders, setTenders] = useState<TenderStats[]>([])
-  const [loading, setLoading] = useState(true)
+  const cacheKey = userId ? cacheKeyForUser(userId, 'tenders') : null
+  const cachedInitial = cacheKey ? readCache<TenderStats[]>(cacheKey) : null
+  const [tenders, setTenders] = useState<TenderStats[]>(cachedInitial ?? [])
+  const [loading, setLoading] = useState(!cachedInitial?.length)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -78,10 +83,13 @@ export function useTenders() {
       return
     }
     if (silent) setRefreshing(true)
-    else setLoading(true)
+    else if (!tenders.length) setLoading(true)
     try {
       const res = await tendersApi.getAll()
-      if (res.success) setTenders(res.data)
+      if (res.success) {
+        setTenders(res.data)
+        if (cacheKey) writeCache(cacheKey, res.data)
+      }
       else setError(res.error ?? null)
     } catch {
       /* garde le dernier état connu */
@@ -89,15 +97,15 @@ export function useTenders() {
       if (silent) setRefreshing(false)
       else setLoading(false)
     }
-  }, [userId])
+  }, [userId, cacheKey, tenders.length])
 
   useEffect(() => {
     if (!userId) {
       setLoading(false)
       return
     }
-    fetch(false)
-  }, [fetch, userId])
+    fetch(Boolean(cachedInitial?.length))
+  }, [fetch, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useRefreshOnFocus(fetch, !!userId)
 
@@ -203,44 +211,49 @@ export function useTenderDetail(id: string) {
 // ── Hook : fournisseurs ───────────────────────────────────────
 export function useSuppliers() {
   const { userId } = useAuth()
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [loading, setLoading] = useState(true)
+  const cacheKey = userId ? cacheKeyForUser(userId, 'suppliers') : null
+  const cachedInitial = cacheKey ? readCache<Supplier[]>(cacheKey) : null
+  const [suppliers, setSuppliers] = useState<Supplier[]>(cachedInitial ?? [])
+  const [loading, setLoading] = useState(!cachedInitial?.length)
 
   useLoadingGuard(loading, setLoading)
 
-  const fetch = useCallback(async () => {
+  const fetch = useCallback(async (silent = false) => {
     if (!userId) {
       setLoading(false)
       return
     }
-    setLoading(true)
+    if (!silent && !suppliers.length) setLoading(true)
     try {
       const res = await suppliersApi.getAll()
-      if (res.success) setSuppliers(res.data)
+      if (res.success) {
+        setSuppliers(res.data)
+        if (cacheKey) writeCache(cacheKey, res.data)
+      }
     } catch {
       /* garde le dernier état connu */
     } finally {
       setLoading(false)
     }
-  }, [userId])
+  }, [userId, cacheKey, suppliers.length])
 
   useEffect(() => {
     if (!userId) {
       setLoading(false)
       return
     }
-    fetch()
-  }, [fetch, userId])
+    fetch(Boolean(cachedInitial?.length))
+  }, [fetch, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const create = async (payload: CreateSupplierPayload) => {
     const res = await suppliersApi.create(payload)
-    if (res.success) await fetch()
+    if (res.success) await fetch(true)
     return res
   }
 
   const remove = async (id: string) => {
     const res = await suppliersApi.delete(id)
-    if (res.success) await fetch()
+    if (res.success) await fetch(true)
     return res
   }
 

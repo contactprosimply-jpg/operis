@@ -91,7 +91,7 @@ export default function TendersPage() {
     else show(`Erreur : ${res.error}`)
   }
 
-  if (loading) return (
+  if (loading && tenders.length === 0) return (
     <div className="animate-fade-in">
       <div className="kpi-grid" style={{ marginBottom: 24 }}>
         {[0,1,2,3].map(i => <div key={i} className="skeleton" style={{ height: 100, borderRadius: 14 }} />)}

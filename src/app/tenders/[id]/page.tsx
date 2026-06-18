@@ -19,6 +19,7 @@ import type { OrganizationPayload } from '@/lib/organization'
 import { useAuth } from '@/components/AuthProvider'
 import TenderOriginBadge from '@/components/TenderOriginBadge'
 import TenderDocumentsTab from '@/components/tender/TenderDocumentsTab'
+import { readCache, writeCache, cacheKeyForUser } from '@/lib/client-cache'
 import { getTenderAssigneeLabel, getTenderCreatorLabel } from '@/lib/tender-member-label'
 import { groupEmailsByThread, computeThreadStatus, THREAD_STATUS_META } from '@/lib/email-threading'
 import { AO_CATEGORY_BADGE, type AoKeywordCategory } from '@/lib/ao-email-analysis'
@@ -141,14 +142,16 @@ export default function TenderDetailPage() {
       }
       return
     }
+    const cacheKey = currentUserId ? cacheKeyForUser(currentUserId, `tender:${id}`) : null
     if (silent) setRefreshing(true)
-    else setLoading(true)
+    else if (!cacheKey || !readCache(cacheKey, 15 * 60_000)) setLoading(true)
     try {
       const res = await authFetch(`/api/tenders/${id}`, { timeoutMs: 55000 })
       const data = await res.json()
       if (data.success) {
         setLoadError(null)
         setTender(data.data)
+        if (cacheKey) writeCache(cacheKey, data.data)
         setEditForm({
           title: data.data.title ?? '',
           client: data.data.client ?? '',
@@ -173,7 +176,7 @@ export default function TenderDetailPage() {
     }
     if (silent) setRefreshing(false)
     else setLoading(false)
-  }, [id])
+  }, [id, currentUserId])
 
   const refreshTender = useCallback(() => loadTender(true), [loadTender])
 
@@ -429,10 +432,17 @@ export default function TenderDetailPage() {
       }
       return
     }
-    setTender(null)
-    setLoadError(null)
-    setLoading(true)
-    loadTender(false)
+    const cacheKey = cacheKeyForUser(userId, `tender:${id}`)
+    const cached = readCache<any>(cacheKey, 15 * 60_000)
+    if (cached) {
+      setTender(cached)
+      setLoading(false)
+    } else {
+      setTender(null)
+      setLoadError(null)
+      setLoading(true)
+    }
+    loadTender(Boolean(cached))
     loadAllSuppliers()
   }, [id, userId, ready, loadTender, loadAllSuppliers])
 
