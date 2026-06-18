@@ -51,11 +51,23 @@
   border-radius: 6px;
 }
 
-.animate-fade { animation: fadeUp 0.35s ease forwards; }
-.animate-fade-in { animation: fadeIn 0.35s ease forwards; }
+.animate-fade { opacity: 0; animation: fadeUp 0.35s ease forwards; }
+.animate-fade-in { opacity: 0; animation: fadeIn 0.35s ease forwards; }
 .animate-slide { animation: slideRight 0.3s ease forwards; }
 .animate-scale { animation: scaleIn 0.22s ease forwards; }
 .animate-slide-up { animation: slideUp 0.35s ease forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade,
+  .animate-fade-in,
+  .animate-slide,
+  .animate-scale,
+  .animate-slide-up {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
 .animate-modal { animation: modalIn 0.24s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 
 @keyframes modalIn {

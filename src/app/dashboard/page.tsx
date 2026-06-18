@@ -269,7 +269,7 @@ export default function DashboardPage() {
               return (
                 <tr key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
                   className="animate-slide"
-                  style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', borderLeft: '3px solid transparent', animationDelay: `${i * 40}ms`, opacity: 0 }}
+                  style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', borderLeft: '3px solid transparent', animationDelay: `${i * 40}ms` }}
                   {...rowHandlers}>
                   <td style={{ padding: '12px 14px' }}>
                     <div style={{ fontWeight: 600 }}>{t.title}</div>

@@ -168,7 +168,7 @@ export default function TendersPage() {
                     borderBottom: '1px solid var(--border)', cursor: 'pointer',
                     borderLeft: '3px solid transparent',
                     background: i % 2 === 1 ? 'rgba(148,163,184,0.02)' : 'transparent',
-                    animationDelay: `${i * 30}ms`, opacity: 0,
+                    animationDelay: `${i * 30}ms`,
                   }}
                   {...rowHandlers}>
                   <td style={{ padding: '12px 14px' }}>
@@ -194,11 +194,6 @@ export default function TendersPage() {
                       {priorite.icon} {priorite.label}
                     </span>
                   </td>
-                  {showCreatorColumn && (
-                    <td style={{ padding: '12px 14px', fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui' }}>
-                      {creatorLabel ?? creatorColumnLabel(t, currentUserId, org)}
-                    </td>
-                  )}
                   <td style={{ padding: '12px 14px' }} onClick={e => e.stopPropagation()}>
                     <select
                       value={t.status}
@@ -214,6 +209,11 @@ export default function TendersPage() {
                       ))}
                     </select>
                   </td>
+                  {showCreatorColumn && (
+                    <td style={{ padding: '12px 14px', fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui' }}>
+                      {creatorLabel ?? creatorColumnLabel(t, currentUserId, org)}
+                    </td>
+                  )}
                   <td style={{ padding: '12px 14px' }}><Badge>{t.nb_suppliers}</Badge></td>
                   <td style={{ padding: '12px 14px' }}><Badge color={respPct === 100 ? 'green' : respPct >= 50 ? 'amber' : t.nb_suppliers > 0 ? 'red' : 'gray'}>{t.nb_responses}/{t.nb_suppliers}</Badge></td>
                   <td style={{ padding: '12px 14px' }}><Badge color={t.nb_quotes > 0 ? 'green' : 'gray'} glow={t.nb_quotes > 0}>{t.nb_quotes}</Badge></td>

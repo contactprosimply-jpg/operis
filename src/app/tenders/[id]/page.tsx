@@ -73,7 +73,8 @@ function DeadlineBadge({ deadline }: { deadline: string | null }) {
 }
 
 export default function TenderDetailPage() {
-  const { id } = useParams<{ id: string }>()
+  const params = useParams<{ id: string }>()
+  const id = Array.isArray(params.id) ? params.id[0] : params.id
   const router = useRouter()
   const { session } = useAuth()
   const currentUserId = session?.user?.id
@@ -85,6 +86,7 @@ export default function TenderDetailPage() {
   const [tender, setTender] = useState<any>(null)
   const [suppliers, setSuppliers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
   const [showEdit, setShowEdit] = useState(false)
@@ -132,12 +134,20 @@ export default function TenderDetailPage() {
   })
 
   const loadTender = useCallback(async (silent = false) => {
+    if (!id) {
+      if (!silent) {
+        setLoadError('Identifiant AO manquant')
+        setLoading(false)
+      }
+      return
+    }
     if (silent) setRefreshing(true)
     else setLoading(true)
     try {
       const res = await authFetch(`/api/tenders/${id}`)
       const data = await res.json()
       if (data.success) {
+        setLoadError(null)
         setTender(data.data)
         setEditForm({
           title: data.data.title ?? '',
@@ -152,10 +162,13 @@ export default function TenderDetailPage() {
           status: data.data.status ?? 'nouveau',
         })
       } else if (!silent) {
+        setLoadError(data.error ?? 'AO introuvable')
         showRef.current(`Erreur : ${data.error}`)
         routerRef.current.push('/tenders')
       }
-    } catch {}
+    } catch {
+      if (!silent) setLoadError('Impossible de charger cet AO')
+    }
     if (silent) setRefreshing(false)
     else setLoading(false)
   }, [id])
@@ -726,7 +739,14 @@ export default function TenderDetailPage() {
   }
 
   if (loading && !tender) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><Spinner size={28} /></div>
-  if (!tender) return null
+  if (!tender) {
+    return (
+      <div style={{ padding: 32, textAlign: 'center' }}>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: 16 }}>{loadError ?? 'AO introuvable'}</p>
+        <Button variant="ghost" onClick={() => router.push('/tenders')}>← Retour aux AO</Button>
+      </div>
+    )
+  }
 
   const card: React.CSSProperties = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '20px 22px', marginBottom: 16 }
   const label: React.CSSProperties = { fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }
@@ -1057,7 +1077,7 @@ export default function TenderDetailPage() {
                   border: `1px solid ${isSelected ? 'rgba(59,126,246,0.35)' : isBest ? 'rgba(16,185,129,0.35)' : 'var(--border)'}`,
                   borderRadius: 10,
                   background: isSelected ? 'rgba(59,126,246,0.06)' : isBest ? 'rgba(16,185,129,0.06)' : 'var(--bg-secondary)',
-                  animationDelay: `${i * 50}ms`, opacity: 0,
+                  animationDelay: `${i * 50}ms`,
                 }}>
                   <button
                     type="button"

@@ -381,7 +381,7 @@ export function KpiCard({ label, value, delta, deltaVariant = 'success', icon, c
         border: `1px solid ${hov ? accent + '40' : 'var(--border)'}`,
         borderRadius: 14, padding: '18px 20px 14px',
         boxShadow: hov ? 'var(--shadow-glow)' : 'var(--shadow-sm)',
-        animationDelay: `${delay}ms`, opacity: 0,
+        animationDelay: `${delay}ms`,
         position: 'relative', overflow: 'hidden', transition: 'all 0.22s ease',
       }}
     >
