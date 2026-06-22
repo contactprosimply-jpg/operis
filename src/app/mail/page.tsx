@@ -23,6 +23,13 @@ import MailFolderSidebar from '@/components/mail/MailFolderSidebar'
 import MailAddressLines from '@/components/mail/MailAddressLines'
 import MailComposePopup from '@/components/mail/MailComposePopup'
 import MailToolbar from '@/components/mail/MailToolbar'
+import { SyncProgressIndicator, SyncProgressRing } from '@/components/mail/SyncProgressRing'
+import {
+  mailSyncProgressFromPayload,
+  SYNC_PROGRESS_PENDING,
+  type MailSyncProgressPayload,
+  type MailSyncProgressUI,
+} from '@/lib/mail-sync-progress'
 import { MailListSkeleton, MailBodySkeleton } from '@/components/mail/MailSkeletons'
 import {
   type MailFolderSelection,
@@ -157,6 +164,7 @@ export default function MailPage() {
   const [loadingDetailBody, setLoadingDetailBody] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [autoSyncStatus, setAutoSyncStatus] = useState<string | null>(null)
+  const [syncProgress, setSyncProgress] = useState<MailSyncProgressUI | null>(null)
   const [showMailWelcome, setShowMailWelcome] = useState(false)
   const autoSyncBootRef = useRef(false)
   const [selected, setSelected] = useState<Email | null>(null)
@@ -651,28 +659,14 @@ export default function MailPage() {
           const statusJson = await statusRes.json()
           if (!statusJson.success) continue
 
-          const progress = statusJson.data?.sync_progress as {
-            synced_count?: number
-            mailbox_total?: number
-            initial_sync_complete?: boolean
-            phase?: 'inbox' | 'sent' | 'incremental'
-            sent_synced_count?: number
-            sent_mailbox_total?: number
-          } | null
+          const progress = statusJson.data?.sync_progress as MailSyncProgressPayload | null
 
           if (progress) {
-            if (progress.phase === 'sent' && (progress.sent_mailbox_total ?? 0) > 0) {
-              setAutoSyncStatus(
-                `Envoyés : ${(progress.sent_synced_count ?? 0).toLocaleString('fr-FR')} / ${(progress.sent_mailbox_total ?? 0).toLocaleString('fr-FR')} mails synchronisés`,
-              )
-            } else if ((progress.mailbox_total ?? 0) > 0) {
-              setAutoSyncStatus(
-                `${(progress.synced_count ?? 0).toLocaleString('fr-FR')} / ${(progress.mailbox_total ?? 0).toLocaleString('fr-FR')} mails synchronisés`,
-              )
-            } else if (!statusJson.data?.run?.finished_at) {
-              setAutoSyncStatus('Synchronisation en cours…')
-            }
+            const ui = mailSyncProgressFromPayload(progress)
+            setSyncProgress(ui)
+            setAutoSyncStatus(ui.label)
           } else if (!statusJson.data?.run?.finished_at) {
+            setSyncProgress(SYNC_PROGRESS_PENDING)
             setAutoSyncStatus('Synchronisation en cours…')
           }
 
@@ -710,12 +704,14 @@ export default function MailPage() {
           /* poll court — réessayer */
         }
       }
+      setSyncProgress(SYNC_PROGRESS_PENDING)
       setAutoSyncStatus('Synchronisation en cours…')
       return { stored: 0, updated: 0 }
     }
 
     try {
       setSyncing(true)
+      setSyncProgress(SYNC_PROGRESS_PENDING)
       setAutoSyncStatus('Synchronisation en cours…')
 
       const res = await authFetch('/api/mail/sync', {
@@ -767,6 +763,7 @@ export default function MailPage() {
     } finally {
       syncInProgressRef.current = false
       setSyncing(false)
+      setSyncProgress(null)
     }
   }, [loadEmails, loadEmailDetail, refreshFolders, folder, userId])
 
@@ -1636,6 +1633,7 @@ export default function MailPage() {
           onNewMail={() => openCompose()}
           onRefresh={handleSync}
           syncing={syncing}
+          syncProgress={syncProgress}
           lastSyncLabel={lastSyncLabel}
           search={searchQuery}
           onSearchChange={v => { setSearchQuery(v); loadEmails(false) }}
@@ -1793,14 +1791,31 @@ export default function MailPage() {
                     }}>{unreadTotal}</span>
                   )}
                 </div>
-                {autoSyncStatus && (
+                {(syncing && syncProgress) ? (
+                  <div style={{ marginTop: 4 }}>
+                    <SyncProgressIndicator progress={syncProgress} size={28} compact />
+                    <div style={{
+                      fontSize: 9,
+                      color: 'var(--text-muted)',
+                      fontFamily: 'DM Mono, monospace',
+                      marginTop: 2,
+                      lineHeight: 1.3,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      maxWidth: 180,
+                    }}>
+                      {syncProgress.label}
+                    </div>
+                  </div>
+                ) : autoSyncStatus ? (
                   <div style={{
                     fontSize: 9, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace',
                     marginTop: 4, lineHeight: 1.3, whiteSpace: 'nowrap',
                   }}>
                     {autoSyncStatus}
                   </div>
-                )}
+                ) : null}
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
                 <button
@@ -1853,7 +1868,9 @@ export default function MailPage() {
                         WebkitTapHighlightColor: 'transparent',
                       }}
                     >
-                      {syncing ? <Spinner size={12} /> : <span style={{ fontSize: 13, lineHeight: 1 }}>↻</span>}
+                      {syncing && syncProgress
+                        ? <SyncProgressRing percent={syncProgress.percent} size={18} showPercent={false} />
+                        : <span style={{ fontSize: 13, lineHeight: 1 }}>↻</span>}
                       <span>Synchroniser</span>
                     </button>
                     <button onClick={() => openCompose()} style={{
@@ -2006,9 +2023,18 @@ export default function MailPage() {
               <MailListSkeleton />
             ) : emails.length === 0 && folder !== 'drafts' ? (
               <div style={{ textAlign: 'center', padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {syncing ? 'Synchronisation en cours…' : 'Aucun email dans ce dossier'}
-                </div>
+                {syncing && syncProgress ? (
+                  <>
+                    <SyncProgressIndicator progress={syncProgress} size={64} />
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      {syncProgress.label}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {syncing ? 'Synchronisation en cours…' : 'Aucun email dans ce dossier'}
+                  </div>
+                )}
                 {folder === 'inbox' && (
                 <button
                   type="button"
@@ -2030,7 +2056,9 @@ export default function MailPage() {
                     gap: 6,
                   }}
                 >
-                  {syncing ? <Spinner size={14} /> : '↻'}
+                  {syncing && syncProgress
+                    ? <SyncProgressRing percent={syncProgress.percent} size={16} showPercent={false} />
+                    : '↻'}
                   Synchroniser maintenant
                 </button>
                 )}

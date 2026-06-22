@@ -1,9 +1,13 @@
 'use client'
 
+import type { MailSyncProgressUI } from '@/lib/mail-sync-progress'
+import { SyncProgressIndicator, SyncProgressRing } from '@/components/mail/SyncProgressRing'
+
 export default function MailToolbar({
   onNewMail,
   onRefresh,
   syncing,
+  syncProgress,
   lastSyncLabel,
   search,
   onSearchChange,
@@ -14,6 +18,7 @@ export default function MailToolbar({
   onNewMail: () => void
   onRefresh: () => void
   syncing: boolean
+  syncProgress?: MailSyncProgressUI | null
   lastSyncLabel: string
   search: string
   onSearchChange: (v: string) => void
@@ -70,20 +75,30 @@ export default function MailToolbar({
           fontSize: 12,
           cursor: syncing ? 'wait' : 'pointer',
           fontFamily: 'DM Sans, system-ui',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
         }}
       >
-        {syncing ? 'Synchronisation…' : '↻ Synchroniser'}
+        {syncing && syncProgress
+          ? <SyncProgressRing percent={syncProgress.percent} size={18} showPercent={false} />
+          : '↻'}
+        {syncing ? 'Synchronisation…' : 'Synchroniser'}
       </button>
-      <span
-        style={{
-          fontSize: 11,
-          color: 'var(--text-muted)',
-          fontFamily: 'DM Mono, monospace',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {lastSyncLabel}
-      </span>
+      {syncing && syncProgress ? (
+        <SyncProgressIndicator progress={syncProgress} size={34} />
+      ) : (
+        <span
+          style={{
+            fontSize: 11,
+            color: 'var(--text-muted)',
+            fontFamily: 'DM Mono, monospace',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {lastSyncLabel}
+        </span>
+      )}
       <div style={{ flex: 1, minWidth: 120 }}>
         <input
           type="search"
