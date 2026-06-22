@@ -943,9 +943,18 @@ export default function MailPage() {
   }, [loadEmails, loading])
 
   useEffect(() => {
-    if (!pendingEmailId || emails.length === 0) return
+    if (!pendingEmailId) return
     const target = emails.find(e => e.id === pendingEmailId)
-    if (target && selected?.id !== target.id) selectEmail(target)
+    if (target) {
+      if (selected?.id !== target.id) selectEmail(target)
+      return
+    }
+    void authFetch(`/api/mail/emails/${pendingEmailId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data) selectEmail(data.data as Email)
+      })
+      .catch(() => {})
   }, [pendingEmailId, emails, selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const isComposeContentEmpty = useCallback(() => {

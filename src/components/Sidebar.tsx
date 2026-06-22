@@ -63,7 +63,10 @@ export default function Sidebar() {
   const notifCount = notifList.filter(n => !n.is_read).length
   const markAllLockRef = useRef(0)
   const [showNotifPanel, setShowNotifPanel] = useState(false)
-  const notifPanelRef = useRef<HTMLDivElement>(null)
+  const desktopNotifPanelRef = useRef<HTMLDivElement>(null)
+  const mobileNotifPanelRef = useRef<HTMLDivElement>(null)
+  const notifBellRef = useRef<HTMLButtonElement>(null)
+  const mobileNotifBellRef = useRef<HTMLButtonElement>(null)
 
   // Charger l'utilisateur courant et les comptes sauvegardés
   useEffect(() => {
@@ -167,9 +170,13 @@ export default function Sidebar() {
   // Fermer panel notifications si clic extérieur
   useEffect(() => {
     const handle = (e: MouseEvent) => {
-      if (notifPanelRef.current && !notifPanelRef.current.contains(e.target as Node)) {
-        setShowNotifPanel(false)
-      }
+      const target = e.target as Node
+      if (desktopNotifPanelRef.current?.contains(target)) return
+      if (mobileNotifPanelRef.current?.contains(target)) return
+      if (notifBellRef.current?.contains(target)) return
+      if (mobileNotifBellRef.current?.contains(target)) return
+      if (document.getElementById('operis-mail-preview-modal')?.contains(target)) return
+      setShowNotifPanel(false)
     }
     if (showNotifPanel) document.addEventListener('mousedown', handle)
     return () => document.removeEventListener('mousedown', handle)
@@ -227,7 +234,8 @@ export default function Sidebar() {
     })
   }
 
-  const handleMarkAllNotifsRead = async () => {
+  const handleMarkAllNotifsRead = async (e?: React.MouseEvent) => {
+    e?.stopPropagation()
     const token = await getAccessToken()
     if (!token) return
     setNotifList(prev => prev.map(n => ({ ...n, is_read: true })))
@@ -446,6 +454,7 @@ export default function Sidebar() {
         {/* Notifications */}
         <div style={{ position: 'relative', marginBottom: 8 }}>
           <button
+            ref={notifBellRef}
             type="button"
             data-tour="nav-notifications"
             onClick={() => setShowNotifPanel(v => !v)}
@@ -474,7 +483,7 @@ export default function Sidebar() {
           </button>
 
           {showNotifPanel && (
-            <div ref={notifPanelRef} style={{
+            <div ref={desktopNotifPanelRef} style={{
               position: 'absolute', bottom: 52, left: 56, width: 320,
               background: 'var(--bg-card)', border: '1px solid var(--border-hi)',
               borderRadius: 14, boxShadow: 'var(--shadow-md)', zIndex: 300, overflow: 'hidden',
@@ -487,7 +496,8 @@ export default function Sidebar() {
                 {notifCount > 0 && (
                   <button
                     type="button"
-                    onClick={() => void handleMarkAllNotifsRead()}
+                    onMouseDown={e => e.stopPropagation()}
+                    onClick={e => void handleMarkAllNotifsRead(e)}
                     style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}
                   >
                     Tout marquer lu
@@ -540,6 +550,7 @@ export default function Sidebar() {
         })}
         {/* Notifications mobile */}
         <button
+          ref={mobileNotifBellRef}
           type="button"
           className="mobile-nav-item"
           onClick={() => { setShowNotifPanel(v => !v); setShowAccountPanel(false) }}
@@ -577,7 +588,7 @@ export default function Sidebar() {
       {showNotifPanel && (
         <>
           <div className="mobile-panel-backdrop" onClick={() => setShowNotifPanel(false)} />
-          <div className="mobile-sheet" ref={notifPanelRef}>
+          <div className="mobile-sheet" ref={mobileNotifPanelRef}>
             <div style={{
               padding: '14px 16px', borderBottom: '1px solid var(--border)',
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -587,7 +598,8 @@ export default function Sidebar() {
                 {notifCount > 0 && (
                   <button
                     type="button"
-                    onClick={() => void handleMarkAllNotifsRead()}
+                    onMouseDown={e => e.stopPropagation()}
+                    onClick={e => void handleMarkAllNotifsRead(e)}
                     style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}
                   >
                     Tout marquer lu

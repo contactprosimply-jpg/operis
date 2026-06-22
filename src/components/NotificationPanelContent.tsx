@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { authFetch } from '@/lib/auth-client'
 import MailPreviewModal, { type MailPreviewData } from '@/components/mail/MailPreviewModal'
@@ -67,7 +68,8 @@ function NotifRow({
   const unread = !n.is_read
   const hasEmail = Boolean(n.email_id)
 
-  async function handlePreview() {
+  async function handlePreview(e: React.MouseEvent) {
+    e.stopPropagation()
     if (!n.email_id) return
     setLoadingPreview(true)
     try {
@@ -88,14 +90,16 @@ function NotifRow({
     }
   }
 
-  function handleOpenMail() {
+  function handleOpenMail(e: React.MouseEvent) {
+    e.stopPropagation()
     if (!n.email_id) return
     if (!n.is_read) onMarkRead(n.id)
     onClosePanel()
     router.push(`/mail?email=${n.email_id}`)
   }
 
-  function handleOpenTender() {
+  function handleOpenTender(e: React.MouseEvent) {
+    e.stopPropagation()
     if (!n.tender_id) return
     if (!n.is_read) onMarkRead(n.id)
     onClosePanel()
@@ -134,7 +138,8 @@ function NotifRow({
               <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  onClick={() => void handlePreview()}
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={e => void handlePreview(e)}
                   disabled={loadingPreview}
                   style={{
                     ...actionBtnBase,
@@ -147,6 +152,7 @@ function NotifRow({
                 </button>
                 <button
                   type="button"
+                  onMouseDown={e => e.stopPropagation()}
                   onClick={handleOpenMail}
                   style={{
                     ...actionBtnBase,
@@ -162,6 +168,7 @@ function NotifRow({
             {!hasEmail && n.tender_id && (
               <button
                 type="button"
+                onMouseDown={e => e.stopPropagation()}
                 onClick={handleOpenTender}
                 style={{
                   ...actionBtnBase,
@@ -187,8 +194,9 @@ function NotifRow({
           )}
         </div>
       </div>
-      {preview && (
-        <MailPreviewModal mail={preview} onClose={() => setPreview(null)} />
+      {preview && typeof document !== 'undefined' && createPortal(
+        <MailPreviewModal mail={preview} onClose={() => setPreview(null)} />,
+        document.body,
       )}
     </>
   )

@@ -24,6 +24,7 @@ export default function MailPreviewModal({
 
   return (
     <div
+      id="operis-mail-preview-modal"
       role="dialog"
       aria-modal="true"
       aria-label="Aperçu du mail"
