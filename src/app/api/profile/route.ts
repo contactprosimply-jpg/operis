@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   const { data, error } = await db
     .from('profiles')
-    .select('id, full_name, company, role, onboarding_done, tour_done, mail_welcome_seen, created_at')
+    .select('id, full_name, company, role, onboarding_done, tour_done, mail_welcome_seen, terms_accepted_at, terms_version, created_at')
     .eq('id', userId)
     .single()
 
@@ -29,6 +29,7 @@ export async function PATCH(req: NextRequest) {
 
   const fieldErr = rejectUnexpectedFields(body as Record<string, unknown>, [
     'full_name', 'company', 'onboarding_done', 'tour_done', 'mail_welcome_seen',
+    'terms_accepted_at', 'terms_version',
   ])
   if (fieldErr) return badRequest(fieldErr)
 
@@ -63,6 +64,18 @@ export async function PATCH(req: NextRequest) {
     }
     updates.mail_welcome_seen = body.mail_welcome_seen
   }
+  if ('terms_accepted_at' in body) {
+    if (body.terms_accepted_at !== null && typeof body.terms_accepted_at !== 'string') {
+      return badRequest('terms_accepted_at invalide')
+    }
+    updates.terms_accepted_at = body.terms_accepted_at
+  }
+  if ('terms_version' in body) {
+    if (body.terms_version !== null && typeof body.terms_version !== 'string') {
+      return badRequest('terms_version invalide')
+    }
+    updates.terms_version = body.terms_version
+  }
 
   if (Object.keys(updates).length === 0) return badRequest('Aucun champ à mettre à jour')
 
@@ -71,7 +84,7 @@ export async function PATCH(req: NextRequest) {
     .from('profiles')
     .update(updates)
     .eq('id', userId)
-    .select('id, full_name, company, role, onboarding_done, tour_done, mail_welcome_seen, created_at')
+    .select('id, full_name, company, role, onboarding_done, tour_done, mail_welcome_seen, terms_accepted_at, terms_version, created_at')
     .single()
 
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })

@@ -510,6 +510,9 @@ export default function LandingPage() {
             © {new Date().getFullYear()} Operis · Gestion des appels d&apos;offres BTP
           </p>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <a href="/legal#cgu" style={{ fontSize: 12, color: 'var(--text-secondary)', textDecoration: 'none' }}>CGU</a>
+            <a href="/legal#cgv" style={{ fontSize: 12, color: 'var(--text-secondary)', textDecoration: 'none' }}>CGV</a>
+            <a href="/legal#confidentialite" style={{ fontSize: 12, color: 'var(--text-secondary)', textDecoration: 'none' }}>Confidentialité</a>
             <a href="/pricing" style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Tarifs</a>
             <a href="/login" style={{ fontSize: 12, color: 'var(--text-secondary)', textDecoration: 'none' }}>Connexion</a>
             <a href="/register" style={{ fontSize: 12, color: 'var(--text-secondary)', textDecoration: 'none' }}>Inscription</a>

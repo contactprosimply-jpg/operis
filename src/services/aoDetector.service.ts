@@ -4,10 +4,13 @@
 // Score de 0 à 100 — au dessus de 30 = AO probable
 // ============================================================
 
+import { billingVeto } from '@/lib/ao-billing-veto'
+
 export interface DetectionResult {
   isAo: boolean
   score: number
   matchedKeywords: string[]
+  excludedReason?: string | null
 }
 
 const SUBJECT_AO_PATTERNS = [
@@ -93,7 +96,6 @@ const NEGATIVE_KEYWORDS = [
   'promotion',
   'soldes',
   'offre spéciale',
-  'relance de paiement',
   'reset your password',
   'supabase auth',
   'vercel',
@@ -147,6 +149,11 @@ export function looksLikeSupplierQuoteEmail(subject: string, body: string): bool
 }
 
 export function detectAo(subject: string, body: string): DetectionResult {
+  const veto = billingVeto(subject, body)
+  if (veto) {
+    return { isAo: false, score: 0, matchedKeywords: [], excludedReason: veto }
+  }
+
   const cleanSubject = subject.replace(/^(re:|fwd:|tr:|fw:)\s*/gi, '').trim()
   const subjectLower = cleanSubject.toLowerCase()
 

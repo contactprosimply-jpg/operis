@@ -13,6 +13,7 @@ import {
   toListEmail,
 } from '@/lib/mail-api'
 import type { Email, EmailLabel } from '@/types/database'
+import { mailMatchesSearch, sortEmailsSearchResults } from '@/lib/mail-search'
 import { getMailUserScope } from '@/lib/mail-access'
 import { resolveMailAccount } from '@/lib/mail-sync'
 import { linkEmailToTenderWithDocuments } from '@/lib/tender-documents'
@@ -105,6 +106,7 @@ export async function GET(req: NextRequest) {
   const folder = searchParams.get('folder')
   const imapPath = searchParams.get('imap_path') || undefined
   const searchQ = searchParams.get('q')?.trim() || undefined
+  const starredOnly = searchParams.get('starred') === 'true'
   const sentFolder = folder === 'sent'
   const mailAccount = sentFolder ? await resolveMailAccount(userId) : null
 
@@ -122,6 +124,7 @@ export async function GET(req: NextRequest) {
     if (searchQ) {
       q = q.or(`subject.ilike.%${searchQ}%,from_address.ilike.%${searchQ}%,to_address.ilike.%${searchQ}%`)
     }
+    if (starredOnly) q = q.eq('is_starred', true)
     if (isAo !== undefined) q = q.eq('is_ao', isAo)
     if (isRead !== undefined) q = q.eq('is_read', isRead)
     if (hasAttachments) q = q.eq('has_attachments', true)
@@ -203,10 +206,15 @@ export async function GET(req: NextRequest) {
   }
 
   const listRows = rows.map(row => toListEmail(row))
+  let filteredRows = listRows
+  if (searchQ) {
+    filteredRows = filteredRows.filter(row => mailMatchesSearch(row, searchQ))
+  }
+  filteredRows = sortEmailsSearchResults(filteredRows)
 
   return Response.json({
     success: true,
-    data: listRows,
+    data: filteredRows,
     hasMore: listRows.length === limit,
   })
 }

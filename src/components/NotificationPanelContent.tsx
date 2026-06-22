@@ -1,5 +1,10 @@
 'use client'
 
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { authFetch } from '@/lib/auth-client'
+import MailPreviewModal, { type MailPreviewData } from '@/components/mail/MailPreviewModal'
+
 export type AppNotification = {
   id: string
   type: string
@@ -36,71 +41,168 @@ function timeAgo(dateStr: string): string {
   return mins <= 1 ? "à l'instant" : `il y a ${mins}min`
 }
 
+const actionBtnBase: React.CSSProperties = {
+  minHeight: 44,
+  padding: '8px 12px',
+  borderRadius: 8,
+  fontSize: 11,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'DM Sans, system-ui',
+}
+
 function NotifRow({
   n,
-  onOpen,
+  onMarkRead,
+  onClosePanel,
 }: {
   n: AppNotification
-  onOpen: (n: AppNotification) => void
+  onMarkRead: (id: string) => void
+  onClosePanel: () => void
 }) {
+  const router = useRouter()
+  const [preview, setPreview] = useState<MailPreviewData | null>(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
   const important = n.priority === 'important'
   const unread = !n.is_read
+  const hasEmail = Boolean(n.email_id)
+
+  async function handlePreview() {
+    if (!n.email_id) return
+    setLoadingPreview(true)
+    try {
+      const res = await authFetch(`/api/mail/emails/${n.email_id}`)
+      const json = await res.json()
+      if (json.success && json.data) {
+        setPreview({
+          subject: json.data.subject,
+          from_address: json.data.from_address,
+          received_at: json.data.received_at,
+          body_html: json.data.body_html,
+          body_text: json.data.body_text,
+        })
+      }
+      if (!n.is_read) onMarkRead(n.id)
+    } finally {
+      setLoadingPreview(false)
+    }
+  }
+
+  function handleOpenMail() {
+    if (!n.email_id) return
+    if (!n.is_read) onMarkRead(n.id)
+    onClosePanel()
+    router.push(`/mail?email=${n.email_id}`)
+  }
+
+  function handleOpenTender() {
+    if (!n.tender_id) return
+    if (!n.is_read) onMarkRead(n.id)
+    onClosePanel()
+    router.push(`/tenders/${n.tender_id}`)
+  }
 
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(n)}
-      style={{
-        width: '100%',
-        textAlign: 'left',
-        padding: '12px 16px',
-        background: unread && important ? 'rgba(30,203,225,0.1)' : unread ? 'var(--accent-soft)' : 'transparent',
-        border: 'none',
-        borderBottom: '1px solid var(--border)',
-        cursor: 'pointer',
-        fontFamily: 'DM Sans, system-ui',
-      }}
-    >
-      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-        <span style={{ fontSize: important ? 16 : 14, lineHeight: 1.2 }}>
-          {important ? '⭐' : (NOTIF_ICONS[n.type] ?? '🔔')}
-        </span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontSize: important ? 13 : 12,
-            fontWeight: important ? 700 : 600,
-            color: important ? '#1ECBE1' : 'var(--text-primary)',
-            marginBottom: 2,
-          }}>
-            {n.title}
+    <>
+      <div
+        className={unread ? 'is-unread' : 'is-read'}
+        style={{
+          padding: '12px 16px',
+          background: unread && important ? 'rgba(30,203,225,0.1)' : unread ? 'var(--accent-soft)' : 'transparent',
+          borderBottom: '1px solid var(--border)',
+          fontFamily: 'DM Sans, system-ui',
+        }}
+      >
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <span style={{ fontSize: important ? 16 : 14, lineHeight: 1.2 }}>
+            {important ? '⭐' : (NOTIF_ICONS[n.type] ?? '🔔')}
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: important ? 13 : 12,
+              fontWeight: important ? 700 : 600,
+              color: important ? '#1ECBE1' : 'var(--text-primary)',
+              marginBottom: 2,
+            }}>
+              {n.title}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{n.message}</div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 4 }}>
+              {timeAgo(n.created_at)}
+            </div>
+            {hasEmail && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => void handlePreview()}
+                  disabled={loadingPreview}
+                  style={{
+                    ...actionBtnBase,
+                    border: '1px solid var(--border-hi)',
+                    background: 'transparent',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  {loadingPreview ? 'Chargement…' : 'Aperçu'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenMail}
+                  style={{
+                    ...actionBtnBase,
+                    border: 'none',
+                    background: '#FFB400',
+                    color: '#021246',
+                  }}
+                >
+                  Ouvrir le mail
+                </button>
+              </div>
+            )}
+            {!hasEmail && n.tender_id && (
+              <button
+                type="button"
+                onClick={handleOpenTender}
+                style={{
+                  ...actionBtnBase,
+                  marginTop: 10,
+                  border: 'none',
+                  background: '#FFB400',
+                  color: '#021246',
+                }}
+              >
+                Voir l&apos;AO
+              </button>
+            )}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{n.message}</div>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 4 }}>
-            {timeAgo(n.created_at)}
-          </div>
+          {unread && (
+            <span style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: important ? '#1ECBE1' : 'var(--accent)',
+              flexShrink: 0,
+              marginTop: 4,
+            }} />
+          )}
         </div>
-        {unread && (
-          <span style={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            background: important ? '#1ECBE1' : 'var(--accent)',
-            flexShrink: 0,
-            marginTop: 4,
-          }} />
-        )}
       </div>
-    </button>
+      {preview && (
+        <MailPreviewModal mail={preview} onClose={() => setPreview(null)} />
+      )}
+    </>
   )
 }
 
 export default function NotificationPanelContent({
   notifList,
-  onOpen,
+  onMarkRead,
+  onClosePanel,
   onRelaunchAction,
 }: {
   notifList: AppNotification[]
-  onOpen: (n: AppNotification) => void
+  onMarkRead: (id: string) => void
+  onClosePanel: () => void
   onRelaunchAction: (id: string, action: 'send' | 'cancel') => Promise<void>
 }) {
   const importantNotifs = notifList.filter(n => n.priority === 'important' && n.type !== 'relaunch_confirm')
@@ -132,13 +234,14 @@ export default function NotificationPanelContent({
             Important
           </div>
           {importantNotifs.map(n => (
-            <NotifRow key={n.id} n={n} onOpen={onOpen} />
+            <NotifRow key={n.id} n={n} onMarkRead={onMarkRead} onClosePanel={onClosePanel} />
           ))}
         </>
       )}
       {relaunchNotifs.map(n => (
         <div
           key={n.id}
+          className={!n.is_read ? 'is-unread' : 'is-read'}
           style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', fontFamily: 'DM Sans, system-ui' }}
         >
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -150,10 +253,7 @@ export default function NotificationPanelContent({
                 <button
                   type="button"
                   onClick={() => void onRelaunchAction(n.id, 'send')}
-                  style={{
-                    fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 6,
-                    border: 'none', background: '#3B7FE8', color: '#fff', cursor: 'pointer',
-                  }}
+                  style={{ ...actionBtnBase, border: 'none', background: '#3B7FE8', color: '#fff' }}
                 >
                   Envoyer
                 </button>
@@ -161,9 +261,8 @@ export default function NotificationPanelContent({
                   type="button"
                   onClick={() => void onRelaunchAction(n.id, 'cancel')}
                   style={{
-                    fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 6,
-                    border: '1px solid var(--border)', background: 'transparent',
-                    color: 'var(--text-secondary)', cursor: 'pointer',
+                    ...actionBtnBase,
+                    border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)',
                   }}
                 >
                   Annuler
@@ -190,7 +289,7 @@ export default function NotificationPanelContent({
         </div>
       )}
       {regularNotifs.map(n => (
-        <NotifRow key={n.id} n={n} onOpen={onOpen} />
+        <NotifRow key={n.id} n={n} onMarkRead={onMarkRead} onClosePanel={onClosePanel} />
       ))}
     </>
   )

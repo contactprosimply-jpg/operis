@@ -30,6 +30,7 @@ const TABS = [
   { id: 'signature',  label: 'Signature',  icon: '✍' },
   { id: 'famille',    label: 'Famille',    icon: '👥' },
   { id: 'apparence',  label: 'Apparence',  icon: '🎨' },
+  { id: 'legal',      label: 'Légal',      icon: '📜' },
 ]
 
 function SettingsPageContent() {
@@ -805,6 +806,27 @@ function SettingsPageContent() {
               <Button variant="primary" onClick={handleSaveTheme}>Appliquer le theme</Button>
             </div>
           </>
+        )}
+
+        {tab === 'legal' && (
+          <div style={card}>
+            <div style={sTitle}>Documents légaux</div>
+            <div style={sSub}>Consultez les conditions d&apos;utilisation et la politique de confidentialité Operis.</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <a href="/legal#cgu" target="_blank" rel="noopener noreferrer" style={{ fontSize: 14, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
+                Conditions Générales d&apos;Utilisation (CGU) →
+              </a>
+              <a href="/legal#cgv" target="_blank" rel="noopener noreferrer" style={{ fontSize: 14, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
+                Conditions Générales de Vente (CGV) →
+              </a>
+              <a href="/legal#confidentialite" target="_blank" rel="noopener noreferrer" style={{ fontSize: 14, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
+                Politique de confidentialité (RGPD) →
+              </a>
+              <a href="/legal#mentions" target="_blank" rel="noopener noreferrer" style={{ fontSize: 14, color: 'var(--text-secondary)', textDecoration: 'none' }}>
+                Mentions légales →
+              </a>
+            </div>
+          </div>
         )}
       </div>
     </div>

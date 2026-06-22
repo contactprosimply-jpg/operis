@@ -59,8 +59,9 @@ export default function Sidebar() {
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([])
   const [switching, setSwitching] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  const [notifCount, setNotifCount] = useState(0)
   const [notifList, setNotifList] = useState<AppNotification[]>([])
+  const notifCount = notifList.filter(n => !n.is_read).length
+  const markAllLockRef = useRef(0)
   const [showNotifPanel, setShowNotifPanel] = useState(false)
   const notifPanelRef = useRef<HTMLDivElement>(null)
 
@@ -141,8 +142,8 @@ export default function Sidebar() {
         })
         const data = await res.json()
         if (data.success) {
+          if (Date.now() < markAllLockRef.current) return
           setNotifList(data.data ?? [])
-          setNotifCount(data.unread_count ?? 0)
         }
       } catch { /* ignore */ }
     }
@@ -215,34 +216,39 @@ export default function Sidebar() {
   const initials = currentUser ? getInitials(currentUser.name, currentUser.email) : 'OP'
   const avatarColor = currentUser ? getAvatarColor(currentUser.email) : '#3b7ef6'
 
-  const handleOpenNotification = async (n: AppNotification) => {
-    if (!n.is_read) {
-      const token = await getAccessToken()
-      if (token) {
-        await fetch('/api/notifications', {
-          method: 'PATCH',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: n.id }),
-        })
-      }
-      setNotifList(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x))
-      setNotifCount(c => Math.max(0, c - 1))
-    }
-    setShowNotifPanel(false)
-    if (n.email_id) router.push(`/mail?email=${n.email_id}`)
-    else if (n.tender_id) router.push(`/tenders/${n.tender_id}`)
-  }
-
-  const handleMarkAllNotifsRead = async () => {
+  const handleMarkNotifRead = async (id: string) => {
+    setNotifList(prev => prev.map(x => x.id === id ? { ...x, is_read: true } : x))
     const token = await getAccessToken()
     if (!token) return
     await fetch('/api/notifications', {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+  }
+
+  const handleMarkAllNotifsRead = async () => {
+    const token = await getAccessToken()
+    if (!token) return
+    setNotifList(prev => prev.map(n => ({ ...n, is_read: true })))
+    markAllLockRef.current = Date.now() + 2500
+    const res = await fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ all: true }),
     })
-    setNotifList(prev => prev.map(n => ({ ...n, is_read: true })))
-    setNotifCount(0)
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || data.success === false) {
+      markAllLockRef.current = 0
+      const token2 = await getAccessToken()
+      if (token2) {
+        const refresh = await fetch('/api/notifications', {
+          headers: { Authorization: `Bearer ${token2}` },
+        })
+        const refreshData = await refresh.json()
+        if (refreshData.success) setNotifList(refreshData.data ?? [])
+      }
+    }
   }
 
   const handleRelaunchAction = async (id: string, action: 'send' | 'cancel') => {
@@ -254,7 +260,6 @@ export default function Sidebar() {
       body: JSON.stringify({ id, action }),
     })
     setNotifList(prev => prev.filter(x => x.id !== id))
-    setNotifCount(c => Math.max(0, c - 1))
   }
 
   const AccountPanel = ({ mobile = false }: { mobile?: boolean }) => (
@@ -492,7 +497,8 @@ export default function Sidebar() {
               <div style={{ maxHeight: 320, overflowY: 'auto' }}>
                 <NotificationPanelContent
                   notifList={notifList}
-                  onOpen={n => void handleOpenNotification(n)}
+                  onMarkRead={id => void handleMarkNotifRead(id)}
+                  onClosePanel={() => setShowNotifPanel(false)}
                   onRelaunchAction={handleRelaunchAction}
                 />
               </div>
@@ -593,7 +599,8 @@ export default function Sidebar() {
             <div style={{ maxHeight: '60dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <NotificationPanelContent
                 notifList={notifList}
-                onOpen={n => void handleOpenNotification(n)}
+                onMarkRead={id => void handleMarkNotifRead(id)}
+                onClosePanel={() => setShowNotifPanel(false)}
                 onRelaunchAction={handleRelaunchAction}
               />
             </div>

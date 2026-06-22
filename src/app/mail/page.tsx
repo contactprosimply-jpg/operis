@@ -24,11 +24,17 @@ import MailAddressLines from '@/components/mail/MailAddressLines'
 import MailComposePopup from '@/components/mail/MailComposePopup'
 import MailToolbar from '@/components/mail/MailToolbar'
 import {
+  initialMailSyncUI,
+  SYNC_DONE_DISMISS_MS,
+  SYNC_GLOBAL_TIMEOUT_MS,
+  writeLastSyncAt,
+  type MailSyncUIState,
+} from '@/lib/mail-sync-ui'
+import {
   mailSyncProgressFromPayload,
   mailSyncProgressFromRun,
   SYNC_PROGRESS_PENDING,
   type MailSyncProgressPayload,
-  type MailSyncProgressUI,
 } from '@/lib/mail-sync-progress'
 import { MailListSkeleton, MailBodySkeleton } from '@/components/mail/MailSkeletons'
 import {
@@ -128,7 +134,7 @@ function appendSignatureToBody(body: string, signatureHtml: string, signatureTex
 }
 
 const SYNC_POLL_INTERVAL_MS = 2000
-const SYNC_POLL_MAX_MS = 310000
+const SYNC_POLL_MAX_MS = SYNC_GLOBAL_TIMEOUT_MS
 
 type MailSyncOutcome = {
   stored?: number
@@ -162,9 +168,9 @@ export default function MailPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [listHasMore, setListHasMore] = useState(false)
   const [loadingDetailBody, setLoadingDetailBody] = useState(false)
-  const [syncing, setSyncing] = useState(false)
-  const [autoSyncStatus, setAutoSyncStatus] = useState<string | null>(null)
-  const [syncProgress, setSyncProgress] = useState<MailSyncProgressUI | null>(null)
+  const [syncUI, setSyncUI] = useState<MailSyncUIState>(() => initialMailSyncUI())
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
+  const syncDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [showMailWelcome, setShowMailWelcome] = useState(false)
   const autoSyncBootRef = useRef(false)
   const [selected, setSelected] = useState<Email | null>(null)
@@ -516,6 +522,7 @@ export default function MailPage() {
         params.set('imap_path', activeSelection.customPath)
       }
       if (searchQuery.trim()) params.set('q', searchQuery.trim())
+      if (favoritesOnly) params.set('starred', 'true')
       const listFilter = activeFolder === 'inbox' ? (listListFilter === 'all' ? filter : listListFilter) : 'all'
       if (listFilter === 'ao') params.set('ao', 'true')
       if (listFilter === 'unread') params.set('unread', 'true')
@@ -574,7 +581,7 @@ export default function MailPage() {
         loadingMoreRef.current = false
       }
     }
-  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, folder, folderSelection, searchQuery, listListFilter, listSortOrder, getListCacheKey])
+  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, folder, folderSelection, searchQuery, listListFilter, listSortOrder, favoritesOnly, getListCacheKey])
 
   const handleDeleteFolder = useCallback(async (path: string) => {
     setFolderActionLoading(true)
@@ -601,10 +608,22 @@ export default function MailPage() {
     }
   }, [folderSelection])
 
+  const finishSyncSuccess = useCallback((added: number, silent: boolean) => {
+    const now = new Date().toISOString()
+    writeLastSyncAt(now)
+    setSyncUI({ status: 'done', added, lastSyncAt: now })
+    if (syncDoneTimerRef.current) clearTimeout(syncDoneTimerRef.current)
+    syncDoneTimerRef.current = setTimeout(() => {
+      setSyncUI({ status: 'idle', lastSyncAt: now })
+    }, SYNC_DONE_DISMISS_MS)
+    if (!silent && added > 0) showToast(`${added} nouveau(x) mail(s)`)
+  }, [])
+
   const runSync = useCallback(async (silent = true, force = false) => {
     if (syncInProgressRef.current && !force) return
     syncInProgressRef.current = true
     const startedAt = Date.now()
+    if (syncDoneTimerRef.current) clearTimeout(syncDoneTimerRef.current)
 
     const applySyncOutcome = (outcome: MailSyncOutcome | null | undefined) => {
       if (!outcome) return { stored: 0, updated: 0 }
@@ -624,7 +643,7 @@ export default function MailPage() {
       if (myReport?.status === 'skipped' && myReport.reason === 'compte_mail_non_configure') {
         const msg = 'Paramètres → Messagerie : configurez IMAP pour ce compte'
         if (!silent) showToast(msg)
-        setAutoSyncStatus('Messagerie non configurée')
+        setSyncUI({ status: 'error', message: 'Messagerie non configurée' })
       } else {
         const summary = `${fetched} lus · ${stored} nouveaux · ${updated} maj · ${errors} err`
         if (!silent && errors > 0) {
@@ -639,11 +658,10 @@ export default function MailPage() {
         } else if (!silent && quickStored > 0) {
           showToast(`${quickStored} nouveau(x) email(s)`)
         }
-        const syncTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
         if (folder === 'sent' && mailboxes && !mailboxes.sent) {
-          setAutoSyncStatus(`Synchro ${syncTime} — dossier Envoyés introuvable sur IMAP`)
+          setSyncUI({ status: 'error', message: 'Dossier Envoyés introuvable sur IMAP' })
         } else {
-          setAutoSyncStatus(`Synchro : ${syncTime}`)
+          finishSyncSuccess(stored, silent)
         }
       }
       return { stored, updated }
@@ -655,7 +673,9 @@ export default function MailPage() {
         await new Promise(resolve => setTimeout(resolve, SYNC_POLL_INTERVAL_MS))
         pollCount += 1
         try {
-          const statusRes = await authFetch(`/api/mail/sync/status?run_id=${encodeURIComponent(runId)}`)
+          const statusRes = await authFetch(`/api/mail/sync/status?run_id=${encodeURIComponent(runId)}`, {
+            timeoutMs: 20000,
+          })
           const statusJson = await statusRes.json()
           if (!statusJson.success) continue
 
@@ -669,35 +689,27 @@ export default function MailPage() {
 
           if (!run?.finished_at) {
             const ui = mailSyncProgressFromRun(progress, run?.new_emails)
-            setSyncProgress(ui)
-            if (ui.label !== SYNC_PROGRESS_PENDING.label) {
-              setAutoSyncStatus(ui.label)
-            }
-          } else if (progress) {
-            const ui = mailSyncProgressFromPayload(progress)
-            setSyncProgress(ui)
-            setAutoSyncStatus(ui.label)
+            const current = ui.current || run?.new_emails || 0
+            const total = ui.total || progress?.mailbox_total || 0
+            setSyncUI({
+              status: 'syncing',
+              current,
+              total: total > 0 ? total : Math.max(current, 1),
+              label: ui.label,
+            })
           }
 
           if (!run?.finished_at) {
-            if (pollCount % 3 === 0) {
-              await loadEmails(true)
-            }
+            if (pollCount % 3 === 0) await loadEmails(true)
             continue
           }
 
           if (run.status === 'error') {
             const fatal = run.error_detail?.fatal
             const failed = run.error_detail?.accounts?.[0]
-            if (!silent) {
-              if (fatal) showToast(`Erreur IMAP : ${fatal}`)
-              else if (failed?.error) showToast(`Erreur IMAP : ${failed.error}`)
-              else showToast('Erreur de synchronisation')
-            } else if (fatal) {
-              setAutoSyncStatus(`Erreur sync : ${fatal.slice(0, 40)}`)
-            } else if (failed?.error) {
-              setAutoSyncStatus(`Erreur sync : ${failed.error.slice(0, 40)}`)
-            }
+            const message = fatal ?? failed?.error ?? 'Erreur de synchronisation'
+            if (!silent) showToast(`Erreur IMAP : ${message}`)
+            setSyncUI({ status: 'error', message: 'Synchro interrompue — Réessayer' })
             return { stored: 0, updated: 0 }
           }
 
@@ -707,19 +719,22 @@ export default function MailPage() {
           /* poll court — réessayer */
         }
       }
-      setSyncProgress(SYNC_PROGRESS_PENDING)
-      setAutoSyncStatus('Synchronisation en cours…')
+      setSyncUI({ status: 'error', message: 'Synchro interrompue — Réessayer' })
       return { stored: 0, updated: 0 }
     }
 
     try {
-      setSyncing(true)
-      setSyncProgress(SYNC_PROGRESS_PENDING)
-      setAutoSyncStatus('Synchronisation en cours…')
+      setSyncUI(prev => ({
+        status: 'syncing',
+        current: 0,
+        total: prev.status === 'idle' ? 1000 : 200,
+        label: 'Synchronisation…',
+      }))
 
       const res = await authFetch('/api/mail/sync', {
         method: 'POST',
         body: JSON.stringify({ backfill: force && !silent }),
+        timeoutMs: 25000,
       })
       const data = await res.json()
 
@@ -735,13 +750,13 @@ export default function MailPage() {
           } else {
             showToast(`Erreur : ${err}`)
           }
-        } else if (err.includes('Limite de synchronisation')) {
-          setAutoSyncStatus(`Sync limitée — ${err.replace('Limite de synchronisation atteinte. ', '')}`)
-        } else if (err.includes('compte mail') || err.includes('Messagerie')) {
-          setAutoSyncStatus('Messagerie non configurée')
-        } else if (failed?.reason) {
-          setAutoSyncStatus(`Erreur sync : ${failed.reason.slice(0, 40)}`)
         }
+        setSyncUI({
+          status: 'error',
+          message: err.includes('Limite de synchronisation')
+            ? 'Sync limitée — réessayez plus tard'
+            : 'Synchro interrompue — Réessayer',
+        })
         return
       }
 
@@ -760,15 +775,12 @@ export default function MailPage() {
       if (sid && (counts.updated > 0 || counts.stored > 0)) await loadEmailDetail(sid, true)
     } catch (e: unknown) {
       const err = e as { message?: string }
-      if (!silent && err.message) {
-        showToast(`Erreur : ${err.message}`)
-      }
+      if (!silent && err.message) showToast(`Erreur : ${err.message}`)
+      setSyncUI({ status: 'error', message: 'Synchro interrompue — Réessayer' })
     } finally {
       syncInProgressRef.current = false
-      setSyncing(false)
-      setSyncProgress(null)
     }
-  }, [loadEmails, loadEmailDetail, refreshFolders, folder, userId])
+  }, [loadEmails, loadEmailDetail, refreshFolders, folder, userId, finishSyncSuccess])
 
   const dismissMailWelcome = useCallback(() => {
     setShowMailWelcome(false)
@@ -883,6 +895,8 @@ export default function MailPage() {
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [userId, loadEmailDetail])
+
+  const syncing = syncUI.status === 'syncing'
 
   const handleSync = () => void runSync(false, true)
 
@@ -1569,7 +1583,9 @@ export default function MailPage() {
     }
   }
 
-  const lastSyncLabel = autoSyncStatus ?? 'Sync non effectuée'
+  const lastSyncLabel = syncUI.status === 'idle' && syncUI.lastSyncAt
+    ? `Dernière synchro à ${new Date(syncUI.lastSyncAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+    : 'Sync non effectuée'
 
   const showList = !isMobile || !mobileShowDetail
   const showPanel = !isMobile || mobileShowDetail
@@ -1635,11 +1651,12 @@ export default function MailPage() {
         <MailToolbar
           onNewMail={() => openCompose()}
           onRefresh={handleSync}
-          syncing={syncing}
-          syncProgress={syncProgress}
-          lastSyncLabel={lastSyncLabel}
+          syncUI={syncUI}
+          onRetrySync={handleSync}
           search={searchQuery}
           onSearchChange={v => { setSearchQuery(v); loadEmails(false) }}
+          favoritesOnly={favoritesOnly}
+          onFavoritesOnlyChange={v => { setFavoritesOnly(v); loadEmails(false) }}
         />
       )}
 
@@ -1791,12 +1808,12 @@ export default function MailPage() {
                     }}>{unreadTotal}</span>
                   )}
                 </div>
-                {!syncing && autoSyncStatus && (
+                {!syncing && syncUI.status === 'idle' && syncUI.lastSyncAt && (
                   <div style={{
                     fontSize: 9, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace',
                     marginTop: 4, lineHeight: 1.3, whiteSpace: 'nowrap',
                   }}>
-                    {autoSyncStatus}
+                    {lastSyncLabel}
                   </div>
                 )}
               </div>
@@ -1852,7 +1869,7 @@ export default function MailPage() {
                       }}
                     >
                       {syncing ? <Spinner size={12} /> : <span style={{ fontSize: 13, lineHeight: 1 }}>↻</span>}
-                      <span>{syncing && syncProgress?.percent != null ? `Sync ${syncProgress.percent}%` : 'Synchroniser'}</span>
+                      <span>{syncing ? 'Synchronisation…' : 'Synchroniser'}</span>
                     </button>
                     <button onClick={() => openCompose()} style={{
                       background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
@@ -2005,9 +2022,7 @@ export default function MailPage() {
             ) : emails.length === 0 && folder !== 'drafts' ? (
               <div style={{ textAlign: 'center', padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {syncing
-                    ? (syncProgress?.label ?? 'Synchronisation en cours…')
-                    : 'Aucun email dans ce dossier'}
+                  {syncing ? 'Synchronisation en cours…' : 'Aucun email dans ce dossier'}
                 </div>
                 {folder === 'inbox' && (
                 <button
@@ -2061,6 +2076,9 @@ export default function MailPage() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
                           {!email.is_read && <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />}
+                          {email.is_starred && (
+                            <span title="Favori" style={{ color: '#FFB400', fontSize: 12, flexShrink: 0, lineHeight: 1 }}>★</span>
+                          )}
                           <span style={{
                             fontSize: 12, fontWeight: email.is_read ? 400 : 600,
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

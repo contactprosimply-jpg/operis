@@ -1,5 +1,6 @@
 import type { AoKeyword } from '@/lib/ao-keywords'
 import type { AoKeywordCategory } from '@/lib/ao-keywords'
+import { billingVeto } from '@/lib/ao-billing-veto'
 
 export type { AoKeywordCategory }
 
@@ -9,6 +10,7 @@ export interface AoEmailAnalysis {
   matchedKeywords: string[]
   isAO: boolean
   dominantCategory: AoKeywordCategory | null
+  excludedReason?: string | null
 }
 
 export function analyzeEmailWithKeywords(
@@ -17,6 +19,18 @@ export function analyzeEmailWithKeywords(
   keywords: AoKeyword[],
   threshold = 5,
 ): AoEmailAnalysis {
+  const veto = billingVeto(subject, body)
+  if (veto) {
+    return {
+      score: 0,
+      categories: {},
+      matchedKeywords: [],
+      isAO: false,
+      dominantCategory: null,
+      excludedReason: veto,
+    }
+  }
+
   const text = `${subject} ${body}`.toLowerCase()
   let score = 0
   const categories: Partial<Record<AoKeywordCategory, number>> = {}

@@ -22,6 +22,8 @@ export interface Profile {
   onboarding_done?: boolean
   tour_done?: boolean
   mail_welcome_seen?: boolean
+  terms_accepted_at?: string | null
+  terms_version?: string | null
   created_at: string
 }
 

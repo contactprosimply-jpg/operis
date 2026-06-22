@@ -41,6 +41,9 @@ function RegisterForm() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const TERMS_VERSION = '1.0'
+
   const strength = useMemo(() => passwordStrength(password), [password])
   const emailValid = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
   const nameValid = fullName.trim().length >= 2
@@ -65,17 +68,40 @@ function RegisterForm() {
       setLoading(false)
       return
     }
+    if (!termsAccepted) {
+      setError('Vous devez accepter les CGU, CGV et la Politique de confidentialité')
+      setLoading(false)
+      return
+    }
 
-    const { error } = await supabase.auth.signUp({
+    const acceptedAt = new Date().toISOString()
+    const { data: signUpData, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName } },
+      options: {
+        data: {
+          full_name: fullName,
+          terms_accepted_at: acceptedAt,
+          terms_version: TERMS_VERSION,
+        },
+      },
     })
 
     if (error) {
       setError(error.message)
       setLoading(false)
       return
+    }
+
+    if (signUpData.session) {
+      await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          terms_accepted_at: acceptedAt,
+          terms_version: TERMS_VERSION,
+        }),
+      }).catch(() => null)
     }
 
     setSuccess(true)
@@ -165,7 +191,27 @@ function RegisterForm() {
                 </div>
               )}
             </div>
-            <button type="submit" disabled={loading} style={{
+            <label style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 20,
+              fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, cursor: 'pointer',
+            }}>
+              <input
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={e => setTermsAccepted(e.target.checked)}
+                required
+                style={{ marginTop: 3, minWidth: 16, minHeight: 16, cursor: 'pointer' }}
+              />
+              <span>
+                J&apos;ai lu et j&apos;accepte les{' '}
+                <a href="/legal#cgu" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>CGU</a>
+                {', les '}
+                <a href="/legal#cgv" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>CGV</a>
+                {' et la '}
+                <a href="/legal#confidentialite" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>Politique de confidentialité</a>
+              </span>
+            </label>
+            <button type="submit" disabled={loading || !termsAccepted} style={{
               width: '100%', background: loading ? 'rgba(79,142,247,0.4)' : 'var(--gradient-primary)',
               color: '#fff', border: 'none', borderRadius: 9, padding: '13px',
               fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',

@@ -30,6 +30,7 @@ import {
   resolveEmailThreadId,
 } from '@/lib/email-threading'
 import { detectAo } from '@/services/aoDetector.service'
+import { billingVeto } from '@/lib/ao-billing-veto'
 import { isDuplicateKeyError, normalizeMessageId } from '@/lib/mail-message-id'
 import { isMissingDbColumnError } from '@/lib/mail-api'
 import {
@@ -361,6 +362,8 @@ async function quickInsertFromEnvelope(
     is_read: envelope.isRead,
     is_ao: detection.isAo,
     ao_score: detection.score,
+    ao_excluded_reason: detection.excludedReason ?? null,
+    is_ao_related: detection.isAo,
     tender_id: null,
     attachments: [],
     has_attachments: false,
@@ -450,7 +453,35 @@ async function applyKeywordDetectionToEmail(
   messageId: string,
   parsedHeaders?: { inReplyTo?: string; references?: string[] },
 ): Promise<{ tenderId: string | null; isAo: boolean }> {
+  const veto = billingVeto(subject, body)
+  if (veto) {
+    const updates: Record<string, unknown> = {
+      is_ao_related: false,
+      ao_detection_score: 0,
+      ao_detection_category: null,
+      ao_detection_keywords: [],
+      is_ao: false,
+      ao_score: 0,
+      ao_excluded_reason: veto,
+    }
+    const { error: vetoError } = await db.from('emails').update(updates).eq('id', emailId)
+    if (vetoError && isMissingDbColumnError(vetoError.message)) {
+      await db.from('emails').update({ is_ao: false, ao_score: 0 }).eq('id', emailId)
+    }
+    return { tenderId: null, isAo: false }
+  }
+
   const analysis = analyzeEmailWithKeywords(subject, body, ctx.keywords, ctx.threshold)
+  if (analysis.excludedReason) {
+    await db.from('emails').update({
+      is_ao_related: false,
+      is_ao: false,
+      ao_score: 0,
+      ao_excluded_reason: analysis.excludedReason,
+    }).eq('id', emailId)
+    return { tenderId: null, isAo: false }
+  }
+
   const displayScore = aoDetectionDisplayScore(analysis.score)
 
   let thread = {
@@ -476,6 +507,7 @@ async function applyKeywordDetectionToEmail(
     ao_detection_keywords: analysis.matchedKeywords,
     is_ao: analysis.isAO,
     ao_score: displayScore,
+    ao_excluded_reason: null,
     thread_id: thread.threadId,
     in_reply_to: thread.inReplyTo,
     references_ids: thread.referencesIds,
@@ -557,6 +589,7 @@ async function enrichEmailFromSource(
             emailId,
             subject,
             addressObjectText(parsed.from) || envelope.from,
+            bodyText,
           )
         } catch (err) {
           console.error('[Mail sync] notification AO:', err)
@@ -568,6 +601,8 @@ async function enrichEmailFromSource(
     await db.from('emails').update({
       is_ao: detection.isAo,
       ao_score: detection.score,
+      ao_excluded_reason: detection.excludedReason ?? null,
+      is_ao_related: detection.isAo,
     }).eq('id', emailId)
     if (detection.isAo) result.aoDetected++
   }

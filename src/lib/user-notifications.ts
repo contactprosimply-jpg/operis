@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { EmailLabel } from '@/types/database'
 import { detectAo } from '@/services/aoDetector.service'
+import { billingVeto } from '@/lib/ao-billing-veto'
 import type { ImapEnvelopeMeta } from '@/lib/imap-client'
 
 export type NotificationPriority = 'normal' | 'important'
@@ -89,7 +90,10 @@ export async function notifyInboundEmailStored(
 ): Promise<void> {
   if (mailFolder !== 'inbox' || envelope.isRead) return
 
-  const ao = options?.isAo === true || detectAo(envelope.subject, options?.bodySnippet ?? '').isAo
+  const bodySnippet = options?.bodySnippet ?? ''
+  const veto = billingVeto(envelope.subject, bodySnippet)
+  const detection = detectAo(envelope.subject, bodySnippet)
+  const ao = !veto && !detection.excludedReason && (options?.isAo === true || detection.isAo)
   const from = envelope.from?.split('<')[0].trim() || envelope.from || 'Expéditeur inconnu'
   const subject = envelope.subject || '(sans objet)'
 
@@ -161,7 +165,22 @@ export async function notifyAoDetectedAfterEnrich(
   emailId: string,
   subject: string,
   fromAddress: string,
+  bodyText = '',
 ): Promise<void> {
+  const veto = billingVeto(subject, bodyText)
+  if (veto) return
+
+  const { data: row } = await db
+    .from('emails')
+    .select('ao_excluded_reason, is_ao')
+    .eq('id', emailId)
+    .maybeSingle()
+
+  if (row?.ao_excluded_reason) return
+
+  const detection = detectAo(subject, bodyText)
+  if (!detection.isAo || detection.excludedReason) return
+
   const from = fromAddress?.split('<')[0].trim() || fromAddress || 'Expéditeur'
   await createUserNotification(db, {
     userId,
