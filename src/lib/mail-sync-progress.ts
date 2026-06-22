@@ -36,8 +36,11 @@ export function mailSyncProgressFromPayload(
   }
 
   if ((progress.mailbox_total ?? 0) > 0) {
-    const current = progress.synced_count ?? 0
     const total = progress.mailbox_total ?? 0
+    const rawCurrent = progress.phase === 'sent'
+      ? (progress.sent_synced_count ?? 0)
+      : (progress.synced_count ?? 0)
+    const current = Math.min(rawCurrent, total)
     const phaseLabel =
       progress.phase === 'incremental' ? 'Mise à jour'
         : progress.phase === 'sent' ? 'Envoyés'
@@ -45,10 +48,28 @@ export function mailSyncProgressFromPayload(
     return {
       current,
       total,
-      percent: Math.min(100, Math.round((current / total) * 100)),
+      percent: Math.min(100, Math.max(0, Math.round((current / total) * 100))),
       label: `${phaseLabel} · ${current.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')}`,
     }
   }
 
+  return SYNC_PROGRESS_PENDING
+}
+
+export function mailSyncProgressFromRun(
+  progress: MailSyncProgressPayload | null | undefined,
+  newEmails?: number,
+): MailSyncProgressUI {
+  if (progress && (progress.mailbox_total ?? 0) > 0) {
+    return mailSyncProgressFromPayload(progress)
+  }
+  if (newEmails != null && newEmails > 0) {
+    return {
+      current: newEmails,
+      total: 0,
+      percent: null,
+      label: `${newEmails.toLocaleString('fr-FR')} mail(s) importé(s)…`,
+    }
+  }
   return SYNC_PROGRESS_PENDING
 }

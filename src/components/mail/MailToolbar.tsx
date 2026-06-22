@@ -1,7 +1,7 @@
 'use client'
 
 import type { MailSyncProgressUI } from '@/lib/mail-sync-progress'
-import { SyncProgressIndicator, SyncProgressRing } from '@/components/mail/SyncProgressRing'
+import { SyncProgressIndicator } from '@/components/mail/SyncProgressRing'
 
 export default function MailToolbar({
   onNewMail,
@@ -11,9 +11,6 @@ export default function MailToolbar({
   lastSyncLabel,
   search,
   onSearchChange,
-  listFilter,
-  onListFilterChange,
-  showAoFilter,
 }: {
   onNewMail: () => void
   onRefresh: () => void
@@ -22,16 +19,7 @@ export default function MailToolbar({
   lastSyncLabel: string
   search: string
   onSearchChange: (v: string) => void
-  listFilter: 'all' | 'unread' | 'attachments'
-  onListFilterChange: (f: 'all' | 'unread' | 'attachments') => void
-  showAoFilter?: boolean
 }) {
-  const filters: Array<{ key: 'all' | 'unread' | 'attachments'; label: string }> = [
-    { key: 'all', label: 'Tous' },
-    { key: 'unread', label: 'Non lus' },
-    { key: 'attachments', label: 'PJ' },
-  ]
-
   return (
     <div
       style={{
@@ -75,15 +63,9 @@ export default function MailToolbar({
           fontSize: 12,
           cursor: syncing ? 'wait' : 'pointer',
           fontFamily: 'DM Sans, system-ui',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
         }}
       >
-        {syncing && syncProgress
-          ? <SyncProgressRing percent={syncProgress.percent} size={18} showPercent={false} />
-          : '↻'}
-        {syncing ? 'Synchronisation…' : 'Synchroniser'}
+        {syncing ? 'Synchronisation…' : '↻ Synchroniser'}
       </button>
       {syncing && syncProgress ? (
         <SyncProgressIndicator progress={syncProgress} size={34} />
@@ -118,29 +100,6 @@ export default function MailToolbar({
           }}
         />
       </div>
-      {showAoFilter && (
-        <div style={{ display: 'flex', gap: 4 }}>
-          {filters.map(f => (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => onListFilterChange(f.key)}
-              style={{
-                padding: '4px 10px',
-                borderRadius: 6,
-                border: listFilter === f.key ? '1px solid var(--accent)' : '1px solid var(--border)',
-                background: listFilter === f.key ? 'var(--accent-soft)' : 'transparent',
-                color: listFilter === f.key ? 'var(--accent)' : 'var(--text-muted)',
-                fontSize: 11,
-                cursor: 'pointer',
-                fontFamily: 'DM Sans, system-ui',
-              }}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

@@ -19,6 +19,9 @@ export type SyncRunErrorDetail = {
     synced_count: number
     mailbox_total: number
     initial_sync_complete: boolean
+    phase?: 'inbox' | 'sent' | 'incremental'
+    sent_synced_count?: number
+    sent_mailbox_total?: number
   }
 }
 

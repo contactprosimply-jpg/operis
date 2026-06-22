@@ -72,7 +72,17 @@ async function runUserMailSyncLoop(
 
   try {
     while (Date.now() < deadline) {
-      const step = await syncUserMailAccountsStep(userId, { loginEmail })
+      const step = await syncUserMailAccountsStep(userId, {
+        loginEmail,
+        onProgress: async progress => {
+          await updateSyncRunProgress(db, runId, {
+            new_emails: aggregate.stored,
+            accounts_synced: aggregate.accounts?.filter(a => a.status === 'ok').length ?? 0,
+            sync_progress: progress,
+            partial_result: aggregate as unknown as Record<string, unknown>,
+          })
+        },
+      })
       mergeStepIntoAggregate(aggregate, step.result)
       lastProgress = step.progress
 

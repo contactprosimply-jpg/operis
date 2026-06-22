@@ -23,9 +23,9 @@ import MailFolderSidebar from '@/components/mail/MailFolderSidebar'
 import MailAddressLines from '@/components/mail/MailAddressLines'
 import MailComposePopup from '@/components/mail/MailComposePopup'
 import MailToolbar from '@/components/mail/MailToolbar'
-import { SyncProgressIndicator, SyncProgressRing } from '@/components/mail/SyncProgressRing'
 import {
   mailSyncProgressFromPayload,
+  mailSyncProgressFromRun,
   SYNC_PROGRESS_PENDING,
   type MailSyncProgressPayload,
   type MailSyncProgressUI,
@@ -660,21 +660,24 @@ export default function MailPage() {
           if (!statusJson.success) continue
 
           const progress = statusJson.data?.sync_progress as MailSyncProgressPayload | null
-
-          if (progress) {
-            const ui = mailSyncProgressFromPayload(progress)
-            setSyncProgress(ui)
-            setAutoSyncStatus(ui.label)
-          } else if (!statusJson.data?.run?.finished_at) {
-            setSyncProgress(SYNC_PROGRESS_PENDING)
-            setAutoSyncStatus('Synchronisation en cours…')
-          }
-
           const run = statusJson.data?.run as {
             finished_at?: string | null
             status?: string
+            new_emails?: number
             error_detail?: { fatal?: string; accounts?: Array<{ error: string }>; sync_result?: MailSyncOutcome }
           } | null
+
+          if (!run?.finished_at) {
+            const ui = mailSyncProgressFromRun(progress, run?.new_emails)
+            setSyncProgress(ui)
+            if (ui.label !== SYNC_PROGRESS_PENDING.label) {
+              setAutoSyncStatus(ui.label)
+            }
+          } else if (progress) {
+            const ui = mailSyncProgressFromPayload(progress)
+            setSyncProgress(ui)
+            setAutoSyncStatus(ui.label)
+          }
 
           if (!run?.finished_at) {
             if (pollCount % 3 === 0) {
@@ -1637,9 +1640,6 @@ export default function MailPage() {
           lastSyncLabel={lastSyncLabel}
           search={searchQuery}
           onSearchChange={v => { setSearchQuery(v); loadEmails(false) }}
-          listFilter={listListFilter}
-          onListFilterChange={f => { setListListFilter(f); if (f === 'unread') setFilter('unread'); else if (f === 'attachments') setFilter('attachments'); else setFilter('all') }}
-          showAoFilter={folder === 'inbox'}
         />
       )}
 
@@ -1791,31 +1791,14 @@ export default function MailPage() {
                     }}>{unreadTotal}</span>
                   )}
                 </div>
-                {(syncing && syncProgress) ? (
-                  <div style={{ marginTop: 4 }}>
-                    <SyncProgressIndicator progress={syncProgress} size={28} compact />
-                    <div style={{
-                      fontSize: 9,
-                      color: 'var(--text-muted)',
-                      fontFamily: 'DM Mono, monospace',
-                      marginTop: 2,
-                      lineHeight: 1.3,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      maxWidth: 180,
-                    }}>
-                      {syncProgress.label}
-                    </div>
-                  </div>
-                ) : autoSyncStatus ? (
+                {!syncing && autoSyncStatus && (
                   <div style={{
                     fontSize: 9, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace',
                     marginTop: 4, lineHeight: 1.3, whiteSpace: 'nowrap',
                   }}>
                     {autoSyncStatus}
                   </div>
-                ) : null}
+                )}
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
                 <button
@@ -1868,10 +1851,8 @@ export default function MailPage() {
                         WebkitTapHighlightColor: 'transparent',
                       }}
                     >
-                      {syncing && syncProgress
-                        ? <SyncProgressRing percent={syncProgress.percent} size={18} showPercent={false} />
-                        : <span style={{ fontSize: 13, lineHeight: 1 }}>↻</span>}
-                      <span>Synchroniser</span>
+                      {syncing ? <Spinner size={12} /> : <span style={{ fontSize: 13, lineHeight: 1 }}>↻</span>}
+                      <span>{syncing && syncProgress?.percent != null ? `Sync ${syncProgress.percent}%` : 'Synchroniser'}</span>
                     </button>
                     <button onClick={() => openCompose()} style={{
                       background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
@@ -2023,18 +2004,11 @@ export default function MailPage() {
               <MailListSkeleton />
             ) : emails.length === 0 && folder !== 'drafts' ? (
               <div style={{ textAlign: 'center', padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-                {syncing && syncProgress ? (
-                  <>
-                    <SyncProgressIndicator progress={syncProgress} size={64} />
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      {syncProgress.label}
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    {syncing ? 'Synchronisation en cours…' : 'Aucun email dans ce dossier'}
-                  </div>
-                )}
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  {syncing
+                    ? (syncProgress?.label ?? 'Synchronisation en cours…')
+                    : 'Aucun email dans ce dossier'}
+                </div>
                 {folder === 'inbox' && (
                 <button
                   type="button"
@@ -2056,9 +2030,7 @@ export default function MailPage() {
                     gap: 6,
                   }}
                 >
-                  {syncing && syncProgress
-                    ? <SyncProgressRing percent={syncProgress.percent} size={16} showPercent={false} />
-                    : '↻'}
+                  {syncing ? <Spinner size={14} /> : '↻'}
                   Synchroniser maintenant
                 </button>
                 )}
