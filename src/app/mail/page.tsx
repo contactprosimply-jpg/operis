@@ -27,6 +27,7 @@ import {
   initialMailSyncUI,
   SYNC_DONE_DISMISS_MS,
   SYNC_GLOBAL_TIMEOUT_MS,
+  SYNC_POLL_INTERVAL_MS,
   writeLastSyncAt,
   type MailSyncUIState,
 } from '@/lib/mail-sync-ui'
@@ -133,7 +134,6 @@ function appendSignatureToBody(body: string, signatureHtml: string, signatureTex
   return body.trim() ? `${body.trim()}\n\n--\n${plainSig}` : plainSig
 }
 
-const SYNC_POLL_INTERVAL_MS = 2000
 const SYNC_POLL_MAX_MS = SYNC_GLOBAL_TIMEOUT_MS
 
 type MailSyncOutcome = {
@@ -622,7 +622,6 @@ export default function MailPage() {
   const runSync = useCallback(async (silent = true, force = false) => {
     if (syncInProgressRef.current && !force) return
     syncInProgressRef.current = true
-    const startedAt = Date.now()
     if (syncDoneTimerRef.current) clearTimeout(syncDoneTimerRef.current)
 
     const applySyncOutcome = (outcome: MailSyncOutcome | null | undefined) => {
@@ -667,14 +666,18 @@ export default function MailPage() {
       return { stored, updated }
     }
 
-    const pollMailSyncRun = async (runId: string) => {
+    const pollMailSyncRun = async (runId: string, silent: boolean, depth = 0): Promise<{ stored: number; updated: number }> => {
       let pollCount = 0
-      while (Date.now() - startedAt < SYNC_POLL_MAX_MS) {
+      let lastProgressKey = ''
+      let lastProgressAt = Date.now()
+      const pollStartedAt = Date.now()
+
+      while (Date.now() - pollStartedAt < SYNC_POLL_MAX_MS) {
         await new Promise(resolve => setTimeout(resolve, SYNC_POLL_INTERVAL_MS))
         pollCount += 1
         try {
           const statusRes = await authFetch(`/api/mail/sync/status?run_id=${encodeURIComponent(runId)}`, {
-            timeoutMs: 20000,
+            timeoutMs: 25000,
           })
           const statusJson = await statusRes.json()
           if (!statusJson.success) continue
@@ -687,10 +690,20 @@ export default function MailPage() {
             error_detail?: { fatal?: string; accounts?: Array<{ error: string }>; sync_result?: MailSyncOutcome }
           } | null
 
-          if (!run?.finished_at) {
-            const ui = mailSyncProgressFromRun(progress, run?.new_emails)
-            const current = ui.current || run?.new_emails || 0
+          if (!run) {
+            if (!statusJson.data?.in_progress) break
+            continue
+          }
+
+          if (!run.finished_at) {
+            const ui = mailSyncProgressFromRun(progress, run.new_emails)
+            const current = ui.current || run.new_emails || 0
             const total = ui.total || progress?.mailbox_total || 0
+            const progressKey = `${current}:${total}:${progress?.phase ?? ''}`
+            if (progressKey !== lastProgressKey) {
+              lastProgressKey = progressKey
+              lastProgressAt = Date.now()
+            }
             setSyncUI({
               status: 'syncing',
               current,
@@ -699,7 +712,7 @@ export default function MailPage() {
             })
           }
 
-          if (!run?.finished_at) {
+          if (!run.finished_at) {
             if (pollCount % 3 === 0) await loadEmails(true)
             continue
           }
@@ -709,7 +722,7 @@ export default function MailPage() {
             const failed = run.error_detail?.accounts?.[0]
             const message = fatal ?? failed?.error ?? 'Erreur de synchronisation'
             if (!silent) showToast(`Erreur IMAP : ${message}`)
-            setSyncUI({ status: 'error', message: 'Synchro interrompue — Réessayer' })
+            setSyncUI({ status: 'error', message })
             return { stored: 0, updated: 0 }
           }
 
@@ -719,7 +732,46 @@ export default function MailPage() {
           /* poll court — réessayer */
         }
       }
-      setSyncUI({ status: 'error', message: 'Synchro interrompue — Réessayer' })
+
+      // Timeout client : si le serveur tourne encore, prolonger une fois
+      try {
+        const statusRes = await authFetch(`/api/mail/sync/status?run_id=${encodeURIComponent(runId)}`, {
+          timeoutMs: 25000,
+        })
+        const statusJson = await statusRes.json()
+        const run = statusJson.data?.run as {
+          finished_at?: string | null
+          status?: string
+          error_detail?: { fatal?: string; accounts?: Array<{ error: string }>; sync_result?: MailSyncOutcome }
+        } | null
+
+        if (run?.finished_at) {
+          if (run.status === 'error') {
+            const message = run.error_detail?.fatal
+              ?? run.error_detail?.accounts?.[0]?.error
+              ?? 'Erreur de synchronisation'
+            setSyncUI({ status: 'error', message })
+            return { stored: 0, updated: 0 }
+          }
+          const syncResult = (statusJson.data?.sync_result ?? run.error_detail?.sync_result) as MailSyncOutcome | null
+          return applySyncOutcome(syncResult)
+        }
+
+        if (statusJson.success && statusJson.data?.in_progress && Date.now() - lastProgressAt < 120_000 && depth < 2) {
+          setSyncUI(prev => prev.status === 'syncing' ? prev : {
+            status: 'syncing',
+            current: 0,
+            total: 1000,
+            label: 'Synchronisation en cours…',
+          })
+          return pollMailSyncRun(runId, silent, depth + 1)
+        }
+      } catch { /* ignore */ }
+
+      setSyncUI({
+        status: 'error',
+        message: 'Synchronisation trop longue — réessayez dans quelques minutes',
+      })
       return { stored: 0, updated: 0 }
     }
 
@@ -755,7 +807,7 @@ export default function MailPage() {
           status: 'error',
           message: err.includes('Limite de synchronisation')
             ? 'Sync limitée — réessayez plus tard'
-            : 'Synchro interrompue — Réessayer',
+            : err,
         })
         return
       }
@@ -764,7 +816,7 @@ export default function MailPage() {
       let counts = { stored: 0, updated: 0 }
 
       if (runId && (data.data?.in_progress || data.data?.already_running)) {
-        counts = await pollMailSyncRun(runId) ?? counts
+        counts = await pollMailSyncRun(runId, silent) ?? counts
       } else if (data.data) {
         counts = applySyncOutcome(data.data as MailSyncOutcome) ?? counts
       }
@@ -776,11 +828,31 @@ export default function MailPage() {
     } catch (e: unknown) {
       const err = e as { message?: string }
       if (!silent && err.message) showToast(`Erreur : ${err.message}`)
-      setSyncUI({ status: 'error', message: 'Synchro interrompue — Réessayer' })
+      setSyncUI({ status: 'error', message: err.message ?? 'Erreur de synchronisation' })
     } finally {
       syncInProgressRef.current = false
     }
   }, [loadEmails, loadEmailDetail, refreshFolders, folder, userId, finishSyncSuccess])
+
+  useEffect(() => {
+    if (!ready || !userId || autoSyncBootRef.current) return
+    autoSyncBootRef.current = true
+    void (async () => {
+      try {
+        const statusRes = await authFetch('/api/mail/sync/status', { timeoutMs: 15000 })
+        const statusJson = await statusRes.json()
+        if (statusJson.success && statusJson.data?.in_progress) {
+          void runSync(true, true)
+          return
+        }
+        const accRes = await authFetch('/api/mail/accounts')
+        const accJson = await accRes.json()
+        if (!accJson.success || !accJson.data) return
+        if (accJson.data.initial_sync_complete === true && accJson.data.sent_initial_sync_complete === true) return
+        void runSync(true, true)
+      } catch { /* ignore */ }
+    })()
+  }, [ready, userId, runSync])
 
   const dismissMailWelcome = useCallback(() => {
     setShowMailWelcome(false)
@@ -799,19 +871,6 @@ export default function MailPage() {
       })
       .catch(() => {})
   }, [userId])
-
-  useEffect(() => {
-    if (!ready || !userId || autoSyncBootRef.current) return
-    autoSyncBootRef.current = true
-    void authFetch('/api/mail/accounts')
-      .then(r => r.json())
-      .then(d => {
-        if (!d.success || !d.data) return
-        if (d.data.initial_sync_complete === true && d.data.sent_initial_sync_complete === true) return
-        void runSync(true, true)
-      })
-      .catch(() => {})
-  }, [ready, userId, runSync])
 
   useEffect(() => {
     if (!userId) return

@@ -6,7 +6,9 @@ export type MailSyncUIState =
 
 export const MAIL_LAST_SYNC_KEY = 'operis:lastSyncAt'
 export const SYNC_DONE_DISMISS_MS = 4000
-export const SYNC_GLOBAL_TIMEOUT_MS = 120_000
+/** Aligné sur maxDuration serveur (300s) + chaînages after() — ne pas couper avant la fin réelle. */
+export const SYNC_GLOBAL_TIMEOUT_MS = 600_000
+export const SYNC_POLL_INTERVAL_MS = 2000
 
 export function readLastSyncAt(): string | null {
   if (typeof window === 'undefined') return null

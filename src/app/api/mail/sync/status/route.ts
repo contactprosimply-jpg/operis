@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import {
+  clearStaleUserSyncRun,
   getActiveUserSyncRun,
   getSyncRunById,
   isSyncRunInProgress,
@@ -16,6 +17,10 @@ export async function GET(req: NextRequest) {
   const runId = req.nextUrl.searchParams.get('run_id')
   const db = createAdminClient()
 
+  if (!runId) {
+    await clearStaleUserSyncRun(db, userId)
+  }
+
   const run = runId
     ? await getSyncRunById(db, runId)
     : await getActiveUserSyncRun(db, userId)
@@ -24,7 +29,9 @@ export async function GET(req: NextRequest) {
     return Response.json({ success: false, error: 'Run introuvable' }, { status: 404 })
   }
 
-  const inProgress = run ? !run.finished_at : await isSyncRunInProgress(db, undefined, { userId })
+  const inProgress = run
+    ? !run.finished_at
+    : await isSyncRunInProgress(db, undefined, { userId })
 
   return Response.json({
     success: true,

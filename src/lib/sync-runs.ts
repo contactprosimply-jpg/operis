@@ -186,6 +186,31 @@ export async function getActiveUserSyncRun(
   return (data as SyncRunRow | null) ?? null
 }
 
+/** Runs utilisateur sans fin au-delà de ce délai = serverless interrompu. */
+export const STALE_USER_SYNC_RUN_MS = 8 * 60 * 1000
+
+export async function clearStaleUserSyncRun(
+  db: SupabaseClient,
+  userId: string,
+): Promise<boolean> {
+  const active = await getActiveUserSyncRun(db, userId)
+  if (!active?.started_at || active.finished_at) return false
+  const age = Date.now() - new Date(active.started_at).getTime()
+  if (age < STALE_USER_SYNC_RUN_MS) return false
+  await finishSyncRun(db, active.id, {
+    status: 'error',
+    accounts_synced: active.accounts_synced ?? 0,
+    new_emails: active.new_emails ?? 0,
+    error_detail: {
+      fatal: 'Synchronisation interrompue côté serveur. Réessayez.',
+      sync_progress: active.error_detail?.sync_progress,
+    },
+    startedAt: new Date(active.started_at).getTime(),
+  })
+  console.warn(`[sync_runs] stale user run cleared id=${active.id} age=${Math.round(age / 1000)}s`)
+  return true
+}
+
 export async function getSyncHealthSummary(db: SupabaseClient) {
   const runs = await getRecentSyncRuns(db, 30)
   const cronRuns = runs.filter(r => !r.user_id)

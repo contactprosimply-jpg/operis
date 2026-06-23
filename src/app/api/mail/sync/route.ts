@@ -7,8 +7,11 @@ import { createAdminClient } from '@/lib/supabase'
 import { formatImapError, resolveMailAccount, syncUserMailAccountsStep, type MailSyncResult } from '@/lib/mail-sync'
 import { checkRateLimit } from '@/lib/rateLimit'
 import {
+  clearStaleUserSyncRun,
   finishSyncRun,
   getActiveUserSyncRun,
+  getSyncRunById,
+  isSyncRunInProgress,
   startSyncRun,
   updateSyncRunProgress,
   type SyncRunErrorDetail,
@@ -19,6 +22,13 @@ import {
 export const maxDuration = 300
 
 const CHAIN_BUFFER_MS = 20_000
+
+async function finishStaleRunIfNeeded(
+  db: ReturnType<typeof createAdminClient>,
+  userId: string,
+): Promise<boolean> {
+  return clearStaleUserSyncRun(db, userId)
+}
 
 function syncRunStatus(result: MailSyncResult, fatal?: string): SyncRunStatus {
   if (fatal) return 'error'
@@ -167,10 +177,13 @@ export async function POST(req: NextRequest) {
 
   const active = await getActiveUserSyncRun(db, userId)
   if (active) {
-    return Response.json({
-      success: true,
-      data: { run_id: active.id, in_progress: true, already_running: true },
-    })
+    const cleared = await finishStaleRunIfNeeded(db, userId)
+    if (!cleared) {
+      return Response.json({
+        success: true,
+        data: { run_id: active.id, in_progress: true, already_running: true },
+      })
+    }
   }
 
   if (!account) {
