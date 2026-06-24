@@ -79,6 +79,7 @@ function NotifRow({
         setPreview({
           subject: json.data.subject,
           from_address: json.data.from_address,
+          to_address: json.data.to_address,
           received_at: json.data.received_at,
           body_html: json.data.body_html,
           body_text: json.data.body_text,

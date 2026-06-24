@@ -5,10 +5,10 @@ export type MailSyncUIState =
   | { status: 'error'; message: string }
 
 export const MAIL_LAST_SYNC_KEY = 'operis:lastSyncAt'
+export const MAIL_SYNC_CURSOR_KEY = 'operis:mailSyncCursor'
+export const MAIL_SYNC_PROCESSED_KEY = 'operis:mailSyncProcessed'
 export const SYNC_DONE_DISMISS_MS = 4000
-/** Aligné sur maxDuration serveur (300s) + chaînages after() — ne pas couper avant la fin réelle. */
-export const SYNC_GLOBAL_TIMEOUT_MS = 600_000
-export const SYNC_POLL_INTERVAL_MS = 2000
+export const MAIL_SYNC_BATCH_TIMEOUT_MS = 30_000
 
 export function readLastSyncAt(): string | null {
   if (typeof window === 'undefined') return null
@@ -30,4 +30,9 @@ export function writeLastSyncAt(iso: string): void {
 
 export function initialMailSyncUI(): MailSyncUIState {
   return { status: 'idle', lastSyncAt: readLastSyncAt() }
+}
+
+export function syncPercent(current: number, total: number): number | null {
+  if (total <= 0) return null
+  return Math.min(100, Math.max(0, Math.round((current / total) * 100)))
 }

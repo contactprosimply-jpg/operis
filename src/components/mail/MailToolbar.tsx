@@ -2,22 +2,6 @@
 
 import type { MailSyncUIState } from '@/lib/mail-sync-ui'
 import { SyncProgressRing } from '@/components/mail/SyncProgressRing'
-import type { MailSyncProgressUI } from '@/lib/mail-sync-progress'
-
-function progressFromSyncUI(syncUI: MailSyncUIState): MailSyncProgressUI | null {
-  if (syncUI.status === 'syncing') {
-    const percent = syncUI.total > 0
-      ? Math.min(100, Math.round((syncUI.current / syncUI.total) * 100))
-      : null
-    return {
-      percent,
-      current: syncUI.current,
-      total: syncUI.total,
-      label: syncUI.label ?? `Synchronisation… ${syncUI.current.toLocaleString('fr-FR')} / ${syncUI.total.toLocaleString('fr-FR')}`,
-    }
-  }
-  return null
-}
 
 export default function MailToolbar({
   onNewMail,
@@ -39,7 +23,19 @@ export default function MailToolbar({
   onFavoritesOnlyChange: (v: boolean) => void
 }) {
   const syncing = syncUI.status === 'syncing'
-  const syncProgress = progressFromSyncUI(syncUI)
+  const syncDone = syncUI.status === 'done'
+  const syncProgress = syncUI.status === 'syncing'
+    ? {
+        percent: syncUI.total > 0
+          ? Math.min(100, Math.round((syncUI.current / syncUI.total) * 100))
+          : null,
+        current: syncUI.current,
+        total: syncUI.total,
+        label: syncUI.label ?? `Synchronisation… ${syncUI.current.toLocaleString('fr-FR')} / ${syncUI.total.toLocaleString('fr-FR')}`,
+      }
+    : syncUI.status === 'done'
+      ? { percent: 100, current: 0, total: 0, label: 'Synchronisation terminée' }
+      : null
 
   const lastSyncLabel = syncUI.status === 'idle' && syncUI.lastSyncAt
     ? `Dernière synchro à ${new Date(syncUI.lastSyncAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
@@ -78,10 +74,10 @@ export default function MailToolbar({
         + Nouveau mail
       </button>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {syncing && syncProgress ? (
+        {(syncing || syncDone) && syncProgress ? (
           <button
             type="button"
-            disabled
+            disabled={syncing}
             title={syncProgress.label}
             style={{
               display: 'flex',
@@ -89,13 +85,13 @@ export default function MailToolbar({
               gap: 6,
               padding: '4px 10px',
               borderRadius: 8,
-              border: '1px solid var(--border)',
-              background: 'transparent',
-              cursor: 'wait',
+              border: `1px solid ${syncDone ? 'rgba(22,163,74,0.35)' : 'var(--border)'}`,
+              background: syncDone ? 'rgba(22,163,74,0.08)' : 'transparent',
+              cursor: syncing ? 'wait' : 'default',
               fontFamily: 'DM Sans, system-ui',
             }}
           >
-            <SyncProgressRing percent={syncProgress.percent} size={32} />
+            <SyncProgressRing percent={syncProgress.percent} size={32} done={syncDone} />
           </button>
         ) : (
           <button

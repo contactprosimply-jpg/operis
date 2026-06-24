@@ -1,13 +1,34 @@
 'use client'
 
+import { useMemo } from 'react'
+import DOMPurify from 'dompurify'
 import { useModalBodyLock } from '@/components/ui'
 
 export type MailPreviewData = {
   subject?: string | null
   from_address?: string | null
+  to_address?: string | null
   received_at?: string | null
   body_html?: string | null
   body_text?: string | null
+}
+
+function senderInitial(from: string | null | undefined): string {
+  const raw = (from ?? '?').trim()
+  const name = raw.split('<')[0].trim()
+  const letter = (name[0] ?? raw[0] ?? '?').toUpperCase()
+  return letter
+}
+
+function linkifyPlainText(text: string): string {
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  return escaped.replace(
+    /(https?:\/\/[^\s<]+)/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>',
+  )
 }
 
 export default function MailPreviewModal({
@@ -19,8 +40,28 @@ export default function MailPreviewModal({
 }) {
   useModalBodyLock(true)
 
-  const body = mail.body_html?.trim() || mail.body_text?.trim() || ''
   const isHtml = Boolean(mail.body_html?.trim())
+  const cleanHtml = useMemo(
+    () => (isHtml ? DOMPurify.sanitize(mail.body_html ?? '', { USE_PROFILES: { html: true } }) : ''),
+    [isHtml, mail.body_html],
+  )
+
+  const srcDoc = useMemo(() => {
+    if (!isHtml) return null
+    return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'DM Sans',sans-serif;color:#1a1a1a;
+       line-height:1.6;padding:16px;max-width:680px;margin:0 auto;word-break:break-word;}
+  img{max-width:100%;height:auto;} a{color:#2563eb;}
+  table{max-width:100%;}
+</style></head><body>${cleanHtml}</body></html>`
+  }, [isHtml, cleanHtml])
+
+  const plainHtml = useMemo(() => {
+    if (isHtml) return ''
+    const text = mail.body_text?.trim() ?? ''
+    return linkifyPlainText(text)
+  }, [isHtml, mail.body_text])
 
   return (
     <div
@@ -41,80 +82,133 @@ export default function MailPreviewModal({
       }}
     >
       <div
+        className="mail-modal"
         onClick={e => e.stopPropagation()}
         style={{
-          width: 'min(720px, 100%)',
-          maxHeight: 'min(85vh, 720px)',
-          background: 'var(--bg-card)',
-          borderRadius: 14,
-          border: '1px solid var(--border-hi)',
-          boxShadow: 'var(--shadow-md)',
+          width: 'min(760px, 92vw)',
+          maxHeight: '88vh',
+          background: '#fff',
+          borderRadius: 12,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
         }}
       >
-        <header style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          gap: 12,
-          padding: '14px 16px',
-          borderBottom: '1px solid var(--border)',
-          background: '#021246',
-          color: '#fff',
-        }}>
-          <strong style={{ fontSize: 14, lineHeight: 1.4, fontFamily: 'DM Sans, system-ui' }}>
-            {mail.subject ?? '(sans objet)'}
-          </strong>
+        <header
+          className="mail-modal-header"
+          style={{
+            background: '#021246',
+            color: '#fff',
+            padding: '16px 20px',
+            position: 'relative',
+            flexShrink: 0,
+          }}
+        >
           <button
             type="button"
+            className="close"
             onClick={onClose}
             aria-label="Fermer"
             style={{
+              position: 'absolute',
+              top: 12,
+              right: 14,
               minWidth: 44,
               minHeight: 44,
+              background: 'none',
               border: 'none',
-              background: 'rgba(255,255,255,0.12)',
               color: '#fff',
-              borderRadius: 8,
-              cursor: 'pointer',
               fontSize: 18,
-              lineHeight: 1,
+              cursor: 'pointer',
             }}
           >
             ✕
           </button>
+          <h2
+            className="mail-subject"
+            style={{
+              fontSize: 18,
+              margin: '0 0 12px',
+              paddingRight: 28,
+              lineHeight: 1.35,
+              fontFamily: 'DM Sans, system-ui',
+              fontWeight: 700,
+            }}
+          >
+            {mail.subject ?? '(sans objet)'}
+          </h2>
+          <div className="mail-meta" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div
+              className="avatar"
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                background: '#FFB400',
+                color: '#021246',
+                display: 'grid',
+                placeItems: 'center',
+                fontWeight: 700,
+                flexShrink: 0,
+                fontFamily: 'DM Sans, system-ui',
+              }}
+            >
+              {senderInitial(mail.from_address)}
+            </div>
+            <div className="mail-meta-text" style={{ minWidth: 0, flex: 1 }}>
+              <div className="from" style={{ fontSize: 14 }}>
+                <strong>{mail.from_address ?? '—'}</strong>
+              </div>
+              {mail.to_address && (
+                <div className="to" style={{ fontSize: 13, opacity: 0.85, marginTop: 2 }}>
+                  À : {mail.to_address}
+                </div>
+              )}
+            </div>
+            <div
+              className="date"
+              style={{
+                marginLeft: 'auto',
+                fontSize: 13,
+                opacity: 0.8,
+                whiteSpace: 'nowrap',
+                fontFamily: 'DM Mono, monospace',
+              }}
+            >
+              {mail.received_at
+                ? new Date(mail.received_at).toLocaleString('fr-FR')
+                : '—'}
+            </div>
+          </div>
         </header>
-        <p style={{
-          margin: 0,
-          padding: '10px 16px',
-          fontSize: 11,
-          color: 'var(--text-muted)',
-          fontFamily: 'DM Mono, monospace',
-          borderBottom: '1px solid var(--border)',
-        }}>
-          De : {mail.from_address ?? '—'}
-          {' — '}
-          {mail.received_at
-            ? new Date(mail.received_at).toLocaleString('fr-FR')
-            : '—'}
-        </p>
-        <div
-          className="modal-body"
-          style={{
-            padding: 16,
-            overflowY: 'auto',
-            flex: 1,
-            fontSize: 13,
-            lineHeight: 1.55,
-            color: 'var(--text-primary)',
-            fontFamily: 'DM Sans, system-ui',
-          }}
-          {...(isHtml
-            ? { dangerouslySetInnerHTML: { __html: body } }
-            : { children: body || '(corps vide)' })}
-        />
+
+        <div className="mail-body" style={{ flex: 1, overflow: 'auto', background: '#fff' }}>
+          {isHtml && srcDoc ? (
+            <iframe
+              title="Aperçu du mail"
+              sandbox=""
+              srcDoc={srcDoc}
+              style={{ width: '100%', height: 'min(60vh, 520px)', border: 0, background: '#fff', display: 'block' }}
+            />
+          ) : (
+            <pre
+              className="mail-plain"
+              style={{
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                fontFamily: 'DM Sans, system-ui',
+                fontSize: 14,
+                lineHeight: 1.6,
+                color: '#1a1a1a',
+                padding: 16,
+                margin: 0,
+                maxWidth: 680,
+              }}
+              dangerouslySetInnerHTML={{ __html: plainHtml || '(corps vide)' }}
+            />
+          )}
+        </div>
       </div>
     </div>
   )
