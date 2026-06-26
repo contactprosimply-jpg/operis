@@ -14,7 +14,7 @@ import {
   labelTooltip,
   manualLabel,
 } from '@/lib/mail-smart-labels'
-import { emitMailUnreadChanged } from '@/lib/mail-unread-events'
+import { emitMailUnreadChanged, scheduleMailUnreadRefresh } from '@/lib/mail-unread-events'
 import { Spinner, useModalBodyLock } from '@/components/ui'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
@@ -734,10 +734,12 @@ export default function MailPage() {
     emailsRef.current = cachedListEmails
     setListHasMore(false)
     listHasMoreRef.current = false
-    if (folder === 'inbox') {
-      setInboxUnread(cachedListEmails.filter(e => !e.is_read).length)
-    }
     setLoading(false)
+    if (folder !== 'inbox') return
+    const count = cachedListEmails.filter(e => !e.is_read).length
+    setInboxUnread(count)
+    const t = setTimeout(() => emitMailUnreadChanged(count), 400)
+    return () => clearTimeout(t)
   }, [localFirst, cachedListEmails, folder])
 
   useEffect(() => {
@@ -788,7 +790,7 @@ export default function MailPage() {
         void upsertCached([emailRowToCached({ ...raw, mail_folder: raw.mail_folder ?? 'inbox' })])
         emailCountRef.current += 1
         const isInboxUnread = !lite.is_read && (!lite.mail_folder || lite.mail_folder === 'inbox')
-        if (isInboxUnread) emitMailUnreadChanged()
+        if (isInboxUnread) scheduleMailUnreadRefresh()
         showToast(`Nouvel email : ${lite.subject?.slice(0, 40)}`)
       })
       .on('postgres_changes', {
@@ -806,7 +808,7 @@ export default function MailPage() {
         }
         const folder = raw.mail_folder ?? prev?.mail_folder
         const isInbox = !folder || folder === 'inbox'
-        if (isInbox && old.is_read !== raw.is_read) emitMailUnreadChanged()
+        if (isInbox && old.is_read !== raw.is_read) scheduleMailUnreadRefresh()
         setEmails(prevList => prevList.map(e => e.id === raw.id ? { ...e, ...lite } : e))
         void upsertCached([emailRowToCached({ ...raw, ...lite, id: raw.id, user_id: raw.user_id })])
         if (selectedIdRef.current === raw.id) {
@@ -1257,10 +1259,11 @@ export default function MailPage() {
 
   const handleMarkRead = (email: Email) => {
     if (email.is_read) return
+    const nextCount = emailsRef.current.filter(e => !e.is_read && e.id !== email.id).length
     setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: true } : e))
     setSelected(prev => prev?.id === email.id ? { ...prev, is_read: true } : prev)
     void setLocalFlag(email.id, { is_read: true })
-    emitMailUnreadChanged()
+    emitMailUnreadChanged(nextCount)
     void authFetch('/api/mail/emails', {
       method: 'PATCH',
       body: JSON.stringify({ id: email.id, is_read: true }),
@@ -1268,12 +1271,13 @@ export default function MailPage() {
       setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: false } : e))
       setSelected(prev => prev?.id === email.id ? { ...prev, is_read: false } : prev)
       void setLocalFlag(email.id, { is_read: false })
-      emitMailUnreadChanged()
+      emitMailUnreadChanged(nextCount + 1)
     })
   }
 
   const handleMarkUnread = async (email: Email) => {
     if (!email.is_read) return
+    const nextCount = emailsRef.current.filter(e => !e.is_read).length + 1
     try {
       await authFetch('/api/mail/emails', {
         method: 'PATCH',
@@ -1282,7 +1286,7 @@ export default function MailPage() {
       setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: false } : e))
       setSelected(prev => prev?.id === email.id ? { ...prev, is_read: false } : prev)
       void setLocalFlag(email.id, { is_read: false })
-      emitMailUnreadChanged()
+      emitMailUnreadChanged(nextCount)
       showToast('Marqué non lu')
     } catch {}
   }

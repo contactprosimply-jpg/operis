@@ -6,7 +6,10 @@ import { usePathname, useRouter } from 'next/navigation'
 import { getAccessToken } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
-import { MAIL_UNREAD_CHANGED_EVENT } from '@/lib/mail-unread-events'
+import {
+  MAIL_UNREAD_CHANGED_EVENT,
+  createThrottledRunner,
+} from '@/lib/mail-unread-events'
 import NotificationPanelContent, {
   type AppNotification,
   formatBadgeCount,
@@ -96,9 +99,13 @@ export default function Sidebar() {
     load()
   }, [session])
 
-  // Badge mail : comptage exact + temps réel
+  // Badge mail : compte local si fourni, sinon fetch throttlé (jamais 1 appel / event realtime)
   useEffect(() => {
     if (!userId) return
+
+    const POLL_MS = 60_000
+    const THROTTLE_MS = 5_000
+    const throttled = createThrottledRunner(THROTTLE_MS)
 
     const fetchUnread = async () => {
       try {
@@ -112,10 +119,23 @@ export default function Sidebar() {
       } catch { /* ignore */ }
     }
 
-    fetchUnread()
+    const scheduleFetchUnread = (immediate = false) => {
+      throttled.schedule(() => { void fetchUnread() }, immediate)
+    }
 
-    const onUnreadChanged = () => { void fetchUnread() }
+    scheduleFetchUnread(true)
+
+    const onUnreadChanged = (e: Event) => {
+      const count = (e as CustomEvent<{ count?: number }>).detail?.count
+      if (typeof count === 'number') {
+        setUnreadCount(count)
+        return
+      }
+      scheduleFetchUnread()
+    }
     window.addEventListener(MAIL_UNREAD_CHANGED_EVENT, onUnreadChanged)
+
+    const pollIv = setInterval(() => scheduleFetchUnread(true), POLL_MS)
 
     const channel = supabase
       .channel(`mail-unread-${userId}`)
@@ -124,18 +144,25 @@ export default function Sidebar() {
         schema: 'public',
         table: 'emails',
         filter: `user_id=eq.${userId}`,
-      }, () => { void fetchUnread() })
+      }, () => scheduleFetchUnread())
       .subscribe()
 
     return () => {
+      throttled.cancel()
+      clearInterval(pollIv)
       window.removeEventListener(MAIL_UNREAD_CHANGED_EVENT, onUnreadChanged)
       void supabase.removeChannel(channel)
     }
   }, [userId])
 
-  // Centre de notifications
+  // Centre de notifications — poll 60 s + realtime throttlé (pas de boucle)
   useEffect(() => {
     if (!userId) return
+
+    const POLL_MS = 60_000
+    const THROTTLE_MS = 5_000
+    const throttled = createThrottledRunner(THROTTLE_MS)
+
     const fetchNotifs = async () => {
       try {
         const token = await getAccessToken()
@@ -150,8 +177,15 @@ export default function Sidebar() {
         }
       } catch { /* ignore */ }
     }
-    fetchNotifs()
-    const iv = setInterval(fetchNotifs, 30000)
+
+    const scheduleFetchNotifs = (immediate = false) => {
+      throttled.schedule(() => { void fetchNotifs() }, immediate)
+    }
+
+    scheduleFetchNotifs(true)
+
+    const pollIv = setInterval(() => scheduleFetchNotifs(true), POLL_MS)
+
     const channel = supabase
       .channel(`notifications-${userId}`)
       .on('postgres_changes', {
@@ -159,10 +193,12 @@ export default function Sidebar() {
         schema: 'public',
         table: 'notifications',
         filter: `user_id=eq.${userId}`,
-      }, () => { void fetchNotifs() })
+      }, () => scheduleFetchNotifs())
       .subscribe()
+
     return () => {
-      clearInterval(iv)
+      throttled.cancel()
+      clearInterval(pollIv)
       void supabase.removeChannel(channel)
     }
   }, [userId])
