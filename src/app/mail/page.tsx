@@ -58,6 +58,17 @@ import {
   hasMailBodyCached,
 } from '@/lib/mail-detail-cache'
 import MailVirtualList from '@/components/mail/MailVirtualList'
+import { useCachedMailList } from '@/hooks/useCachedMailList'
+import { pullMailDelta } from '@/lib/mail-cache-sync'
+import {
+  isLocalFirstFolder,
+  folderKeyFromSelection,
+  setLocalFlag,
+  cachedToEmail,
+  getCachedEmailById,
+  emailRowToCached,
+  upsertCached,
+} from '@/lib/mailCache'
 
 const MAIL_LIST_PAGE_SIZE = 30
 
@@ -219,6 +230,24 @@ export default function MailPage() {
 
   const userId = session?.user?.id
 
+  const localFirst = isLocalFirstFolder(folderSelection)
+  const localFolderKey = localFirst ? folderKeyFromSelection(folderSelection) : null
+  const activeListFilter: MailFilter =
+    folder === 'inbox' ? (listListFilter === 'all' ? filter : listListFilter) : 'all'
+
+  const cachedListEmails = useCachedMailList(localFolderKey, {
+    searchQuery,
+    favoritesOnly,
+    listFilter: activeListFilter,
+    priorityFilter: priorityFilter || undefined,
+    fromFilter,
+    tenderFilter,
+    labelFilter,
+    sinceFilter,
+    untilFilter,
+    sortOrder: listSortOrder,
+  })
+
   const getListCacheKey = useCallback((selection?: MailFolderSelection) => {
     if (!userId) return null
     const activeSelection = selection ?? folderSelection
@@ -354,6 +383,10 @@ export default function MailPage() {
         }
       }).catch(() => {})
     }
+    if (isLocalFirstFolder(sel)) {
+      setLoading(false)
+      return
+    }
     const cacheKey = getListCacheKey(sel)
     const cached = cacheKey ? readMailListCache(cacheKey) : null
     if (cached?.emails?.length) {
@@ -448,6 +481,18 @@ export default function MailPage() {
       if (local) setSelected(local)
       return
     }
+    const idbRow = await getCachedEmailById(emailId)
+    if (idbRow?.body_html || idbRow?.body_text) {
+      const fromIdb = cachedToEmail(idbRow) as EmailWithQuote
+      setMailDetailCache(emailId, fromIdb)
+      if (options?.analyzeOnly) {
+        void fetchEmailDetail(emailId, { analyze: true, silent: true })
+        return
+      }
+      setSelected(fromIdb)
+      if (!fromIdb.quote_analysis) void fetchEmailDetail(emailId, { analyze: true, silent: true })
+      return
+    }
     const cached = getMailDetailCache(emailId) as EmailWithQuote | null
     if (options?.analyzeOnly && cached) {
       void fetchEmailDetail(emailId, { analyze: true, silent: true })
@@ -488,6 +533,10 @@ export default function MailPage() {
     }, 12000)
     try {
       const activeSelection = selectionOverride ?? folderSelection
+      if (isLocalFirstFolder(activeSelection) && !append) {
+        if (!silent) setLoading(false)
+        return
+      }
       const activeFolder = activeSelection.kind
       const offset = append ? emailsRef.current.length : 0
       const params = new URLSearchParams({
@@ -607,7 +656,7 @@ export default function MailPage() {
         reset: force && !silent,
         silent,
         onProgress: setSyncUI,
-        onBatch: async () => { await loadEmails(true) },
+        onBatch: async () => { await pullMailDelta() },
         onError: message => {
           if (!silent) showToast(message)
           setSyncUI({ status: 'error', message })
@@ -617,14 +666,15 @@ export default function MailPage() {
 
       if (ok) {
         refreshFolders()
-        await loadEmails(true)
+        await pullMailDelta()
+        if (!localFirst) await loadEmails(true)
         const sid = selectedIdRef.current
         if (sid) await loadEmailDetail(sid, true)
       }
     } finally {
       syncInProgressRef.current = false
     }
-  }, [loadEmails, loadEmailDetail, refreshFolders, finishSyncSuccess])
+  }, [loadEmails, loadEmailDetail, refreshFolders, finishSyncSuccess, localFirst])
 
   useEffect(() => {
     if (!ready || !userId || autoSyncBootRef.current) return
@@ -672,8 +722,31 @@ export default function MailPage() {
   }, [userId])
 
   useEffect(() => {
+    if (!userId) return
+    void pullMailDelta()
+    const t = setInterval(() => { void pullMailDelta() }, 60_000)
+    return () => clearInterval(t)
+  }, [userId])
+
+  useEffect(() => {
+    if (!localFirst) return
+    setEmails(cachedListEmails)
+    emailsRef.current = cachedListEmails
+    setListHasMore(false)
+    listHasMoreRef.current = false
+    if (folder === 'inbox') {
+      setInboxUnread(cachedListEmails.filter(e => !e.is_read).length)
+    }
+    setLoading(false)
+  }, [localFirst, cachedListEmails, folder])
+
+  useEffect(() => {
     if (!ready) return
     if (!userId) {
+      setLoading(false)
+      return
+    }
+    if (localFirst) {
       setLoading(false)
       return
     }
@@ -689,7 +762,7 @@ export default function MailPage() {
     } else {
       void loadEmails(false)
     }
-  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, ready, userId, loadEmails, getListCacheKey])
+  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, ready, userId, loadEmails, getListCacheKey, localFirst])
 
   // Sync IMAP : uniquement via cron serveur ou bouton manuel — pas au chargement de page
   useEffect(() => {
@@ -712,6 +785,7 @@ export default function MailPage() {
           if (prev.some(e => e.id === lite.id)) return prev
           return [lite, ...prev]
         })
+        void upsertCached([emailRowToCached({ ...raw, mail_folder: raw.mail_folder ?? 'inbox' })])
         emailCountRef.current += 1
         const isInboxUnread = !lite.is_read && (!lite.mail_folder || lite.mail_folder === 'inbox')
         if (isInboxUnread) emitMailUnreadChanged()
@@ -734,6 +808,7 @@ export default function MailPage() {
         const isInbox = !folder || folder === 'inbox'
         if (isInbox && old.is_read !== raw.is_read) emitMailUnreadChanged()
         setEmails(prevList => prevList.map(e => e.id === raw.id ? { ...e, ...lite } : e))
+        void upsertCached([emailRowToCached({ ...raw, ...lite, id: raw.id, user_id: raw.user_id })])
         if (selectedIdRef.current === raw.id) {
           setSelected(prev => prev ? { ...prev, ...lite } : prev)
           // Recharger le détail seulement si les PJ viennent d'apparaître
@@ -755,8 +830,15 @@ export default function MailPage() {
     if (hasMailBodyCached(emailId)) return
     if (prefetchingRef.current.has(emailId)) return
     prefetchingRef.current.add(emailId)
-    void fetchEmailDetail(emailId, { analyze: false, silent: true }).finally(() => {
-      prefetchingRef.current.delete(emailId)
+    void getCachedEmailById(emailId).then(row => {
+      if (row?.body_html || row?.body_text) {
+        setMailDetailCache(emailId, cachedToEmail(row))
+        prefetchingRef.current.delete(emailId)
+        return
+      }
+      void fetchEmailDetail(emailId, { analyze: false, silent: true }).finally(() => {
+        prefetchingRef.current.delete(emailId)
+      })
     })
   }, [fetchEmailDetail])
 
@@ -782,7 +864,7 @@ export default function MailPage() {
 
   useEffect(() => {
     const el = listScrollRef.current
-    if (!el) return
+    if (!el || localFirst) return
     const onScroll = () => {
       if (loadingMoreRef.current || !listHasMoreRef.current || loading) return
       const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140
@@ -790,7 +872,7 @@ export default function MailPage() {
     }
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
-  }, [loadEmails, loading])
+  }, [loadEmails, loading, localFirst])
 
   useEffect(() => {
     if (!pendingEmailId) return
@@ -1177,6 +1259,7 @@ export default function MailPage() {
     if (email.is_read) return
     setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: true } : e))
     setSelected(prev => prev?.id === email.id ? { ...prev, is_read: true } : prev)
+    void setLocalFlag(email.id, { is_read: true })
     emitMailUnreadChanged()
     void authFetch('/api/mail/emails', {
       method: 'PATCH',
@@ -1184,6 +1267,7 @@ export default function MailPage() {
     }).catch(() => {
       setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: false } : e))
       setSelected(prev => prev?.id === email.id ? { ...prev, is_read: false } : prev)
+      void setLocalFlag(email.id, { is_read: false })
       emitMailUnreadChanged()
     })
   }
@@ -1197,6 +1281,7 @@ export default function MailPage() {
       })
       setEmails(prev => prev.map(e => e.id === email.id ? { ...e, is_read: false } : e))
       setSelected(prev => prev?.id === email.id ? { ...prev, is_read: false } : prev)
+      void setLocalFlag(email.id, { is_read: false })
       emitMailUnreadChanged()
       showToast('Marqué non lu')
     } catch {}
@@ -1436,7 +1521,8 @@ export default function MailPage() {
     try {
       const data = await mailAction('empty_trash')
       showToast(`Corbeille vidée (${data.data?.deleted ?? 0} mail(s))`)
-      loadEmails(false)
+      if (localFirst) void pullMailDelta()
+      else loadEmails(false)
     } catch {
       showToast('Erreur vidage corbeille')
     }
@@ -1513,9 +1599,9 @@ export default function MailPage() {
           syncUI={syncUI}
           onRetrySync={handleSync}
           search={searchQuery}
-          onSearchChange={v => { setSearchQuery(v); loadEmails(false) }}
+          onSearchChange={v => { setSearchQuery(v); if (!localFirst) loadEmails(false) }}
           favoritesOnly={favoritesOnly}
-          onFavoritesOnlyChange={v => { setFavoritesOnly(v); loadEmails(false) }}
+          onFavoritesOnlyChange={v => { setFavoritesOnly(v); if (!localFirst) loadEmails(false) }}
         />
       )}
 
@@ -1681,7 +1767,7 @@ export default function MailPage() {
                   type="button"
                   onClick={() => {
                     setListSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')
-                    void loadEmails(false)
+                    if (!localFirst) void loadEmails(false)
                   }}
                   title={listSortOrder === 'desc' ? 'Tri : plus récent en premier' : 'Tri : plus ancien en premier'}
                   style={{
@@ -1919,6 +2005,7 @@ export default function MailPage() {
                 onHover={prefetchEmail}
                 onContextMenu={setContextMenuEmailId}
                 onNearBottom={() => {
+                  if (localFirst) return
                   if (!loadingMoreRef.current && listHasMoreRef.current && !loading) {
                     void loadEmails(true, undefined, true)
                   }
