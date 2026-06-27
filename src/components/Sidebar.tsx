@@ -8,7 +8,6 @@ import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import {
   MAIL_UNREAD_CHANGED_EVENT,
-  createThrottledRunner,
 } from '@/lib/mail-unread-events'
 import NotificationPanelContent, {
   type AppNotification,
@@ -99,31 +98,52 @@ export default function Sidebar() {
     load()
   }, [session])
 
-  // Badge mail : compte local si fourni, sinon fetch throttlé (jamais 1 appel / event realtime)
+  // Badge mail : poll 60 s + mise à jour locale si count fourni (pas de Realtime)
   useEffect(() => {
     if (!userId) return
 
+    let cancelled = false
     const POLL_MS = 60_000
-    const THROTTLE_MS = 5_000
-    const throttled = createThrottledRunner(THROTTLE_MS)
+    const MIN_REFETCH_MS = 10_000
+    let lastFetchAt = 0
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
     const fetchUnread = async () => {
       try {
         const token = await getAccessToken()
-        if (!token) return
+        if (!token || cancelled) return
         const res = await fetch('/api/mail/unread-count', {
           headers: { Authorization: `Bearer ${token}` },
         })
         const data = await res.json()
-        if (data.success) setUnreadCount(data.data?.count ?? 0)
+        if (!cancelled && data.success) setUnreadCount(data.data?.count ?? 0)
       } catch { /* ignore */ }
     }
 
-    const scheduleFetchUnread = (immediate = false) => {
-      throttled.schedule(() => { void fetchUnread() }, immediate)
+    const runFetchUnread = () => {
+      lastFetchAt = Date.now()
+      void fetchUnread()
     }
 
-    scheduleFetchUnread(true)
+    const scheduleDebouncedFetch = () => {
+      const now = Date.now()
+      const elapsed = now - lastFetchAt
+      if (elapsed >= MIN_REFETCH_MS) {
+        if (debounceTimer) {
+          clearTimeout(debounceTimer)
+          debounceTimer = null
+        }
+        runFetchUnread()
+        return
+      }
+      if (debounceTimer) return
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null
+        if (!cancelled) runFetchUnread()
+      }, MIN_REFETCH_MS - elapsed)
+    }
+
+    runFetchUnread()
 
     const onUnreadChanged = (e: Event) => {
       const count = (e as CustomEvent<{ count?: number }>).detail?.count
@@ -131,75 +151,52 @@ export default function Sidebar() {
         setUnreadCount(count)
         return
       }
-      scheduleFetchUnread()
+      scheduleDebouncedFetch()
     }
     window.addEventListener(MAIL_UNREAD_CHANGED_EVENT, onUnreadChanged)
 
-    const pollIv = setInterval(() => scheduleFetchUnread(true), POLL_MS)
-
-    const channel = supabase
-      .channel(`mail-unread-${userId}`)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'emails',
-        filter: `user_id=eq.${userId}`,
-      }, () => scheduleFetchUnread())
-      .subscribe()
+    const pollIv = setInterval(() => {
+      if (!cancelled) runFetchUnread()
+    }, POLL_MS)
 
     return () => {
-      throttled.cancel()
+      cancelled = true
+      if (debounceTimer) clearTimeout(debounceTimer)
       clearInterval(pollIv)
       window.removeEventListener(MAIL_UNREAD_CHANGED_EVENT, onUnreadChanged)
-      void supabase.removeChannel(channel)
     }
   }, [userId])
 
-  // Centre de notifications — poll 60 s + realtime throttlé (pas de boucle)
+  // Centre de notifications — poll 60 s uniquement (pas de Realtime)
   useEffect(() => {
     if (!userId) return
 
+    let cancelled = false
     const POLL_MS = 60_000
-    const THROTTLE_MS = 5_000
-    const throttled = createThrottledRunner(THROTTLE_MS)
 
     const fetchNotifs = async () => {
       try {
         const token = await getAccessToken()
-        if (!token) return
+        if (!token || cancelled) return
         const res = await fetch('/api/notifications', {
           headers: { Authorization: `Bearer ${token}` },
         })
         const data = await res.json()
-        if (data.success) {
-          if (Date.now() < markAllLockRef.current) return
-          setNotifList(data.data ?? [])
-        }
+        if (cancelled || !data.success) return
+        if (Date.now() < markAllLockRef.current) return
+        setNotifList(data.data ?? [])
       } catch { /* ignore */ }
     }
 
-    const scheduleFetchNotifs = (immediate = false) => {
-      throttled.schedule(() => { void fetchNotifs() }, immediate)
-    }
+    void fetchNotifs()
 
-    scheduleFetchNotifs(true)
-
-    const pollIv = setInterval(() => scheduleFetchNotifs(true), POLL_MS)
-
-    const channel = supabase
-      .channel(`notifications-${userId}`)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'notifications',
-        filter: `user_id=eq.${userId}`,
-      }, () => scheduleFetchNotifs())
-      .subscribe()
+    const pollIv = setInterval(() => {
+      if (!cancelled) void fetchNotifs()
+    }, POLL_MS)
 
     return () => {
-      throttled.cancel()
+      cancelled = true
       clearInterval(pollIv)
-      void supabase.removeChannel(channel)
     }
   }, [userId])
 

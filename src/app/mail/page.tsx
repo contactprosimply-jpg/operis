@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
 import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
 import { Email, EmailAttachment, EmailLabel, EmailPriority } from '@/types/database'
@@ -14,7 +13,7 @@ import {
   labelTooltip,
   manualLabel,
 } from '@/lib/mail-smart-labels'
-import { emitMailUnreadChanged, scheduleMailUnreadRefresh } from '@/lib/mail-unread-events'
+import { emitMailUnreadChanged } from '@/lib/mail-unread-events'
 import { Spinner, useModalBodyLock } from '@/components/ui'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
@@ -66,8 +65,6 @@ import {
   setLocalFlag,
   cachedToEmail,
   getCachedEmailById,
-  emailRowToCached,
-  upsertCached,
 } from '@/lib/mailCache'
 
 const MAIL_LIST_PAGE_SIZE = 30
@@ -766,63 +763,6 @@ export default function MailPage() {
     }
   }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, ready, userId, loadEmails, getListCacheKey, localFirst])
 
-  // Sync IMAP : uniquement via cron serveur ou bouton manuel — pas au chargement de page
-  useEffect(() => {
-    if (!userId) return
-    const channel = supabase.channel(`emails-realtime-${userId}`)
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'emails',
-        filter: `user_id=eq.${userId}`,
-      }, (payload) => {
-        const raw = payload.new as Email
-        const lite: Email = {
-          id: raw.id, user_id: raw.user_id, message_id: raw.message_id,
-          subject: raw.subject, from_address: raw.from_address, to_address: raw.to_address,
-          body_text: null, body_html: null,
-          received_at: raw.received_at, is_read: raw.is_read, is_ao: raw.is_ao,
-          ao_score: raw.ao_score, tender_id: raw.tender_id, has_attachments: raw.has_attachments,
-          created_at: raw.created_at, mail_folder: raw.mail_folder,
-        }
-        setEmails(prev => {
-          if (prev.some(e => e.id === lite.id)) return prev
-          return [lite, ...prev]
-        })
-        void upsertCached([emailRowToCached({ ...raw, mail_folder: raw.mail_folder ?? 'inbox' })])
-        emailCountRef.current += 1
-        const isInboxUnread = !lite.is_read && (!lite.mail_folder || lite.mail_folder === 'inbox')
-        if (isInboxUnread) scheduleMailUnreadRefresh()
-        showToast(`Nouvel email : ${lite.subject?.slice(0, 40)}`)
-      })
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'emails',
-        filter: `user_id=eq.${userId}`,
-      }, (payload) => {
-        const raw = payload.new as Email
-        const old = payload.old as Partial<Email>
-        const prev = emailsRef.current.find(e => e.id === raw.id)
-        const lite: Partial<Email> = {
-          subject: raw.subject, from_address: raw.from_address, received_at: raw.received_at,
-          is_read: raw.is_read, is_ao: raw.is_ao, ao_score: raw.ao_score,
-          tender_id: raw.tender_id, has_attachments: raw.has_attachments,
-          mail_folder: raw.mail_folder,
-        }
-        const folder = raw.mail_folder ?? prev?.mail_folder
-        const isInbox = !folder || folder === 'inbox'
-        if (isInbox && old.is_read !== raw.is_read) scheduleMailUnreadRefresh()
-        setEmails(prevList => prevList.map(e => e.id === raw.id ? { ...e, ...lite } : e))
-        void upsertCached([emailRowToCached({ ...raw, ...lite, id: raw.id, user_id: raw.user_id })])
-        if (selectedIdRef.current === raw.id) {
-          setSelected(prev => prev ? { ...prev, ...lite } : prev)
-          // Recharger le détail seulement si les PJ viennent d'apparaître
-          if (raw.has_attachments && !prev?.has_attachments) {
-            loadEmailDetail(raw.id, true)
-          }
-        }
-      })
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [userId, loadEmailDetail])
-
   const syncing = syncUI.status === 'syncing'
 
   const handleSync = () => void runSync(false, true)
@@ -1289,6 +1229,18 @@ export default function MailPage() {
       emitMailUnreadChanged(nextCount)
       showToast('Marqué non lu')
     } catch {}
+  }
+
+  const handleToggleStar = (email: Email) => {
+    const next = !email.is_starred
+    applyEmailPatch(email.id, { is_starred: next })
+    void setLocalFlag(email.id, { is_starred: next })
+    setContextMenuEmailId(null)
+    void mailAction('star', { emailId: email.id, starred: next }).catch(() => {
+      applyEmailPatch(email.id, { is_starred: !next })
+      void setLocalFlag(email.id, { is_starred: !next })
+      showToast('Erreur favori')
+    })
   }
 
   const downloadAttachment = async (emailId: string, index: number, filename: string) => {
@@ -2163,7 +2115,21 @@ export default function MailPage() {
                           boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
                         }}
                       >
-                        <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '4px 8px', fontFamily: 'DM Mono, monospace' }}>PRIORITÉ</div>
+                        <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '4px 8px', fontFamily: 'DM Mono, monospace' }}>ACTIONS</div>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStar(email)}
+                          style={{
+                            display: 'block', width: '100%', textAlign: 'left',
+                            padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+                            background: email.is_starred ? 'rgba(255,180,0,0.12)' : 'transparent',
+                            color: email.is_starred ? '#FFB400' : 'var(--text-secondary)',
+                            fontSize: 11, fontFamily: 'DM Sans, system-ui',
+                          }}
+                        >
+                          {email.is_starred ? '★ Retirer des favoris' : '☆ Ajouter aux favoris'}
+                        </button>
+                        <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '6px 8px 4px', fontFamily: 'DM Mono, monospace', borderTop: '1px solid var(--border)', marginTop: 4 }}>PRIORITÉ</div>
                         {(['urgent', 'normal', 'info'] as EmailPriority[]).map(p => (
                           <button
                             key={p}
