@@ -3,7 +3,6 @@ export const dynamic = 'force-dynamic'
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
-import { collectTenderDocuments } from '@/lib/tender-documents'
 import { isValidUuid, rejectUnexpectedFields, validateTitle, badRequest } from '@/lib/api-validation'
 import {
   canAssignTender,
@@ -48,19 +47,18 @@ export async function GET(
     .eq('tender_id', id)
     .maybeSingle()
 
-  let documents: Awaited<ReturnType<typeof collectTenderDocuments>> = {
-    received: [],
-    sent: [],
-    optional_png: [],
-    document_groups: [],
-  }
-  try {
-    documents = await collectTenderDocuments(
-      db, tender.user_id as string, id, consultations ?? [], quotes ?? []
-    )
-  } catch (err) {
-    console.error('[tenders/id] collectTenderDocuments failed', err)
-  }
+  const ownerId = tender.user_id as string
+  const [{ count: documentCount }, { count: linkedEmailCount }] = await Promise.all([
+    db.from('tender_documents')
+      .select('id', { count: 'exact', head: true })
+      .eq('tender_id', id)
+      .eq('user_id', ownerId)
+      .is('deleted_at', null),
+    db.from('emails')
+      .select('id', { count: 'exact', head: true })
+      .eq('tender_id', id)
+      .eq('user_id', ownerId),
+  ])
 
   const memberLabels = buildTenderMemberLabels(tender, access.scope)
   if (!memberLabels.creator_label && tender.user_id && tender.user_id !== userId) {
@@ -75,7 +73,11 @@ export async function GET(
       ...memberLabels,
       consultations: consultations ?? [],
       quotes: quotes ?? [],
-      documents,
+      documents: { received: [], sent: [], optional_png: [], document_groups: [] },
+      meta: {
+        document_count: documentCount ?? 0,
+        linked_email_count: linkedEmailCount ?? 0,
+      },
       stats,
       access: {
         is_org_owner: access.scope.isOrgOwner,

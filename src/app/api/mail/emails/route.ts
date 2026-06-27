@@ -101,7 +101,7 @@ export async function GET(req: NextRequest) {
   const until = searchParams.get('until') || undefined
   const labelFilter = searchParams.get('label')?.trim() || undefined
   const db = createAdminClient()
-  const limit = Math.min(Number(searchParams.get('limit') || 250), 500)
+  const limit = Math.min(Number(searchParams.get('limit') || (tenderId || unlinked ? 50 : 250)), 500)
   const offset = Math.max(0, Number(searchParams.get('offset') || 0))
   const folder = searchParams.get('folder')
   const imapPath = searchParams.get('imap_path') || undefined

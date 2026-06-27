@@ -121,6 +121,17 @@ export default function TenderDetailPage() {
   const [exportingPdf, setExportingPdf] = useState(false)
   const [retainingQuote, setRetainingQuote] = useState<string | null>(null)
   const [linkedEmails, setLinkedEmails] = useState<any[]>([])
+  const [tenderDocuments, setTenderDocuments] = useState<{
+    received: any[]
+    sent: any[]
+    optional_png: any[]
+    document_groups: any[]
+  }>({ received: [], sent: [], optional_png: [], document_groups: [] })
+  const [documentsLoading, setDocumentsLoading] = useState(false)
+  const [mailsLoading, setMailsLoading] = useState(false)
+  const [documentsLoaded, setDocumentsLoaded] = useState(false)
+  const [mailsLoaded, setMailsLoaded] = useState(false)
+  const loadedTabsRef = useRef(new Set<string>())
   const [showLinkEmailModal, setShowLinkEmailModal] = useState(false)
   const [unlinkedEmails, setUnlinkedEmails] = useState<any[]>([])
   const [linkingEmail, setLinkingEmail] = useState(false)
@@ -146,7 +157,7 @@ export default function TenderDetailPage() {
     if (silent) setRefreshing(true)
     else if (!cacheKey || !readCache(cacheKey, 15 * 60_000)) setLoading(true)
     try {
-      const res = await authFetch(`/api/tenders/${id}`, { timeoutMs: 55000 })
+      const res = await authFetch(`/api/tenders/${id}`, { timeoutMs: 20_000 })
       const data = await res.json()
       if (data.success) {
         setLoadError(null)
@@ -189,16 +200,34 @@ export default function TenderDetailPage() {
 
   const loadLinkedEmails = useCallback(async () => {
     try {
-      const res = await authFetch(`/api/mail/emails?tender_id=${id}`)
+      const res = await authFetch(`/api/mail/emails?tender_id=${id}&limit=50`)
       const data = await res.json()
       if (data.success) setLinkedEmails(data.data ?? [])
     } catch { /* ignore */ }
+    finally { setMailsLoaded(true) }
+  }, [id])
+
+  const loadDocuments = useCallback(async () => {
+    if (!id) return
+    setDocumentsLoading(true)
+    try {
+      const res = await authFetch(`/api/tenders/${id}/documents`, { timeoutMs: 120_000 })
+      const data = await res.json()
+      if (data.success) {
+        setTenderDocuments(data.data ?? { received: [], sent: [], optional_png: [], document_groups: [] })
+        setDocumentsLoaded(true)
+      }
+    } catch {
+      showRef.current('Erreur chargement documents')
+    } finally {
+      setDocumentsLoading(false)
+    }
   }, [id])
 
   const openLinkEmailModal = async () => {
     setShowLinkEmailModal(true)
     try {
-      const res = await authFetch('/api/mail/emails?unlinked=true&limit=150')
+      const res = await authFetch('/api/mail/emails?unlinked=true&limit=50')
       const data = await res.json()
       if (data.success) setUnlinkedEmails(data.data ?? [])
     } catch {
@@ -244,8 +273,27 @@ export default function TenderDetailPage() {
   }
 
   useEffect(() => {
-    if (tender) loadLinkedEmails()
-  }, [tender, loadLinkedEmails])
+    loadedTabsRef.current.clear()
+    setTenderDocuments({ received: [], sent: [], optional_png: [], document_groups: [] })
+    setLinkedEmails([])
+    setDocumentsLoaded(false)
+    setMailsLoaded(false)
+    setDocumentsLoading(false)
+    setMailsLoading(false)
+  }, [id])
+
+  useEffect(() => {
+    if (!id || !userId || !tender) return
+    if (activeTab === 'mails' && !loadedTabsRef.current.has('mails')) {
+      loadedTabsRef.current.add('mails')
+      setMailsLoading(true)
+      void loadLinkedEmails().finally(() => setMailsLoading(false))
+    }
+    if (activeTab === 'documents' && !loadedTabsRef.current.has('documents')) {
+      loadedTabsRef.current.add('documents')
+      void loadDocuments()
+    }
+  }, [activeTab, id, userId, tender, loadLinkedEmails, loadDocuments])
 
   const openMailViewer = async (emailId: string) => {
     setMailViewerOpen(true)
@@ -275,10 +323,6 @@ export default function TenderDetailPage() {
       if (data.success) contactsRef.current = data.data ?? []
     } catch { /* ignore */ }
   }, [])
-
-  useEffect(() => {
-    void loadContactsForTender()
-  }, [loadContactsForTender])
 
   const openTenderMailCompose = async () => {
     await loadContactsForTender()
@@ -424,6 +468,11 @@ export default function TenderDetailPage() {
   }, [])
 
   useEffect(() => {
+    if (!showAddSupplierModal) return
+    void loadAllSuppliers()
+  }, [showAddSupplierModal, loadAllSuppliers])
+
+  useEffect(() => {
     if (!id) return
     if (!userId) {
       if (ready) {
@@ -443,8 +492,7 @@ export default function TenderDetailPage() {
       setLoading(true)
     }
     loadTender(Boolean(cached))
-    loadAllSuppliers()
-  }, [id, userId, ready, loadTender, loadAllSuppliers])
+  }, [id, userId, ready, loadTender])
 
   const handleQuickStatus = async (status: string) => {
     if (!tender || tender.status === status) return
@@ -528,6 +576,7 @@ export default function TenderDetailPage() {
       }
       show('Document(s) ajouté(s)')
       await refreshTender()
+      if (documentsLoaded) await loadDocuments()
     } catch (e: any) { show(`Erreur : ${e.message}`) }
     setUploadingDoc(false)
   }
@@ -552,6 +601,7 @@ export default function TenderDetailPage() {
       if (data.success) {
         show(action === 'include' ? 'Image intégrée à l\'AO' : 'Image ignorée pour cet AO')
         await refreshTender()
+        if (documentsLoaded) await loadDocuments()
       } else show(`Erreur : ${data.error}`)
     } catch (e: unknown) {
       const err = e as { message?: string }
@@ -780,11 +830,18 @@ export default function TenderDetailPage() {
 
   const consultations = tender.consultations ?? []
   const quotes = tender.quotes ?? []
-  const documents = tender.documents ?? { received: [], sent: [], optional_png: [], document_groups: [] }
+  const documents = tenderDocuments
   const receivedDocs = documents.received ?? []
   const sentDocs = documents.sent ?? []
   const optionalPngDocs = documents.optional_png ?? []
   const documentGroups = documents.document_groups ?? []
+  const tenderMeta = tender.meta as { document_count?: number; linked_email_count?: number } | undefined
+  const documentsTabCount = documentsLoaded
+    ? receivedDocs.length + sentDocs.length
+    : (tenderMeta?.document_count ?? 0)
+  const mailsTabCount = mailsLoaded
+    ? linkedEmails.length
+    : (tenderMeta?.linked_email_count ?? 0)
   const alreadyAdded = new Set(consultations.map((c: any) => c.supplier_id))
   const availableSuppliers = suppliers.filter(s => !alreadyAdded.has(s.id))
 
@@ -937,8 +994,8 @@ export default function TenderDetailPage() {
           { id: 'fournisseurs' as const, label: 'Fournisseurs', count: consultations.length },
           { id: 'devis' as const, label: 'Devis', count: quotes.length },
           { id: 'comparatif' as const, label: 'Comparatif', count: quotes.length },
-          { id: 'documents' as const, label: 'Documents', count: receivedDocs.length + sentDocs.length },
-          { id: 'mails' as const, label: 'Mails', count: linkedEmails.length },
+          { id: 'documents' as const, label: 'Documents', count: documentsTabCount },
+          { id: 'mails' as const, label: 'Mails', count: mailsTabCount },
           { id: 'infos' as const, label: 'Informations', count: 0 },
         ]).map(tab => (
           <button
@@ -1242,11 +1299,13 @@ export default function TenderDetailPage() {
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-            Fils de conversation ({groupEmailsByThread(linkedEmails as Email[]).length})
+            Fils de conversation ({mailsLoading ? '…' : groupEmailsByThread(linkedEmails as Email[]).length})
           </div>
           <Button variant="ghost" onClick={openTenderMailCompose}>✉️ Envoyer un mail</Button>
         </div>
-        {linkedEmails.length === 0 ? (
+        {mailsLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}><Spinner /></div>
+        ) : linkedEmails.length === 0 ? (
           <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: 24 }}>
             Aucun mail lié — liez un email ou envoyez un message depuis cet AO
           </div>
@@ -1361,6 +1420,10 @@ export default function TenderDetailPage() {
 
       {activeTab === 'documents' && (
       <div style={card}>
+        {documentsLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}><Spinner /></div>
+        ) : (
+        <>
         <input type="file" multiple style={{ display: 'none' }} id="tender-doc-upload"
           onChange={e => { if (e.target.files?.length) handleUploadTenderDoc(e.target.files); e.target.value = '' }} />
         <TenderDocumentsTab
@@ -1378,6 +1441,8 @@ export default function TenderDetailPage() {
           onIncludePng={(emailId, idx) => handleMailAttachmentAction('include', emailId, idx)}
           onToggleOptionalPng={() => setShowOptionalPng(v => !v)}
         />
+        </>
+        )}
       </div>
       )}
 
