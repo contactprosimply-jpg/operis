@@ -26,12 +26,13 @@ Vérifier notamment `012_family_mail_v8.sql` (colonnes `source_member_*`, `prior
 
 | Environnement | Fichier / hôte | Variables Supabase |
 |---------------|----------------|-------------------|
-| **Production** | Vercel `operis-f26g78` + secrets prod | URL + keys du projet **prod** |
+| **Production** | Vercel `operis-f26g7` + secrets prod | URL + keys du projet **prod** |
 | **Test / dev local** | `.env.local` du compte test | URL + keys du projet **test** |
 
 Variables minimales (exemple) :
 
 ```env
+NEXT_PUBLIC_SITE_URL=https://operis-f26g7.vercel.app
 NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 SUPABASE_SERVICE_ROLE_KEY=eyJ...

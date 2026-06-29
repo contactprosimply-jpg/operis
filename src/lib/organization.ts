@@ -1,5 +1,6 @@
 import { randomBytes } from 'crypto'
 import { createAdminClient } from '@/lib/supabase'
+import { sitePath, siteUrl } from '@/lib/site-url'
 
 export const MEMBER_COLORS = ['#3b7ef6', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#06b6d4']
 
@@ -27,14 +28,11 @@ export interface OrganizationPayload {
 }
 
 export function appBaseUrl(): string {
-  const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '')
-  if (fromEnv) return fromEnv
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
-  return 'http://localhost:3000'
+  return siteUrl()
 }
 
 export function buildInviteLink(token: string): string {
-  return `${appBaseUrl()}/join/${token}`
+  return sitePath(`/join/${token}`)
 }
 
 export function generateInviteToken(): string {

@@ -5,6 +5,7 @@ import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { checkAlertsForUser } from '@/lib/alerts'
 import { sendHtmlEmail } from '@/lib/mailer'
+import { sitePath } from '@/lib/site-url'
 
 const ADMIN_EMAIL = 'contact@nikodex.fr'
 
@@ -102,7 +103,7 @@ async function sendDigest(db: ReturnType<typeof createAdminClient>) {
     ${section('📋 Devis manquants (> 30 jours)', '#6b7280', missing)}
     ${section('🔔 Sans réponse (> 7 jours)', '#8b5cf6', noResp)}
     <div style="margin-top:28px;text-align:center;">
-      <a href="https://operis-f26g78.vercel.app/dashboard" style="display:inline-block;padding:10px 24px;background:#3b7ef6;color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">
+      <a href="${sitePath('/dashboard')}" style="display:inline-block;padding:10px 24px;background:#3b7ef6;color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">
         Ouvrir Operis →
       </a>
     </div>

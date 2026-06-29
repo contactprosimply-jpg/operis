@@ -6,6 +6,7 @@
 import { createAdminClient } from '@/lib/supabase'
 import { sendHtmlEmail } from '@/lib/mailer'
 import { getTenderAccessScope } from '@/lib/tender-access'
+import { sitePath } from '@/lib/site-url'
 
 const ADMIN_EMAIL = 'contact@nikodex.fr'
 
@@ -86,7 +87,7 @@ export async function checkAlertsForUser(userId: string): Promise<number> {
                         <p style="margin: 0 0 16px; font-size: 16px; font-weight: 600;">${tender.title}</p>
                         <p style="margin: 0 0 8px; color: #8b92a5;">Client : ${tender.client}</p>
                         <p style="margin: 0 0 16px; color: ${isUrgent ? '#f87171' : '#fbbf24'}; font-weight: 600;">Deadline : ${new Date(tender.deadline).toLocaleDateString('fr-FR')} (dans ${daysLeft} jour${daysLeft > 1 ? 's' : ''})</p>
-                        <a href="https://operis-f26g78.vercel.app/tenders/${tender.id}" style="display: inline-block; background: #3b7ef6; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600;">Voir l'AO →</a>
+                        <a href="${sitePath(`/tenders/${tender.id}`)}" style="display: inline-block; background: #3b7ef6; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600;">Voir l'AO →</a>
                       </div>
                     </div>
                   `,

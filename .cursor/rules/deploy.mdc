@@ -12,7 +12,7 @@ Après des changements de code fonctionnels, déployer en production **sans dema
 3. `git push origin main`
 4. `npx vercel --prod --yes`
 
-Prod : https://operis-f26g78.vercel.app
+Prod : https://operis-f26g7.vercel.app
 
 Ne jamais demander « tu veux que je push ? » ou « tu veux déployer ? » — commit + push sur `main` immédiatement après des changements fonctionnels, sans attendre une confirmation.
 

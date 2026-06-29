@@ -1,10 +1,10 @@
 const { app, BrowserWindow, shell, nativeImage } = require('electron')
 const path = require('path')
 
-const APP_BASE = (process.env.OPERIS_URL || 'https://operis-f26g78.vercel.app').replace(/\/$/, '')
+const APP_BASE = (process.env.OPERIS_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://operis-f26g7.vercel.app').replace(/\/$/, '')
 /** Page de présentation Operis (création compte, aperçu AO) ; connectés passent via /app → /tenders */
 const APP_URL = process.env.OPERIS_ENTRY || APP_BASE
-const ALLOWED_HOSTS = ['operis-f26g78.vercel.app', 'localhost', '127.0.0.1']
+const ALLOWED_HOSTS = ['operis-f26g7.vercel.app', 'localhost', '127.0.0.1']
 
 function isAllowedUrl(url) {
   try {

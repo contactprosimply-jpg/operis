@@ -2,11 +2,11 @@
 
 Application Next.js + Supabase pour consulter fournisseurs, suivre les AO et la messagerie.
 
-**Production :** https://operis-f26g78.vercel.app
+**Production :** https://operis-f26g7.vercel.app
 
-**Lien présentation (page Operis + aperçu AO + inscription) :** https://operis-f26g78.vercel.app
+**Lien présentation (page Operis + aperçu AO + inscription) :** https://operis-f26g7.vercel.app
 
-**Accès direct app (déjà connecté → AO) :** https://operis-f26g78.vercel.app/app
+**Accès direct app (déjà connecté → AO) :** https://operis-f26g7.vercel.app/app
 
 ## Développement
 
@@ -41,7 +41,7 @@ Si les liens d'invitation Famille échouent, exécuter dans le SQL Editor Supaba
 | `/api/cron/alerts` | 7h UTC | alertes deadlines + digest |
 | `/api/cron/relaunch` | 7h30 UTC | relances auto fournisseurs (J+7 sans réponse) |
 
-Test manuel : `curl -H "Authorization: Bearer $CRON_SECRET" https://operis-f26g78.vercel.app/api/cron/relaunch`
+Test manuel : `curl -H "Authorization: Bearer $CRON_SECRET" https://operis-f26g7.vercel.app/api/cron/relaunch`
 
 ## Scénario démo Famille
 

@@ -2,13 +2,16 @@ import type { Metadata } from 'next'
 import './globals.css'
 import AppShell from '@/components/AppShell'
 import ThemeBootstrap from '@/components/ThemeBootstrap'
+import { siteUrl } from '@/lib/site-url'
+
+const publicSiteUrl = siteUrl()
 
 export const metadata: Metadata = {
   title: 'Operis — Gestion des Appels d\'Offres BTP',
   description: 'Plateforme SaaS de gestion des AO pour les entreprises BTP. Centralisez vos consultations, suivez vos devis, ne ratez plus une opportunité.',
   applicationName: 'Operis',
   manifest: '/manifest.webmanifest',
-  metadataBase: new URL('https://operis-f26g78.vercel.app'),
+  metadataBase: new URL(publicSiteUrl),
   appleWebApp: {
     capable: true,
     title: 'Operis',
@@ -20,7 +23,7 @@ export const metadata: Metadata = {
     title: 'Operis — Gestion des Appels d\'Offres BTP',
     description: 'Plateforme SaaS de gestion des AO pour les entreprises BTP. Centralisez vos consultations, suivez vos devis, ne ratez plus une opportunité.',
     type: 'website',
-    url: 'https://operis-f26g78.vercel.app',
+    url: publicSiteUrl,
     siteName: 'Operis',
     locale: 'fr_FR',
   },
