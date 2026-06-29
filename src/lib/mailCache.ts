@@ -7,17 +7,18 @@ export interface CachedEmail {
   id: string
   user_id: string
   mail_folder: string
-  folder_key: string
+  folder: string
   imap_mailbox?: string | null
   from_address: string
   to_address: string
   subject: string
-  body_html?: string | null
-  body_text?: string | null
+  snippet: string
   received_at: string
   updated_at: string
   is_read: boolean
   is_starred: boolean
+  body_html?: string | null
+  body_text?: string | null
   is_ao: boolean
   ao_score: number
   is_ao_related?: boolean
@@ -27,6 +28,8 @@ export interface CachedEmail {
   labels_json?: string
   deleted_at?: string | null
   created_at: string
+  /** @deprecated compat v1 */
+  folder_key?: string
 }
 
 class MailDB extends Dexie {
@@ -37,12 +40,28 @@ class MailDB extends Dexie {
     this.version(1).stores({
       emails: 'id, user_id, [folder_key+received_at], received_at, updated_at, is_read, is_starred, from_address',
     })
+    this.version(2).stores({
+      emails: 'id, user_id, [folder+received_at], received_at, updated_at, is_read, is_starred',
+    }).upgrade(async tx => {
+      await tx.table('emails').toCollection().modify((row: CachedEmail) => {
+        if (!row.folder) row.folder = row.folder_key ?? row.mail_folder ?? 'inbox'
+        if (!row.snippet) row.snippet = makeSnippet(row.subject, row.body_text, row.body_html)
+      })
+    })
   }
 }
 
 export const mailDB = new MailDB()
 
 export const norm = normalizeSearchText
+
+function makeSnippet(subject?: string | null, bodyText?: string | null, bodyHtml?: string | null): string {
+  const plain = bodyText?.trim()
+    || bodyHtml?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+    || ''
+  const base = plain || subject || ''
+  return base.slice(0, 200)
+}
 
 export function folderKeyFromRow(
   mailFolder: string | null | undefined,
@@ -57,6 +76,13 @@ export function folderKeyFromSelection(sel: MailFolderSelection): string {
   return folderSelectionKey(sel)
 }
 
+export function folderKeyToDeltaParams(folderKey: string): { folder: string; imapPath?: string } {
+  if (folderKey.startsWith('custom:')) {
+    return { folder: 'custom', imapPath: folderKey.slice('custom:'.length) }
+  }
+  return { folder: folderKey }
+}
+
 export function isLocalFirstFolder(sel: MailFolderSelection): boolean {
   return sel.kind !== 'drafts' && sel.kind !== 'custom'
 }
@@ -66,15 +92,18 @@ export function emailRowToCached(row: Record<string, any>): CachedEmail {
   const mailFolder = (row.mail_folder as string | null) ?? 'inbox'
   const imapMailbox = (row.imap_mailbox as string | null | undefined) ?? null
   const receivedAt = (row.received_at as string) ?? (row.created_at as string) ?? new Date().toISOString()
+  const folder = folderKeyFromRow(mailFolder, imapMailbox)
   return {
     id: String(row.id),
     user_id: String(row.user_id),
     mail_folder: mailFolder,
-    folder_key: folderKeyFromRow(mailFolder, imapMailbox),
+    folder,
+    folder_key: folder,
     imap_mailbox: imapMailbox,
     from_address: String(row.from_address ?? ''),
     to_address: String(row.to_address ?? ''),
     subject: String(row.subject ?? ''),
+    snippet: makeSnippet(row.subject, row.body_text, row.body_html),
     body_html: row.body_html ?? null,
     body_text: row.body_text ?? null,
     received_at: receivedAt,
@@ -142,32 +171,54 @@ export type MailListQueryOpts = {
   sortOrder?: 'asc' | 'desc'
 }
 
-export async function getCachedEmails(folderKey = 'inbox', limit = 500, offset = 0) {
-  return mailDB.emails
-    .where('[folder_key+received_at]')
-    .between([folderKey, Dexie.minKey], [folderKey, Dexie.maxKey])
-    .reverse()
-    .offset(offset)
-    .limit(limit)
-    .toArray()
+export async function getCachedEmails(folder = 'inbox', limit = 50, offset = 0): Promise<CachedEmail[]> {
+  try {
+    return await mailDB.emails
+      .where('[folder+received_at]')
+      .between([folder, Dexie.minKey], [folder, Dexie.maxKey])
+      .reverse()
+      .offset(offset)
+      .limit(limit)
+      .toArray()
+  } catch {
+    return []
+  }
 }
 
-export async function getCachedEmailById(id: string) {
-  return mailDB.emails.get(id)
+export async function getCachedEmailById(id: string): Promise<CachedEmail | null> {
+  try {
+    return (await mailDB.emails.get(id)) ?? null
+  } catch {
+    return null
+  }
 }
 
-export async function searchCached(query: string, favoritesOnly = false) {
-  const q = norm(query)
-  return mailDB.emails
-    .filter(e =>
-      (!favoritesOnly || e.is_starred) &&
-      (q === '' || norm(e.from_address).includes(q) || norm(e.to_address).includes(q) || norm(e.subject).includes(q)),
-    )
-    .reverse()
-    .sortBy('received_at')
-    .then(rows =>
-      rows.reverse().sort((a, b) => (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0)),
-    )
+export async function getCachedBody(id: string): Promise<Email | null> {
+  try {
+    const row = await mailDB.emails.get(id)
+    if (!row?.body_html && !row?.body_text) return null
+    return cachedToEmail(row)
+  } catch {
+    return null
+  }
+}
+
+export async function searchCached(query: string, favoritesOnly = false): Promise<CachedEmail[]> {
+  try {
+    const q = norm(query)
+    return await mailDB.emails
+      .filter(e =>
+        (!favoritesOnly || e.is_starred) &&
+        (q === '' || norm(e.from_address).includes(q) || norm(e.to_address).includes(q) || norm(e.subject).includes(q)),
+      )
+      .reverse()
+      .sortBy('received_at')
+      .then(rows =>
+        rows.reverse().sort((a, b) => (b.is_starred ? 1 : 0) - (a.is_starred ? 1 : 0)),
+      )
+  } catch {
+    return []
+  }
 }
 
 function applyListFilters(rows: CachedEmail[], opts: MailListQueryOpts): CachedEmail[] {
@@ -226,25 +277,73 @@ function applyListFilters(rows: CachedEmail[], opts: MailListQueryOpts): CachedE
 }
 
 export async function queryCachedMailList(opts: MailListQueryOpts): Promise<CachedEmail[]> {
-  const rows = await mailDB.emails
-    .where('[folder_key+received_at]')
-    .between([opts.folderKey, Dexie.minKey], [opts.folderKey, Dexie.maxKey])
-    .reverse()
-    .toArray()
-  return applyListFilters(rows, opts)
+  try {
+    const rows = await mailDB.emails
+      .where('[folder+received_at]')
+      .between([opts.folderKey, Dexie.minKey], [opts.folderKey, Dexie.maxKey])
+      .reverse()
+      .toArray()
+    return applyListFilters(rows, opts)
+  } catch {
+    return []
+  }
 }
 
-export async function upsertCached(rows: CachedEmail[]) {
-  if (rows.length) await mailDB.emails.bulkPut(rows)
+export async function queryCachedMailListPage(
+  opts: MailListQueryOpts,
+  limit: number,
+  offset: number,
+): Promise<{ rows: CachedEmail[]; hasMore: boolean }> {
+  try {
+    const filtered = await queryCachedMailList(opts)
+    const rows = filtered.slice(offset, offset + limit)
+    return { rows, hasMore: filtered.length > offset + limit }
+  } catch {
+    return { rows: [], hasMore: false }
+  }
+}
+
+export async function upsertCached(rows: CachedEmail[]): Promise<void> {
+  if (!rows.length) return
+  try {
+    await mailDB.emails.bulkPut(rows)
+  } catch { /* ignore */ }
 }
 
 export async function setLocalFlag(
   id: string,
   patch: Partial<Pick<CachedEmail, 'is_read' | 'is_starred'>>,
-) {
-  await mailDB.emails.update(id, patch)
+): Promise<void> {
+  try {
+    await mailDB.emails.update(id, patch)
+  } catch { /* ignore */ }
 }
 
-export async function patchCachedEmail(id: string, patch: Partial<CachedEmail>) {
-  await mailDB.emails.update(id, patch)
+export async function patchCachedEmail(id: string, patch: Partial<CachedEmail>): Promise<void> {
+  try {
+    await mailDB.emails.update(id, patch)
+  } catch { /* ignore */ }
+}
+
+export async function storeCachedBody(
+  id: string,
+  body: { body_html?: string | null; body_text?: string | null },
+): Promise<void> {
+  try {
+    const snippet = makeSnippet(undefined, body.body_text, body.body_html)
+    await mailDB.emails.update(id, {
+      body_html: body.body_html ?? null,
+      body_text: body.body_text ?? null,
+      snippet,
+      updated_at: new Date().toISOString(),
+    })
+  } catch { /* ignore */ }
+}
+
+export function isIndexedDbAvailable(): boolean {
+  try {
+    return typeof indexedDB !== 'undefined'
+  } catch {
+    return false
+  }
 }

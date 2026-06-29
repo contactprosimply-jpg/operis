@@ -1,20 +1,54 @@
-import { authFetch } from '@/lib/auth-client'
-import { emailRowToCached, upsertCached } from '@/lib/mailCache'
+import { mailApiFetch } from '@/lib/mail-request-guard'
+import { emailRowToCached, folderKeyToDeltaParams, upsertCached } from '@/lib/mailCache'
 
-const DELTA_KEY = 'operis:mailDeltaCursor'
-const DELTA_PAGE_SIZE = 1000
+const DELTA_LIMIT = 500
+const MAX_BATCHES = 5
+const DEFAULT_SINCE = '1970-01-01T00:00:00.000Z'
 
-/** Rapatrie les nouveautés serveur → IndexedDB (boucle tant qu'il reste des pages). */
-export async function pullMailDelta(): Promise<number> {
+function deltaCursorKey(folderKey: string): string {
+  return `operis:mailDeltaCursor:${folderKey}`
+}
+
+function readCursor(folderKey: string): string {
+  if (typeof window === 'undefined') return DEFAULT_SINCE
+  try {
+    return localStorage.getItem(deltaCursorKey(folderKey)) ?? DEFAULT_SINCE
+  } catch {
+    return DEFAULT_SINCE
+  }
+}
+
+function writeCursor(folderKey: string, cursor: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(deltaCursorKey(folderKey), cursor)
+  } catch { /* ignore */ }
+}
+
+/** UN appel delta groupé par lot ; max 5 lots ; cursor par dossier. */
+export async function pullMailDelta(folderKey = 'inbox'): Promise<number> {
   if (typeof window === 'undefined') return 0
-  let total = 0
-  let since = localStorage.getItem(DELTA_KEY) ?? '1970-01-01T00:00:00Z'
 
-  for (;;) {
-    const res = await authFetch(`/api/mail/delta?since=${encodeURIComponent(since)}`)
+  let total = 0
+  let since = readCursor(folderKey)
+  const { folder, imapPath } = folderKeyToDeltaParams(folderKey)
+
+  for (let batch = 0; batch < MAX_BATCHES; batch++) {
+    const params = new URLSearchParams({ since, folder })
+    if (imapPath) params.set('imap_path', imapPath)
+
+    let res: Response
+    try {
+      res = await mailApiFetch(`/api/mail/delta?${params}`)
+    } catch {
+      break
+    }
     if (!res.ok) break
 
-    const json = await res.json() as { rows?: Record<string, unknown>[]; newCursor?: string }
+    const json = await res.json() as {
+      rows?: Record<string, unknown>[]
+      newCursor?: string
+    }
     const rows = json.rows ?? []
 
     if (rows.length) {
@@ -25,15 +59,26 @@ export async function pullMailDelta(): Promise<number> {
     const newCursor = json.newCursor ?? since
     if (newCursor !== since) {
       since = newCursor
-      localStorage.setItem(DELTA_KEY, newCursor)
+      writeCursor(folderKey, newCursor)
     }
 
-    if (rows.length < DELTA_PAGE_SIZE) break
+    if (rows.length < DELTA_LIMIT) break
   }
 
   return total
 }
 
-export function resetMailDeltaCursor() {
-  if (typeof window !== 'undefined') localStorage.removeItem(DELTA_KEY)
+export function resetMailDeltaCursor(folderKey?: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    if (folderKey) {
+      localStorage.removeItem(deltaCursorKey(folderKey))
+      return
+    }
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i)
+      if (key?.startsWith('operis:mailDeltaCursor:')) localStorage.removeItem(key)
+    }
+    localStorage.removeItem('operis:mailDeltaCursor')
+  } catch { /* ignore */ }
 }
