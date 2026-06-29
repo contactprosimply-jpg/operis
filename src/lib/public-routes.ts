@@ -1,5 +1,5 @@
 /** Routes accessibles sans session (landing, auth, tarifs publics, invitation). */
-export const PUBLIC_ROUTE_EXACT = ['/', '/login', '/register', '/pricing'] as const
+export const PUBLIC_ROUTE_EXACT = ['/', '/login', '/register', '/pricing', '/design-preview'] as const
 
 export const BILLING_EXEMPT_ROUTES = ['/choose-plan', '/settings/billing', '/billing/activating'] as const
 
