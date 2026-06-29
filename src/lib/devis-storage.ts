@@ -28,6 +28,22 @@ export async function downloadDevisFile(db: SupabaseClient, path: string): Promi
   return Buffer.from(await data.arrayBuffer())
 }
 
+export async function createDevisSignedUrl(
+  db: SupabaseClient,
+  path: string,
+  filename: string,
+  mode: 'inline' | 'download',
+  expiresIn = 60,
+): Promise<string | null> {
+  const { data, error } = await db.storage.from(DEVIS_BUCKET).createSignedUrl(
+    path,
+    expiresIn,
+    mode === 'download' ? { download: filename } : undefined,
+  )
+  if (error || !data?.signedUrl) return null
+  return data.signedUrl
+}
+
 export async function listDevisPrefix(db: SupabaseClient, prefix: string) {
   const { data, error } = await db.storage.from(DEVIS_BUCKET).list(prefix, { limit: 100 })
   if (error) return []

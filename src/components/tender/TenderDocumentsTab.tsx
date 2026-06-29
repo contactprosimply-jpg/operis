@@ -54,6 +54,59 @@ function formatDate(date?: string | null) {
   })
 }
 
+const docActionBtn: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 34,
+  height: 34,
+  borderRadius: 6,
+  cursor: 'pointer',
+  border: '1px solid var(--border)',
+  background: 'var(--bg-tertiary)',
+  color: 'var(--text-secondary)',
+  flexShrink: 0,
+  padding: 0,
+}
+
+function IconEye() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+function IconDownload() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  )
+}
+
+function DocumentFileActions({
+  onOpen,
+  onDownload,
+}: {
+  onOpen: () => void
+  onDownload: () => void
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+      <button type="button" title="Ouvrir" aria-label="Ouvrir" onClick={onOpen} style={docActionBtn}>
+        <IconEye />
+      </button>
+      <button type="button" title="Télécharger" aria-label="Télécharger" onClick={onDownload} style={docActionBtn}>
+        <IconDownload />
+      </button>
+    </div>
+  )
+}
+
 function versionDirectionLabel(doc: TenderDocumentItem) {
   if (doc.kind === 'sent') {
     const who = doc.supplier_name?.trim() || 'contact'
@@ -80,11 +133,13 @@ type DocRow = TenderDocumentItem & {
 function DocumentVersionTimeline({
   versions,
   onDownload,
+  onOpen,
   onOpenMail,
   highlightId,
 }: {
   versions: TenderDocumentVersion[]
   onDownload: (doc: TenderDocumentItem) => void
+  onOpen: (doc: TenderDocumentItem) => void
   onOpenMail?: (emailId: string) => void
   highlightId?: string
 }) {
@@ -183,17 +238,10 @@ function DocumentVersionTimeline({
                     {sourceBadge.label}
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => onDownload(v)}
-                  style={{
-                    fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)',
-                    border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6,
-                    padding: '3px 10px', cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
-                  }}
-                >
-                  Télécharger
-                </button>
+                <DocumentFileActions
+                  onOpen={() => onOpen(v)}
+                  onDownload={() => onDownload(v)}
+                />
               </div>
             </div>
           </div>
@@ -208,12 +256,14 @@ function DocumentDetailModal({
   highlightDoc,
   onClose,
   onDownload,
+  onOpen,
   onOpenMail,
 }: {
   group: TenderDocumentGroup
   highlightDoc?: TenderDocumentItem
   onClose: () => void
   onDownload: (doc: TenderDocumentItem) => void
+  onOpen: (doc: TenderDocumentItem) => void
   onOpenMail?: (emailId: string) => void
 }) {
   const latest = group.latest
@@ -240,6 +290,7 @@ function DocumentDetailModal({
         <DocumentVersionTimeline
           versions={group.versions}
           onDownload={onDownload}
+          onOpen={onOpen}
           onOpenMail={onOpenMail}
           highlightId={highlightDoc?.id ?? latest.id}
         />
@@ -252,6 +303,7 @@ function TenderDocumentRow({
   doc,
   versionCount,
   onOpenDetail,
+  onOpen,
   onDownload,
   onOpenMail,
   onExcludePng,
@@ -260,6 +312,7 @@ function TenderDocumentRow({
   doc: DocRow
   versionCount?: number
   onOpenDetail?: () => void
+  onOpen: () => void
   onDownload: () => void
   onOpenMail?: (emailId: string) => void
   onExcludePng?: (emailId: string, attachmentIndex: number) => void
@@ -352,20 +405,7 @@ function TenderDocumentRow({
             {excluding ? '…' : 'Retirer'}
           </button>
         )}
-        <button
-          type="button"
-          onClick={e => {
-            e.stopPropagation()
-            onDownload()
-          }}
-          style={{
-            fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)',
-            border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6,
-            padding: '4px 10px', cursor: 'pointer', flexShrink: 0, fontFamily: 'DM Sans, system-ui',
-          }}
-        >
-          Télécharger
-        </button>
+        <DocumentFileActions onOpen={onOpen} onDownload={onDownload} />
       </div>
     </div>
   )
@@ -380,6 +420,7 @@ export default function TenderDocumentsTab({
   showOptionalPng,
   pngAttachmentAction,
   onUploadClick,
+  onOpen,
   onDownload,
   onOpenMail,
   onExcludePng,
@@ -394,7 +435,8 @@ export default function TenderDocumentsTab({
   showOptionalPng: boolean
   pngAttachmentAction: string | null
   onUploadClick: () => void
-  onDownload: (docId: string, filename: string) => void
+  onOpen: (docId: string, filename: string, contentType?: string) => void
+  onDownload: (docId: string, filename: string, contentType?: string) => void
   onOpenMail?: (emailId: string) => void
   onExcludePng?: (emailId: string, attachmentIndex: number) => void
   onIncludePng?: (emailId: string, attachmentIndex: number) => void
@@ -429,7 +471,11 @@ export default function TenderDocumentsTab({
   }
 
   const handleDownloadDoc = (doc: TenderDocumentItem) => {
-    onDownload(doc.id, doc.filename)
+    onDownload(doc.id, doc.filename, doc.contentType)
+  }
+
+  const handleOpenDoc = (doc: TenderDocumentItem) => {
+    onOpen(doc.id, doc.filename, doc.contentType)
   }
 
   const hasDocs = receivedDocs.length > 0 || sentDocs.length > 0 || optionalPngDocs.length > 0
@@ -472,7 +518,8 @@ export default function TenderDocumentsTab({
                     doc={doc}
                     versionCount={groupByDocId.get(doc.id)?.version_count}
                     onOpenDetail={() => openDetail(doc)}
-                    onDownload={() => onDownload(doc.id, doc.filename)}
+                    onOpen={() => onOpen(doc.id, doc.filename, doc.contentType)}
+                    onDownload={() => onDownload(doc.id, doc.filename, doc.contentType)}
                     onOpenMail={onOpenMail}
                     onExcludePng={onExcludePng}
                     excluding={pngAttachmentAction === `exclude:${doc.email_id}:${doc.attachment_index}`}
@@ -499,7 +546,8 @@ export default function TenderDocumentsTab({
                     doc={doc}
                     versionCount={groupByDocId.get(doc.id)?.version_count}
                     onOpenDetail={() => openDetail(doc)}
-                    onDownload={() => onDownload(doc.id, doc.filename)}
+                    onOpen={() => onOpen(doc.id, doc.filename, doc.contentType)}
+                    onDownload={() => onDownload(doc.id, doc.filename, doc.contentType)}
                     onOpenMail={onOpenMail}
                   />
                 ))}
@@ -552,19 +600,11 @@ export default function TenderDocumentsTab({
                         {doc.supplier_name ? ` · ${doc.supplier_name}` : ''}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => onDownload(doc.id, doc.filename)}
-                        style={{
-                          fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)',
-                          border: '1px solid rgba(59,126,246,0.2)', borderRadius: 6,
-                          padding: '4px 10px', cursor: busy ? 'wait' : 'pointer', fontFamily: 'DM Sans, system-ui',
-                        }}
-                      >
-                        Voir
-                      </button>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+                      <DocumentFileActions
+                        onOpen={() => onOpen(doc.id, doc.filename, doc.contentType)}
+                        onDownload={() => onDownload(doc.id, doc.filename, doc.contentType)}
+                      />
                       {onIncludePng && (
                         <button
                           type="button"
@@ -611,6 +651,7 @@ export default function TenderDocumentsTab({
             setHighlightDoc(null)
           }}
           onDownload={handleDownloadDoc}
+          onOpen={handleOpenDoc}
           onOpenMail={onOpenMail}
         />
       )}

@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useTenders } from '@/hooks'
-import { KpiCard, TenderStatusBadge, Badge, useToast, Card, tableRowHoverHandlers, TableSkeleton, Skeleton } from '@/components/ui'
+import { KpiCard, TenderStatusBadge, Badge, useToast, Card, tableRowHoverHandlers, tenderListRowStyle, TableSkeleton, Skeleton } from '@/components/ui'
 import { useState, useEffect } from 'react'
 import { authFetch } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
@@ -273,7 +273,11 @@ export default function DashboardPage() {
               return (
                 <tr key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
                   className="animate-slide"
-                  style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', borderLeft: '3px solid transparent', animationDelay: `${i * 40}ms` }}
+                  style={{
+                    borderBottom: '1px solid var(--border)', cursor: 'pointer',
+                    animationDelay: `${i * 40}ms`,
+                    ...tenderListRowStyle(t.status),
+                  }}
                   {...rowHandlers}>
                   <td style={{ padding: '12px 14px' }}>
                     <div style={{ fontWeight: 600 }}>{t.title}</div>

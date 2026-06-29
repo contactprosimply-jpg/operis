@@ -12,7 +12,7 @@ import {
   getTenderAssigneeLabel,
   getTenderCreatorLabel,
 } from '@/lib/tender-member-label'
-import { Button, Modal, Field, Badge, useToast, Card, KpiCard, tableRowHoverHandlers, TableSkeleton } from '@/components/ui'
+import { Button, Modal, Field, Badge, useToast, Card, KpiCard, tableRowHoverHandlers, tenderListRowStyle, TableSkeleton } from '@/components/ui'
 import type { TenderStatus } from '@/types/database'
 
 const STATUS_OPTIONS: { value: TenderStatus; label: string }[] = [
@@ -166,9 +166,8 @@ export default function TendersPage() {
                   className="animate-fade"
                   style={{
                     borderBottom: '1px solid var(--border)', cursor: 'pointer',
-                    borderLeft: '3px solid transparent',
-                    background: i % 2 === 1 ? 'rgba(148,163,184,0.02)' : 'transparent',
                     animationDelay: `${i * 30}ms`,
+                    ...tenderListRowStyle(t.status),
                   }}
                   {...rowHandlers}>
                   <td style={{ padding: '12px 14px' }}>

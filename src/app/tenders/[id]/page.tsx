@@ -23,6 +23,7 @@ import { readCache, writeCache, cacheKeyForUser } from '@/lib/client-cache'
 import { getTenderAssigneeLabel, getTenderCreatorLabel } from '@/lib/tender-member-label'
 import { groupEmailsByThread, computeThreadStatus, THREAD_STATUS_META } from '@/lib/email-threading'
 import { AO_CATEGORY_BADGE, type AoKeywordCategory } from '@/lib/ao-email-analysis'
+import { normalizeAttachments } from '@/lib/mail-attachments'
 
 const STATUS_OPTIONS = [
   { value: 'nouveau', label: 'Nouveau', color: '#60a5fa' },
@@ -760,22 +761,66 @@ export default function TenderDetailPage() {
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
-  const downloadTenderDocument = async (docId: string, filename: string) => {
+  const fetchDocumentAccess = async (docId: string, mode: 'open' | 'download') => {
+    const token = await getAccessToken()
+    if (!token) throw new Error('Non authentifié')
+    const res = await fetch(
+      `/api/tenders/${id}/documents/${encodeURIComponent(docId)}/url?mode=${mode}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    const data = await res.json()
+    if (!data.success) throw new Error(data.error || 'Fichier indisponible')
+    return data.data as { url?: string; stream?: boolean; path?: string }
+  }
+
+  const streamTenderDocument = async (docId: string, disposition: 'inline' | 'attachment') => {
+    const token = await getAccessToken()
+    if (!token) throw new Error('Non authentifié')
+    const res = await fetch(
+      `/api/tenders/${id}/documents/${encodeURIComponent(docId)}?disposition=${disposition}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    if (!res.ok) throw new Error('Fichier indisponible')
+    return res.blob()
+  }
+
+  const openTenderDocument = async (docId: string, filename: string, _contentType?: string) => {
     try {
-      const token = await getAccessToken()
-      if (!token) return
-      const res = await fetch(`/api/tenders/${id}/documents/${encodeURIComponent(docId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) { show('Fichier indisponible'); return }
-      const blob = await res.blob()
+      const meta = await fetchDocumentAccess(docId, 'open')
+      if (meta.url) {
+        window.open(meta.url, '_blank', 'noopener,noreferrer')
+        return
+      }
+      const blob = await streamTenderDocument(docId, 'inline')
+      const blobUrl = URL.createObjectURL(blob)
+      window.open(blobUrl, '_blank', 'noopener,noreferrer')
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+    } catch {
+      show('Erreur ouverture')
+    }
+  }
+
+  const downloadTenderDocument = async (docId: string, filename: string, _contentType?: string) => {
+    try {
+      const meta = await fetchDocumentAccess(docId, 'download')
+      if (meta.url) {
+        const a = document.createElement('a')
+        a.href = meta.url
+        a.download = filename
+        a.rel = 'noopener'
+        a.click()
+        return
+      }
+      const blob = await streamTenderDocument(docId, 'attachment')
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = filename
       a.click()
       URL.revokeObjectURL(url)
-    } catch { show('Erreur téléchargement') }
+    } catch {
+      show('Erreur téléchargement')
+    }
   }
 
   const handleAssignMember = async (memberId: string) => {
@@ -1435,6 +1480,7 @@ export default function TenderDetailPage() {
           showOptionalPng={showOptionalPng}
           pngAttachmentAction={pngAttachmentAction}
           onUploadClick={() => document.getElementById('tender-doc-upload')?.click()}
+          onOpen={openTenderDocument}
           onDownload={downloadTenderDocument}
           onOpenMail={openMailViewer}
           onExcludePng={(emailId, idx) => handleMailAttachmentAction('exclude', emailId, idx)}
@@ -1805,6 +1851,75 @@ export default function TenderDetailPage() {
                 ? <div dangerouslySetInnerHTML={{ __html: mailViewerEmail.body_html }} />
                 : (mailViewerEmail.body_text ?? '—')}
             </div>
+            {mailViewerEmail.has_attachments && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{
+                  fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8,
+                }}>
+                  Pièces jointes
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {normalizeAttachments(mailViewerEmail.attachments).map((att, index) => {
+                    const docId = `mail:${mailViewerEmail.id}:${index}`
+                    return (
+                      <div
+                        key={docId}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                          padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)',
+                          background: 'var(--bg-secondary)',
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            📎 {att.filename}
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 2 }}>
+                            {att.size ? `${Math.round(att.size / 1024)} Ko` : '—'}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                          <button
+                            type="button"
+                            title="Ouvrir"
+                            aria-label="Ouvrir"
+                            onClick={() => openTenderDocument(docId, att.filename, att.contentType)}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: 34, height: 34, borderRadius: 6, cursor: 'pointer',
+                              border: '1px solid var(--border)', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', padding: 0,
+                            }}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            title="Télécharger"
+                            aria-label="Télécharger"
+                            onClick={() => downloadTenderDocument(docId, att.filename, att.contentType)}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: 34, height: 34, borderRadius: 6, cursor: 'pointer',
+                              border: '1px solid var(--border)', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', padding: 0,
+                            }}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Email introuvable</div>

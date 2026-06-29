@@ -3,21 +3,24 @@ export const dynamic = 'force-dynamic'
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
-import { downloadDevisFile } from '@/lib/devis-storage'
-import { downloadAttachmentBuffer } from '@/lib/mail-storage'
+import { createDevisSignedUrl } from '@/lib/devis-storage'
+import { createMailAttachmentSignedUrl } from '@/lib/mail-storage'
 import { normalizeAttachments } from '@/lib/mail-attachments'
 import { assertTenderAccess } from '@/lib/tender-access'
-import { contentDispositionHeader } from '@/lib/tender-document-preview'
+import { isPreviewableDocument } from '@/lib/tender-document-preview'
+
+const SIGNED_URL_TTL_SEC = 60
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string; docId: string }> }
+  { params }: { params: Promise<{ id: string; docId: string }> },
 ) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
   const { id, docId } = await params
-  const disposition = new URL(req.url).searchParams.get('disposition') === 'inline' ? 'inline' : 'attachment'
+  const modeParam = new URL(req.url).searchParams.get('mode')
+  const mode = modeParam === 'download' ? 'download' : 'open'
   const db = createAdminClient()
 
   const access = await assertTenderAccess(db, id, userId, 'view')
@@ -32,12 +35,22 @@ export async function GET(
     const attachments = normalizeAttachments(email.attachments)
     const att = attachments[index]
     if (!att) return Response.json({ success: false, error: 'Fichier introuvable' }, { status: 404 })
-    const buffer = await downloadAttachmentBuffer(db, att)
-    if (!buffer?.length) return Response.json({ success: false, error: 'Fichier introuvable' }, { status: 404 })
-    return new Response(new Uint8Array(buffer), {
-      headers: {
-        'Content-Type': att.contentType || 'application/octet-stream',
-        'Content-Disposition': contentDispositionHeader(att.filename, disposition === 'inline'),
+
+    const signedMode = mode === 'download' || !isPreviewableDocument(att.filename, att.contentType)
+      ? 'download'
+      : 'inline'
+
+    if (att.path) {
+      const url = await createMailAttachmentSignedUrl(db, att.path, att.filename, signedMode, SIGNED_URL_TTL_SEC)
+      if (url) return Response.json({ success: true, data: { url, mode: signedMode } })
+    }
+
+    return Response.json({
+      success: true,
+      data: {
+        stream: true,
+        mode: signedMode,
+        path: `/api/tenders/${id}/documents/${encodeURIComponent(docId)}?disposition=${signedMode === 'download' ? 'attachment' : 'inline'}`,
       },
     })
   }
@@ -50,34 +63,31 @@ export async function GET(
     const attachments = normalizeAttachments(log.attachments)
     const att = attachments[index]
     if (!att?.path) return Response.json({ success: false, error: 'Fichier introuvable' }, { status: 404 })
-    const buffer = await downloadDevisFile(db, att.path)
-    if (!buffer?.length) return Response.json({ success: false, error: 'Fichier introuvable' }, { status: 404 })
-    return new Response(new Uint8Array(buffer), {
-      headers: {
-        'Content-Type': att.contentType || 'application/octet-stream',
-        'Content-Disposition': contentDispositionHeader(att.filename, disposition === 'inline'),
-      },
-    })
+
+    const signedMode = mode === 'download' || !isPreviewableDocument(att.filename, att.contentType)
+      ? 'download'
+      : 'inline'
+    const url = await createDevisSignedUrl(db, att.path, att.filename, signedMode, SIGNED_URL_TTL_SEC)
+    if (!url) return Response.json({ success: false, error: 'URL indisponible' }, { status: 500 })
+    return Response.json({ success: true, data: { url, mode: signedMode } })
   }
 
   const { data: doc } = await db
     .from('tender_documents')
-    .select('*')
+    .select('filename, content_type, storage_path')
     .eq('id', docId)
     .eq('tender_id', id)
     .eq('user_id', ownerId)
     .is('deleted_at', null)
     .single()
 
-  if (!doc) return Response.json({ success: false, error: 'Fichier introuvable' }, { status: 404 })
+  if (!doc?.storage_path) return Response.json({ success: false, error: 'Fichier introuvable' }, { status: 404 })
 
-  const buffer = await downloadDevisFile(db, doc.storage_path)
-  if (!buffer?.length) return Response.json({ success: false, error: 'Fichier introuvable' }, { status: 404 })
+  const signedMode = mode === 'download' || !isPreviewableDocument(doc.filename, doc.content_type)
+    ? 'download'
+    : 'inline'
+  const url = await createDevisSignedUrl(db, doc.storage_path, doc.filename, signedMode, SIGNED_URL_TTL_SEC)
+  if (!url) return Response.json({ success: false, error: 'URL indisponible' }, { status: 500 })
 
-  return new Response(new Uint8Array(buffer), {
-    headers: {
-      'Content-Type': doc.content_type || 'application/octet-stream',
-      'Content-Disposition': contentDispositionHeader(doc.filename, disposition === 'inline'),
-    },
-  })
+  return Response.json({ success: true, data: { url, mode: signedMode } })
 }

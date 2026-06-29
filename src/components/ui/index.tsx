@@ -28,12 +28,35 @@ export function Badge({ color = 'gray', children, glow }: { color?: string; chil
 }
 
 const statusBorderColor: Record<TenderStatus, string> = {
-  nouveau: '#4f8ef7', en_cours: '#4f8ef7', urgence: '#f59e0b',
-  gagne: '#10b981', perdu: '#ef4444', cloture: '#475569',
+  nouveau: '#4f8ef7',
+  en_cours: '#f59e0b',
+  urgence: '#ef4444',
+  gagne: '#10b981',
+  perdu: '#64748b',
+  cloture: '#475569',
 }
 
 export function getStatusBorderColor(status: TenderStatus) {
   return statusBorderColor[status] ?? '#475569'
+}
+
+const tenderRowPalette: Record<TenderStatus, { bg: string; border: string; borderWidth: number; urgent?: boolean }> = {
+  urgence: { bg: 'rgba(239,68,68,0.12)', border: '#ef4444', borderWidth: 4, urgent: true },
+  nouveau: { bg: 'rgba(79,142,247,0.10)', border: '#4f8ef7', borderWidth: 3 },
+  en_cours: { bg: 'rgba(245,158,11,0.10)', border: '#f59e0b', borderWidth: 3 },
+  gagne: { bg: 'rgba(16,185,129,0.10)', border: '#10b981', borderWidth: 3 },
+  perdu: { bg: 'rgba(148,163,184,0.08)', border: '#64748b', borderWidth: 3 },
+  cloture: { bg: 'rgba(71,85,105,0.10)', border: '#475569', borderWidth: 3 },
+}
+
+export function tenderListRowStyle(status: TenderStatus): React.CSSProperties {
+  const s = tenderRowPalette[status] ?? tenderRowPalette.cloture
+  return {
+    borderLeft: `${s.borderWidth}px solid ${s.border}`,
+    background: s.bg,
+    transition: 'background 0.15s, filter 0.15s',
+    ...(s.urgent ? { animation: 'urgenceRowPulse 2.5s ease-in-out infinite' } : {}),
+  }
 }
 
 export function TenderStatusBadge({ status, pulse }: { status: TenderStatus; pulse?: boolean }) {
@@ -420,15 +443,17 @@ export function tableRowHover(status?: TenderStatus): React.CSSProperties {
 }
 
 export function tableRowHoverHandlers(status?: TenderStatus) {
-  const border = status ? getStatusBorderColor(status) : 'var(--accent)'
+  const base = status ? tenderListRowStyle(status) : { borderLeft: '3px solid transparent', background: 'transparent' as const }
+  const baseBg = String(base.background ?? 'transparent')
+  const baseBorder = String(base.borderLeft ?? '3px solid transparent')
   return {
     onMouseEnter: (e: React.MouseEvent<HTMLTableRowElement>) => {
-      e.currentTarget.style.background = 'var(--bg-hover)'
-      e.currentTarget.style.borderLeftColor = border
+      e.currentTarget.style.filter = 'brightness(1.08)'
     },
     onMouseLeave: (e: React.MouseEvent<HTMLTableRowElement>) => {
-      e.currentTarget.style.background = 'transparent'
-      e.currentTarget.style.borderLeftColor = 'transparent'
+      e.currentTarget.style.filter = ''
+      e.currentTarget.style.background = baseBg
+      e.currentTarget.style.borderLeft = baseBorder
     },
   }
 }

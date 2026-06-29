@@ -82,3 +82,19 @@ export async function downloadAttachmentBuffer(
   if (att.data) return Buffer.from(att.data, 'base64')
   return null
 }
+
+export async function createMailAttachmentSignedUrl(
+  db: SupabaseClient,
+  path: string,
+  filename: string,
+  mode: 'inline' | 'download',
+  expiresIn = 60,
+): Promise<string | null> {
+  const { data, error } = await db.storage.from(MAIL_ATTACHMENTS_BUCKET).createSignedUrl(
+    path,
+    expiresIn,
+    mode === 'download' ? { download: filename } : undefined,
+  )
+  if (error || !data?.signedUrl) return null
+  return data.signedUrl
+}
