@@ -60,17 +60,15 @@ import {
   hasMailBodyCached,
 } from '@/lib/mail-detail-cache'
 import MailVirtualList from '@/components/mail/MailVirtualList'
-import { useCachedMailList } from '@/hooks/useCachedMailList'
 import { pullMailDelta } from '@/lib/mail-cache-sync'
 import {
   isLocalFirstFolder,
-  folderKeyFromSelection,
   setLocalFlag,
   cachedToEmail,
   getCachedEmailById,
 } from '@/lib/mailCache'
 
-const MAIL_LIST_PAGE_SIZE = 30
+const MAIL_LIST_PAGE_SIZE = 50
 
 type EmailWithQuote = Email & {
   quote_analysis?: {
@@ -238,22 +236,6 @@ export default function MailPage() {
   const userId = session?.user?.id
 
   const localFirst = isLocalFirstFolder(folderSelection)
-  const localFolderKey = localFirst ? folderKeyFromSelection(folderSelection) : null
-  const activeListFilter: MailFilter =
-    folder === 'inbox' ? (listListFilter === 'all' ? filter : listListFilter) : 'all'
-
-  const cachedListEmails = useCachedMailList(localFolderKey, {
-    searchQuery,
-    favoritesOnly,
-    listFilter: activeListFilter,
-    priorityFilter: priorityFilter || undefined,
-    fromFilter,
-    tenderFilter,
-    labelFilter,
-    sinceFilter,
-    untilFilter,
-    sortOrder: listSortOrder,
-  })
 
   const getListCacheKey = useCallback((selection?: MailFolderSelection) => {
     if (!userId) return null
@@ -390,10 +372,8 @@ export default function MailPage() {
         }
       }).catch(() => {})
     }
-    if (isLocalFirstFolder(sel)) {
-      setLoading(false)
-      return
-    }
+    setListHasMore(false)
+    listHasMoreRef.current = false
     const cacheKey = getListCacheKey(sel)
     const cached = cacheKey ? readMailListCache(cacheKey) : null
     if (cached?.emails?.length) {
@@ -540,10 +520,6 @@ export default function MailPage() {
     }, 12000)
     try {
       const activeSelection = selectionOverride ?? folderSelection
-      if (isLocalFirstFolder(activeSelection) && !append) {
-        if (!silent) setLoading(false)
-        return
-      }
       const activeFolder = activeSelection.kind
       const offset = append ? emailsRef.current.length : 0
       const params = new URLSearchParams({
@@ -713,7 +689,7 @@ export default function MailPage() {
       if (ok) {
         refreshFolders()
         await pullMailDelta()
-        if (!localFirst) await loadEmails(true)
+        await loadEmails(true)
         const sid = selectedIdRef.current
         if (sid) await loadEmailDetail(sid, true)
       }
@@ -721,7 +697,7 @@ export default function MailPage() {
       syncInProgressRef.current = false
       setSyncInBackground(false)
     }
-  }, [loadEmails, loadEmailDetail, refreshFolders, finishSyncSuccess, localFirst, startBlockingSync])
+  }, [loadEmails, loadEmailDetail, refreshFolders, finishSyncSuccess, startBlockingSync])
 
   useEffect(() => {
     if (!ready || !userId || autoSyncBootRef.current) return
@@ -776,26 +752,8 @@ export default function MailPage() {
   }, [userId])
 
   useEffect(() => {
-    if (!localFirst) return
-    setEmails(cachedListEmails)
-    emailsRef.current = cachedListEmails
-    setListHasMore(false)
-    listHasMoreRef.current = false
-    setLoading(false)
-    if (folder !== 'inbox') return
-    const count = cachedListEmails.filter(e => !e.is_read).length
-    setInboxUnread(count)
-    const t = setTimeout(() => emitMailUnreadChanged(count), 400)
-    return () => clearTimeout(t)
-  }, [localFirst, cachedListEmails, folder])
-
-  useEffect(() => {
     if (!ready) return
     if (!userId) {
-      setLoading(false)
-      return
-    }
-    if (localFirst) {
       setLoading(false)
       return
     }
@@ -811,7 +769,7 @@ export default function MailPage() {
     } else {
       void loadEmails(false)
     }
-  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, ready, userId, loadEmails, getListCacheKey, localFirst])
+  }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, ready, userId, loadEmails, getListCacheKey])
 
   const syncing = syncUI.status === 'syncing'
   const mailInteractionBlocked = syncOverlay === 'progress' || syncOverlay === 'success'
@@ -859,18 +817,6 @@ export default function MailPage() {
     }
     if (!email.is_read) handleMarkRead(email)
   }
-
-  useEffect(() => {
-    const el = listScrollRef.current
-    if (!el || localFirst) return
-    const onScroll = () => {
-      if (loadingMoreRef.current || !listHasMoreRef.current || loading) return
-      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140
-      if (nearBottom) void loadEmails(true, undefined, true)
-    }
-    el.addEventListener('scroll', onScroll, { passive: true })
-    return () => el.removeEventListener('scroll', onScroll)
-  }, [loadEmails, loading, localFirst])
 
   useEffect(() => {
     if (!pendingEmailId) return
@@ -1612,9 +1558,9 @@ export default function MailPage() {
           syncInBackground={syncInBackground}
           onRetrySync={handleSync}
           search={searchQuery}
-          onSearchChange={v => { setSearchQuery(v); if (!localFirst) loadEmails(false) }}
+          onSearchChange={v => { setSearchQuery(v); loadEmails(false) }}
           favoritesOnly={favoritesOnly}
-          onFavoritesOnlyChange={v => { setFavoritesOnly(v); if (!localFirst) loadEmails(false) }}
+          onFavoritesOnlyChange={v => { setFavoritesOnly(v); loadEmails(false) }}
         />
       )}
 
@@ -1821,7 +1767,7 @@ export default function MailPage() {
                   type="button"
                   onClick={() => {
                     setListSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')
-                    if (!localFirst) void loadEmails(false)
+                    void loadEmails(false)
                   }}
                   title={listSortOrder === 'desc' ? 'Tri : plus récent en premier' : 'Tri : plus ancien en premier'}
                   style={{
@@ -2059,7 +2005,6 @@ export default function MailPage() {
                 onHover={mailInteractionBlocked ? () => {} : prefetchEmail}
                 onContextMenu={setContextMenuEmailId}
                 onNearBottom={() => {
-                  if (localFirst) return
                   if (!loadingMoreRef.current && listHasMoreRef.current && !loading) {
                     void loadEmails(true, undefined, true)
                   }
@@ -2270,8 +2215,19 @@ export default function MailPage() {
               />
             )}
             {loadingMore && (
-              <div style={{ padding: '8px 0' }}>
-                <MailListSkeleton rows={3} />
+              <div style={{
+                padding: '10px 0',
+                textAlign: 'center',
+                fontSize: 11,
+                color: 'var(--text-muted)',
+                fontFamily: 'DM Mono, monospace',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}>
+                <Spinner size={12} />
+                Chargement…
               </div>
             )}
           </div>
