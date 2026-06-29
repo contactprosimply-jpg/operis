@@ -785,18 +785,35 @@ export default function TenderDetailPage() {
     return res.blob()
   }
 
+  const navigatePreviewTab = (win: Window | null, href: string) => {
+    if (win && !win.closed) {
+      win.location.href = href
+      return
+    }
+    const a = document.createElement('a')
+    a.href = href
+    a.target = '_blank'
+    a.rel = 'noopener noreferrer'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }
+
   const openTenderDocument = async (docId: string, filename: string, _contentType?: string) => {
+    const win = window.open('', '_blank')
     try {
       const meta = await fetchDocumentAccess(docId, true)
       if (meta.url) {
-        window.open(meta.url, '_blank', 'noopener,noreferrer')
+        navigatePreviewTab(win, meta.url)
         return
       }
       const blob = await streamTenderDocument(docId, 'inline')
       const blobUrl = URL.createObjectURL(blob)
-      window.open(blobUrl, '_blank', 'noopener,noreferrer')
+      navigatePreviewTab(win, blobUrl)
       window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
-    } catch {
+    } catch (e) {
+      console.error('[PJ Voir] échec', e)
+      if (win && !win.closed) win.close()
       show('Erreur ouverture')
     }
   }
