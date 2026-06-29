@@ -147,6 +147,7 @@ export default function DashboardPage() {
     <div className="animate-fade">
       {ToastComponent}
 
+      {/* a. En-tête */}
       <div style={{ marginBottom: 24 }}>
         <h1 className="page-title">
           {greeting} {firstName}, {actifs.length} AO en cours
@@ -157,54 +158,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {unreadNotifs.length > 0 && (
-        <Card hover={false} style={{ padding: '14px 18px', marginBottom: 20, border: '1px solid rgba(59,126,246,0.25)', background: 'rgba(59,126,246,0.06)' }}>
-          <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--accent)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            Notifications ({unreadNotifs.length})
-          </div>
-          {unreadNotifs.slice(0, 4).map(n => (
-            <div
-              key={n.id}
-              onClick={() => n.tender_id && router.push(`/tenders/${n.tender_id}`)}
-              style={{
-                padding: '8px 0', borderBottom: '1px solid var(--border)', cursor: n.tender_id ? 'pointer' : 'default',
-              }}
-            >
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{n.title}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{n.message}</div>
-            </div>
-          ))}
-        </Card>
-      )}
-
-      {relanceCandidates.length > 0 && (
-        <Card hover={false} style={{ padding: '14px 18px', marginBottom: 20, border: '1px solid rgba(245,158,11,0.25)', background: 'rgba(245,158,11,0.06)' }}>
-          <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: '#fbbf24', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            Relances a envisager ({relanceCandidates.length})
-          </div>
-            {relanceCandidates.slice(0, 5).map(t => {
-              const creatorLabel = t.creator_label ?? getTenderCreatorLabel(t, currentUserId, org)
-              return (
-            <div
-              key={t.tender_id}
-              onClick={() => router.push(`/tenders/${t.tender_id}`)}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0', cursor: 'pointer' }}
-            >
-              <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>
-                {t.title}
-                {creatorLabel && (
-                  <span style={{ marginLeft: 8 }}>
-                    <TenderOriginBadge label={creatorLabel} type="creator" />
-                  </span>
-                )}
-              </span>
-              <Badge color="amber">{t.nb_responses}/{t.nb_suppliers} reponses</Badge>
-            </div>
-            )
-            })}
-        </Card>
-      )}
-
+      {/* b. KPI — inchangés, en haut */}
       <div className="kpi-grid" data-tour="dashboard-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
         <KpiCard label="AO actifs" value={actifs.length} icon={<IconDoc />} color="blue" delay={0}
           progress={actifs.length > 0 ? Math.min(100, actifs.length * 10) : 0}
@@ -250,6 +204,7 @@ export default function DashboardPage() {
         </Card>
       )}
 
+      {/* c. AO en cours */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>AO en cours</span>
         <button onClick={() => router.push('/tenders')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Voir tous →</button>
@@ -312,56 +267,57 @@ export default function DashboardPage() {
         </div>
       </Card>
 
-      {quoteEmails.length > 0 && (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, marginTop: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>
-              Devis recus non lies ({quoteEmails.length})
-            </span>
-            <button onClick={() => router.push('/mail')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Messagerie →</button>
-          </div>
-          <Card hover={false} style={{ padding: 0, overflow: 'hidden', marginBottom: 24 }}>
-            {quoteEmails.slice(0, 5).map(email => (
-              <div key={email.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => router.push(`/mail?email=${email.id}`)}>
-                  <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.subject}</div>
-                  <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>{email.from_address}</div>
-                </div>
-                <Badge color="purple">Devis</Badge>
+      {/* d. Notifications + Relances — deux colonnes desktop, empilées mobile */}
+      {(unreadNotifs.length > 0 || relanceCandidates.length > 0) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+          {unreadNotifs.length > 0 && (
+            <Card hover={false} style={{ padding: '14px 18px', border: '1px solid rgba(59,126,246,0.25)', background: 'rgba(59,126,246,0.06)' }}>
+              <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--accent)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Notifications ({unreadNotifs.length})
               </div>
-            ))}
-          </Card>
-        </>
-      )}
-
-      {emails.length > 0 && (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>
-              Emails AO non lies ({emails.length})
-            </span>
-            <button onClick={() => router.push('/mail')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Voir tous →</button>
-          </div>
-          <Card hover={false} style={{ padding: 0, overflow: 'hidden' }}>
-            {emails.slice(0, 6).map(email => (
-              <div key={email.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#fbbf24', fontFamily: 'DM Mono, monospace', fontWeight: 700, flexShrink: 0 }}>AO</div>
-                <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => router.push('/mail')}>
-                  <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.subject}</div>
-                  <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email.from_address}</div>
-                </div>
-                <Badge color={email.ao_score >= 60 ? 'amber' : 'blue'} glow={email.ao_score >= 60}>Score {email.ao_score}</Badge>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleCreateAo(email) }}
-                  disabled={creatingAo === email.id}
-                  style={{ background: 'var(--gradient-primary)', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0, opacity: creatingAo === email.id ? 0.5 : 1, fontFamily: 'DM Sans, system-ui', boxShadow: 'var(--shadow-glow)' }}
+              {unreadNotifs.slice(0, 4).map(n => (
+                <div
+                  key={n.id}
+                  onClick={() => n.tender_id && router.push(`/tenders/${n.tender_id}`)}
+                  style={{
+                    padding: '8px 0', borderBottom: '1px solid var(--border)', cursor: n.tender_id ? 'pointer' : 'default',
+                  }}
                 >
-                  {creatingAo === email.id ? '...' : '+ Creer AO'}
-                </button>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{n.title}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{n.message}</div>
+                </div>
+              ))}
+            </Card>
+          )}
+
+          {relanceCandidates.length > 0 && (
+            <Card hover={false} style={{ padding: '14px 18px', border: '1px solid rgba(245,158,11,0.25)', background: 'rgba(245,158,11,0.06)' }}>
+              <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: '#fbbf24', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Relances a envisager ({relanceCandidates.length})
               </div>
-            ))}
-          </Card>
-        </>
+              {relanceCandidates.slice(0, 5).map(t => {
+                const creatorLabel = t.creator_label ?? getTenderCreatorLabel(t, currentUserId, org)
+                return (
+                  <div
+                    key={t.tender_id}
+                    onClick={() => router.push(`/tenders/${t.tender_id}`)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0', cursor: 'pointer' }}
+                  >
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>
+                      {t.title}
+                      {creatorLabel && (
+                        <span style={{ marginLeft: 8 }}>
+                          <TenderOriginBadge label={creatorLabel} type="creator" />
+                        </span>
+                      )}
+                    </span>
+                    <Badge color="amber">{t.nb_responses}/{t.nb_suppliers} reponses</Badge>
+                  </div>
+                )
+              })}
+            </Card>
+          )}
+        </div>
       )}
     </div>
   )
