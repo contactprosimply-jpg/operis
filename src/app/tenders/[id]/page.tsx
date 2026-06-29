@@ -18,7 +18,7 @@ import { memberDisplayName } from '@/lib/family'
 import type { OrganizationPayload } from '@/lib/organization'
 import { useAuth } from '@/components/AuthProvider'
 import TenderOriginBadge from '@/components/TenderOriginBadge'
-import TenderDocumentsTab from '@/components/tender/TenderDocumentsTab'
+import TenderDocumentsTab, { DocumentFileActions } from '@/components/tender/TenderDocumentsTab'
 import { readCache, writeCache, cacheKeyForUser } from '@/lib/client-cache'
 import { getTenderAssigneeLabel, getTenderCreatorLabel } from '@/lib/tender-member-label'
 import { groupEmailsByThread, computeThreadStatus, THREAD_STATUS_META } from '@/lib/email-threading'
@@ -761,11 +761,12 @@ export default function TenderDetailPage() {
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
-  const fetchDocumentAccess = async (docId: string, mode: 'open' | 'download') => {
+  const fetchDocumentAccess = async (docId: string, inline: boolean) => {
     const token = await getAccessToken()
     if (!token) throw new Error('Non authentifié')
+    const query = inline ? 'inline=true' : 'mode=download'
     const res = await fetch(
-      `/api/tenders/${id}/documents/${encodeURIComponent(docId)}/url?mode=${mode}`,
+      `/api/tenders/${id}/documents/${encodeURIComponent(docId)}/url?${query}`,
       { headers: { Authorization: `Bearer ${token}` } },
     )
     const data = await res.json()
@@ -786,7 +787,7 @@ export default function TenderDetailPage() {
 
   const openTenderDocument = async (docId: string, filename: string, _contentType?: string) => {
     try {
-      const meta = await fetchDocumentAccess(docId, 'open')
+      const meta = await fetchDocumentAccess(docId, true)
       if (meta.url) {
         window.open(meta.url, '_blank', 'noopener,noreferrer')
         return
@@ -802,7 +803,7 @@ export default function TenderDetailPage() {
 
   const downloadTenderDocument = async (docId: string, filename: string, _contentType?: string) => {
     try {
-      const meta = await fetchDocumentAccess(docId, 'download')
+      const meta = await fetchDocumentAccess(docId, false)
       if (meta.url) {
         const a = document.createElement('a')
         a.href = meta.url
@@ -1879,41 +1880,10 @@ export default function TenderDetailPage() {
                             {att.size ? `${Math.round(att.size / 1024)} Ko` : '—'}
                           </div>
                         </div>
-                        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                          <button
-                            type="button"
-                            title="Ouvrir"
-                            aria-label="Ouvrir"
-                            onClick={() => openTenderDocument(docId, att.filename, att.contentType)}
-                            style={{
-                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                              width: 34, height: 34, borderRadius: 6, cursor: 'pointer',
-                              border: '1px solid var(--border)', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', padding: 0,
-                            }}
-                          >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                              <circle cx="12" cy="12" r="3" />
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            title="Télécharger"
-                            aria-label="Télécharger"
-                            onClick={() => downloadTenderDocument(docId, att.filename, att.contentType)}
-                            style={{
-                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                              width: 34, height: 34, borderRadius: 6, cursor: 'pointer',
-                              border: '1px solid var(--border)', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', padding: 0,
-                            }}
-                          >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                              <polyline points="7 10 12 15 17 10" />
-                              <line x1="12" y1="15" x2="12" y2="3" />
-                            </svg>
-                          </button>
-                        </div>
+                        <DocumentFileActions
+                          onOpen={() => openTenderDocument(docId, att.filename, att.contentType)}
+                          onDownload={() => downloadTenderDocument(docId, att.filename, att.contentType)}
+                        />
                       </div>
                     )
                   })}

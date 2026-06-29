@@ -7,7 +7,6 @@ import { createDevisSignedUrl } from '@/lib/devis-storage'
 import { createMailAttachmentSignedUrl } from '@/lib/mail-storage'
 import { normalizeAttachments } from '@/lib/mail-attachments'
 import { assertTenderAccess } from '@/lib/tender-access'
-import { isPreviewableDocument } from '@/lib/tender-document-preview'
 
 const SIGNED_URL_TTL_SEC = 60
 
@@ -19,8 +18,9 @@ export async function GET(
   if (!userId) return unauthorized()
 
   const { id, docId } = await params
-  const modeParam = new URL(req.url).searchParams.get('mode')
-  const mode = modeParam === 'download' ? 'download' : 'open'
+  const sp = new URL(req.url).searchParams
+  const wantsInline = sp.get('inline') === 'true' || sp.get('mode') === 'open'
+  const mode = wantsInline ? 'open' : 'download'
   const db = createAdminClient()
 
   const access = await assertTenderAccess(db, id, userId, 'view')
@@ -36,9 +36,7 @@ export async function GET(
     const att = attachments[index]
     if (!att) return Response.json({ success: false, error: 'Fichier introuvable' }, { status: 404 })
 
-    const signedMode = mode === 'download' || !isPreviewableDocument(att.filename, att.contentType)
-      ? 'download'
-      : 'inline'
+    const signedMode = mode === 'download' ? 'download' : 'inline'
 
     if (att.path) {
       const url = await createMailAttachmentSignedUrl(db, att.path, att.filename, signedMode, SIGNED_URL_TTL_SEC)
@@ -64,9 +62,7 @@ export async function GET(
     const att = attachments[index]
     if (!att?.path) return Response.json({ success: false, error: 'Fichier introuvable' }, { status: 404 })
 
-    const signedMode = mode === 'download' || !isPreviewableDocument(att.filename, att.contentType)
-      ? 'download'
-      : 'inline'
+    const signedMode = mode === 'download' ? 'download' : 'inline'
     const url = await createDevisSignedUrl(db, att.path, att.filename, signedMode, SIGNED_URL_TTL_SEC)
     if (!url) return Response.json({ success: false, error: 'URL indisponible' }, { status: 500 })
     return Response.json({ success: true, data: { url, mode: signedMode } })
@@ -83,9 +79,7 @@ export async function GET(
 
   if (!doc?.storage_path) return Response.json({ success: false, error: 'Fichier introuvable' }, { status: 404 })
 
-  const signedMode = mode === 'download' || !isPreviewableDocument(doc.filename, doc.content_type)
-    ? 'download'
-    : 'inline'
+  const signedMode = mode === 'download' ? 'download' : 'inline'
   const url = await createDevisSignedUrl(db, doc.storage_path, doc.filename, signedMode, SIGNED_URL_TTL_SEC)
   if (!url) return Response.json({ success: false, error: 'URL indisponible' }, { status: 500 })
 

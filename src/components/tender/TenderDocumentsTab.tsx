@@ -54,24 +54,25 @@ function formatDate(date?: string | null) {
   })
 }
 
-const docActionBtn: React.CSSProperties = {
+const docTextBtn: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
-  justifyContent: 'center',
-  width: 34,
-  height: 34,
+  gap: 5,
+  fontSize: 11,
+  color: 'var(--accent)',
+  background: 'var(--accent-soft)',
+  border: '1px solid rgba(59,126,246,0.2)',
   borderRadius: 6,
+  padding: '4px 10px',
   cursor: 'pointer',
-  border: '1px solid var(--border)',
-  background: 'var(--bg-tertiary)',
-  color: 'var(--text-secondary)',
   flexShrink: 0,
-  padding: 0,
+  fontFamily: 'DM Sans, system-ui',
+  minHeight: 32,
 }
 
 function IconEye() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
       <circle cx="12" cy="12" r="3" />
     </svg>
@@ -80,7 +81,7 @@ function IconEye() {
 
 function IconDownload() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" y1="15" x2="12" y2="3" />
@@ -88,7 +89,7 @@ function IconDownload() {
   )
 }
 
-function DocumentFileActions({
+export function DocumentFileActions({
   onOpen,
   onDownload,
 }: {
@@ -96,12 +97,14 @@ function DocumentFileActions({
   onDownload: () => void
 }) {
   return (
-    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
-      <button type="button" title="Ouvrir" aria-label="Ouvrir" onClick={onOpen} style={docActionBtn}>
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+      <button type="button" title="Voir" aria-label="Voir" onClick={onOpen} style={docTextBtn}>
         <IconEye />
+        Voir
       </button>
-      <button type="button" title="Télécharger" aria-label="Télécharger" onClick={onDownload} style={docActionBtn}>
+      <button type="button" title="Télécharger" aria-label="Télécharger" onClick={onDownload} style={docTextBtn}>
         <IconDownload />
+        Télécharger
       </button>
     </div>
   )
