@@ -81,12 +81,11 @@ export default function SuppliersPage() {
 
       <input type="text" value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Rechercher par nom, email, specialite..."
-        style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui', outline: 'none', marginBottom: 16 }}
-        onFocus={e => (e.target as HTMLInputElement).style.borderColor = 'var(--accent)'}
-        onBlur={e => (e.target as HTMLInputElement).style.borderColor = 'var(--border)'}
+        className="ds-input"
+        style={{ marginBottom: 16 }}
       />
 
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden', boxShadow: 'var(--shadow-card)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
@@ -122,7 +121,7 @@ export default function SuppliersPage() {
                       <div style={{ display: 'flex', gap: 6, opacity: 0 }} className="row-actions"
                         onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '0'}>
-                        <button onClick={() => startEdit(s)} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Modifier</button>
+                        <button onClick={() => startEdit(s)} style={{ fontSize: 11, color: 'var(--accent-cyan)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Modifier</button>
                         <button onClick={() => { if (confirm(`Supprimer ${s.name} ?`)) remove(s.id).then((res: any) => { if (res.success) show(`${s.name} supprime`); else show(`Erreur : ${res.error}`) }) }}
                           style={{ fontSize: 11, color: '#f87171', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
                           Supprimer

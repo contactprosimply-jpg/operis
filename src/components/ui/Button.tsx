@@ -3,7 +3,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { cn } from '@/lib/cn'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success'
 export type ButtonSize = 'sm' | 'md' | 'lg'
 
 const variantClass: Record<ButtonVariant, string> = {
@@ -11,6 +11,7 @@ const variantClass: Record<ButtonVariant, string> = {
   secondary: 'ds-btn--secondary',
   ghost: 'ds-btn--ghost',
   danger: 'ds-btn--danger',
+  success: 'ds-btn--success',
 }
 
 const sizeClass: Record<ButtonSize, string> = {

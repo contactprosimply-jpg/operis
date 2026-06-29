@@ -197,6 +197,20 @@
     filter: brightness(1.1);
   }
 
+  .ds-btn--success {
+    color: var(--success);
+    background: var(--success-soft);
+    border-color: rgba(16, 185, 129, 0.28);
+  }
+
+  .ds-btn--success:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+
+  .ds-btn--block {
+    width: 100%;
+  }
+
   .ds-btn__spinner {
     width: 14px;
     height: 14px;
@@ -205,6 +219,103 @@
     border-top-color: transparent;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+  }
+
+  /* ── Cards ── */
+  .ds-card {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-card);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .ds-card--interactive {
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  }
+
+  .ds-card--interactive:hover {
+    border-color: var(--border-hi);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+  }
+
+  .ds-card--pad-sm { padding: var(--space-4); }
+  .ds-card--pad-md { padding: var(--space-6); }
+  .ds-card--pad-lg { padding: var(--space-8); }
+
+  /* ── KPI cards ── */
+  .ds-kpi-card {
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px 20px 14px;
+    box-shadow: var(--shadow-card);
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.22s ease, box-shadow 0.22s ease;
+  }
+
+  .ds-kpi-card:hover {
+    box-shadow: var(--glow);
+  }
+
+  /* ── Formulaires ── */
+  .ds-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .ds-input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border-hi);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    font-size: 13px;
+    color: var(--text-primary);
+    outline: none;
+    box-sizing: border-box;
+    font-family: var(--font-sans);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .ds-input:focus {
+    border-color: var(--color-accent-blue);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .ds-auth-shell {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    background-image:
+      radial-gradient(ellipse 80% 60% at 50% -10%, rgba(59, 127, 232, 0.18), transparent),
+      radial-gradient(ellipse 50% 40% at 100% 100%, rgba(30, 203, 225, 0.1), transparent);
+    padding: 0 16px;
+  }
+
+  .ds-auth-logo {
+    width: 52px;
+    height: 52px;
+    background: linear-gradient(135deg, #3b7fe8 0%, #1ecbe1 100%);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 17px;
+    font-weight: 700;
+    color: #fff;
+    box-shadow: var(--glow);
   }
 }
 

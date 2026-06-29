@@ -1036,7 +1036,7 @@ export default function TenderDetailPage() {
 
       {tender.status === 'gagne' && (
         <div style={{
-          marginBottom: 20, padding: '16px 20px', borderRadius: 12,
+          marginBottom: 20, padding: '16px 20px', borderRadius: 'var(--radius-md)',
           background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
         }}>
@@ -1050,7 +1050,7 @@ export default function TenderDetailPage() {
       {/* Onglets */}
       <div style={{
         display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap',
-        padding: '4px', background: 'var(--bg-card)', borderRadius: 12,
+        padding: '4px', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)',
         border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)',
       }}>
         {([
@@ -1391,7 +1391,7 @@ export default function TenderDetailPage() {
                       {statusMeta.emoji} FIL — {thread.title}
                     </div>
                     <span style={{
-                      fontSize: 10, fontWeight: 600, padding: '3px 10px', borderRadius: 12,
+                      fontSize: 10, fontWeight: 600, padding: '3px 10px', borderRadius: 'var(--radius-md)',
                       background: `${statusMeta.color}18`, color: statusMeta.color,
                       border: `1px solid ${statusMeta.color}40`,
                     }}>
@@ -1645,7 +1645,7 @@ export default function TenderDetailPage() {
               })}
               <defs>
                 <linearGradient id="cmpGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#4f8ef7" />
+                  <stop offset="0%" stopColor="#3b7fe8" />
                   <stop offset="100%" stopColor="#818cf8" />
                 </linearGradient>
               </defs>

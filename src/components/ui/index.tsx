@@ -3,14 +3,17 @@
 import { useState, useEffect, useCallback, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { TenderStatus, ConsultationStatus } from '@/types/database'
+import { Card as DSCard } from './Card'
+import { Button as DSButton, type ButtonVariant as DSButtonVariant } from './Button'
 
 // ── BADGE ────────────────────────────────────────────────────
 const badgeMap: Record<string, { bg: string; color: string; border: string; glow: string }> = {
-  blue:  { bg: 'rgba(79,142,247,0.12)',  color: '#6ba3f9', border: 'rgba(79,142,247,0.3)', glow: '0 0 14px rgba(79,142,247,0.2)' },
+  blue:  { bg: 'rgba(59,127,232,0.14)',  color: '#6ba3f9', border: 'rgba(59,127,232,0.3)', glow: '0 0 14px rgba(59,127,232,0.22)' },
   green: { bg: 'rgba(16,185,129,0.12)',  color: '#34d399', border: 'rgba(16,185,129,0.3)', glow: '0 0 14px rgba(16,185,129,0.2)' },
   red:   { bg: 'rgba(239,68,68,0.12)',   color: '#f87171', border: 'rgba(239,68,68,0.3)', glow: '0 0 14px rgba(239,68,68,0.2)' },
   amber: { bg: 'rgba(245,158,11,0.12)',  color: '#fbbf24', border: 'rgba(245,158,11,0.3)', glow: '0 0 14px rgba(245,158,11,0.2)' },
-  gray:  { bg: 'rgba(148,163,184,0.08)', color: '#94a3b8', border: 'rgba(148,163,184,0.15)', glow: 'none' },
+  gray:  { bg: 'rgba(148,163,184,0.08)', color: '#94b4e0', border: 'rgba(148,163,184,0.15)', glow: 'none' },
+  purple: { bg: 'rgba(30,203,225,0.12)', color: '#5eead4', border: 'rgba(30,203,225,0.28)', glow: '0 0 14px rgba(30,203,225,0.18)' },
 }
 
 export function Badge({ color = 'gray', children, glow }: { color?: string; children: ReactNode; glow?: boolean }) {
@@ -28,7 +31,7 @@ export function Badge({ color = 'gray', children, glow }: { color?: string; chil
 }
 
 const statusBorderColor: Record<TenderStatus, string> = {
-  nouveau: '#4f8ef7',
+  nouveau: '#3b7fe8',
   en_cours: '#f59e0b',
   urgence: '#ef4444',
   gagne: '#10b981',
@@ -42,7 +45,7 @@ export function getStatusBorderColor(status: TenderStatus) {
 
 const tenderRowPalette: Record<TenderStatus, { bg: string; border: string; borderWidth: number; urgent?: boolean }> = {
   urgence: { bg: 'rgba(239,68,68,0.12)', border: '#ef4444', borderWidth: 4, urgent: true },
-  nouveau: { bg: 'rgba(79,142,247,0.10)', border: '#4f8ef7', borderWidth: 3 },
+  nouveau: { bg: 'rgba(59,127,232,0.10)', border: '#3b7fe8', borderWidth: 3 },
   en_cours: { bg: 'rgba(245,158,11,0.10)', border: '#f59e0b', borderWidth: 3 },
   gagne: { bg: 'rgba(16,185,129,0.10)', border: '#10b981', borderWidth: 3 },
   perdu: { bg: 'rgba(148,163,184,0.08)', border: '#64748b', borderWidth: 3 },
@@ -117,82 +120,40 @@ export function TableSkeleton({ rows = 5, cols = 6 }: { rows?: number; cols?: nu
 
 // ── CARD ─────────────────────────────────────────────────────
 export function Card({ children, style = {}, hover = true }: { children: ReactNode; style?: React.CSSProperties; hover?: boolean }) {
-  const [hov, setHov] = useState(false)
   return (
-    <div
-      onMouseEnter={() => hover && setHov(true)}
-      onMouseLeave={() => hover && setHov(false)}
-      style={{
-        background: 'var(--bg-card)',
-        border: `1px solid ${hov ? 'var(--border-hi)' : 'var(--border)'}`,
-        borderRadius: 14,
-        boxShadow: hov ? 'var(--shadow-md)' : 'var(--shadow-sm)',
-        transition: 'all 0.22s ease',
-        position: 'relative',
-        overflow: 'hidden',
-        ...style,
-      }}
-    >
+    <DSCard hover={hover} padding="none" style={style}>
       {children}
-    </div>
+    </DSCard>
   )
+}
+
+function mapButtonVariant(variant: string): DSButtonVariant {
+  if (variant === 'primary' || variant === 'secondary' || variant === 'ghost' || variant === 'danger' || variant === 'success') {
+    return variant
+  }
+  return 'ghost'
 }
 
 // ── BUTTON ───────────────────────────────────────────────────
 export function Button({
-  onClick, variant = 'ghost', loading, disabled, children, className = '', type = 'button', style = {}
+  onClick, variant = 'ghost', size = 'md', loading, disabled, children, className = '', type = 'button', style = {}
 }: {
-  onClick?: () => void; variant?: string; loading?: boolean; disabled?: boolean;
+  onClick?: () => void; variant?: string; size?: 'sm' | 'md' | 'lg'; loading?: boolean; disabled?: boolean;
   children: ReactNode; className?: string; type?: 'button' | 'submit'; style?: React.CSSProperties
 }) {
-  const variants: Record<string, React.CSSProperties> = {
-    primary: {
-      background: 'var(--gradient-primary)', color: '#fff', border: 'none',
-      boxShadow: 'var(--shadow-glow)',
-    },
-    ghost: {
-      background: 'transparent', color: 'var(--text-secondary)',
-      border: '1px solid var(--border-hi)',
-    },
-    danger: {
-      background: 'var(--danger-soft)', color: 'var(--danger)',
-      border: '1px solid rgba(239,68,68,0.25)',
-    },
-    success: {
-      background: 'var(--success-soft)', color: 'var(--success)',
-      border: '1px solid rgba(16,185,129,0.25)',
-    },
-  }
   return (
-    <button
-      type={type} onClick={onClick} disabled={loading || disabled} className={className}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: '8px 16px', borderRadius: 9,
-        fontSize: 12, fontWeight: 600, cursor: (loading || disabled) ? 'not-allowed' : 'pointer',
-        transition: 'filter 0.15s ease, transform 0.15s ease, opacity 0.15s',
-        whiteSpace: 'nowrap', opacity: (loading || disabled) ? 0.55 : 1,
-        fontFamily: 'DM Sans, system-ui, sans-serif',
-        ...variants[variant] ?? variants.ghost,
-        ...style,
-      }}
-      onMouseEnter={e => {
-        if (!loading && !disabled) {
-          if (variant === 'primary') (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.1)'
-          else (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-hover)'
-        }
-      }}
-      onMouseLeave={e => {
-        const el = e.currentTarget as HTMLButtonElement
-        el.style.filter = ''
-        if (variant !== 'primary' && variant !== 'danger' && variant !== 'success') {
-          el.style.background = 'transparent'
-        }
-      }}
+    <DSButton
+      type={type}
+      onClick={onClick}
+      variant={mapButtonVariant(variant)}
+      size={size}
+      loading={loading}
+      disabled={disabled}
+      className={className}
+      style={style}
     >
-      {loading && <Spinner size={11} />}
       {children}
-    </button>
+    </DSButton>
   )
 }
 
@@ -368,13 +329,13 @@ export function Field({
         }}
         onBlur={() => setFocused(false)}
         style={{
-          width: '100%', background: 'var(--bg-secondary)',
-          border: `1px solid ${focused ? 'var(--accent)' : 'var(--border-hi)'}`,
-          borderRadius: 9,
+          width: '100%', background: 'var(--surface)',
+          border: `1px solid ${focused ? 'var(--color-accent-blue)' : 'var(--border-hi)'}`,
+          borderRadius: 'var(--radius-md)',
           padding: '10px 14px', fontSize: 13, color: 'var(--text-primary)',
-          fontFamily: 'DM Sans, system-ui, sans-serif', outline: 'none',
+          fontFamily: 'var(--font-sans)', outline: 'none',
           display: 'block', transition: 'border-color 0.15s, box-shadow 0.15s',
-          boxShadow: focused ? '0 0 0 3px var(--accent-soft), var(--shadow-glow)' : 'none',
+          boxShadow: focused ? '0 0 0 3px var(--accent-soft)' : 'none',
         }}
       />
     </div>
@@ -383,7 +344,7 @@ export function Field({
 
 // ── KPI CARD ─────────────────────────────────────────────────
 const kpiAccent: Record<string, string> = {
-  blue: '#4f8ef7', green: '#10b981', amber: '#f59e0b', purple: '#818cf8',
+  blue: '#3b7fe8', green: '#10b981', amber: '#f59e0b', purple: '#1ecbe1',
 }
 
 export function KpiCard({ label, value, delta, deltaVariant = 'success', icon, color = 'blue', delay = 0, progress }: {
@@ -396,16 +357,12 @@ export function KpiCard({ label, value, delta, deltaVariant = 'success', icon, c
   const deltaColor = { success: '#34d399', warn: '#fbbf24', danger: '#f87171' }
   return (
     <div
-      className="animate-fade"
+      className="animate-fade ds-kpi-card"
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
-        background: 'var(--bg-card)',
         border: `1px solid ${hov ? accent + '40' : 'var(--border)'}`,
-        borderRadius: 14, padding: '18px 20px 14px',
-        boxShadow: hov ? 'var(--shadow-glow)' : 'var(--shadow-sm)',
         animationDelay: `${delay}ms`,
-        position: 'relative', overflow: 'hidden', transition: 'all 0.22s ease',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>

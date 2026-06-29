@@ -3,7 +3,7 @@
 import { useState, useMemo, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Spinner } from '@/components/ui'
+import { Spinner, Button, Card } from '@/components/ui'
 
 function passwordStrength(pw: string): { score: number; label: string; color: string } {
   if (!pw) return { score: 0, label: '', color: 'var(--border)' }
@@ -20,7 +20,7 @@ function passwordStrength(pw: string): { score: number; label: string; color: st
 
 export default function RegisterPage() {
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spinner /></div>}>
+    <Suspense fallback={<div className="ds-auth-shell"><Spinner size={28} /></div>}>
       <RegisterForm />
     </Suspense>
   )
@@ -108,22 +108,12 @@ function RegisterForm() {
     setLoading(false)
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-hi)',
-    borderRadius: 9, padding: '12px 14px', fontSize: 13, color: 'var(--text-primary)',
-    outline: 'none', boxSizing: 'border-box', fontFamily: 'DM Sans, system-ui',
-  }
-
-  const pageBg: React.CSSProperties = {
-    minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: 'var(--bg-primary)',
-    backgroundImage: 'radial-gradient(ellipse 80% 60% at 50% -10%, rgba(79,142,247,0.15), transparent)',
-    padding: '0 16px',
-  }
+  const invalidBorder = (invalid: boolean): React.CSSProperties | undefined =>
+    invalid ? { borderColor: '#ef4444' } : undefined
 
   if (success) {
     return (
-      <div className="animate-fade-in" style={pageBg}>
+      <div className="animate-fade-in ds-auth-shell">
         <div style={{ width: '100%', maxWidth: 420, textAlign: 'center' }}>
           <div style={{
             width: 52, height: 52, background: 'var(--success-soft)', border: '1px solid rgba(16,185,129,0.3)',
@@ -137,7 +127,7 @@ function RegisterForm() {
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 24 }}>
             Vérifie ta boîte mail et clique sur le lien de confirmation.
           </p>
-          <a href={loginHref} style={{ fontSize: 13, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
+          <a href={loginHref} style={{ fontSize: 13, color: 'var(--accent-cyan)', textDecoration: 'none', fontWeight: 600 }}>
             Retour à la connexion →
           </a>
         </div>
@@ -146,42 +136,34 @@ function RegisterForm() {
   }
 
   return (
-    <div className="animate-fade-in" style={pageBg}>
+    <div className="animate-fade-in ds-auth-shell">
       <div style={{ width: '100%', maxWidth: 420 }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 28 }}>
-          <div style={{
-            width: 52, height: 52, background: 'var(--gradient-primary)', borderRadius: 14,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'DM Mono, monospace', fontSize: 17, fontWeight: 700, color: '#fff',
-            boxShadow: 'var(--shadow-glow)',
-          }}>OP</div>
+          <div className="ds-auth-logo">OP</div>
         </div>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 8px' }}>Créer un compte</h1>
           <p style={{ fontSize: 14, color: 'var(--text-secondary)', margin: 0 }}>Operis — La gestion AO pour les pros du BTP</p>
         </div>
-        <div style={{
-          background: 'var(--bg-card)', border: '1px solid var(--border-hi)',
-          borderRadius: 16, padding: '32px 28px', boxShadow: 'var(--shadow-md)',
-        }}>
+        <Card hover={false} style={{ padding: '32px 28px' }}>
           <form onSubmit={handleRegister}>
             {error && (
               <div style={{
                 background: 'var(--danger-soft)', border: '1px solid rgba(239,68,68,0.3)',
-                borderRadius: 9, padding: '10px 14px', marginBottom: 20, fontSize: 12, color: '#f87171',
+                borderRadius: 'var(--radius-md)', padding: '10px 14px', marginBottom: 20, fontSize: 12, color: '#f87171',
               }}>{error}</div>
             )}
             <div style={{ marginBottom: 16 }}>
-              <label style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 6 }}>Nom complet</label>
-              <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Uros Nikodex" required style={{ ...inputStyle, borderColor: fullName && !nameValid ? '#ef4444' : undefined }} />
+              <label className="ds-label">Nom complet</label>
+              <input type="text" className="ds-input" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Uros Nikodex" required style={invalidBorder(!!fullName && !nameValid)} />
             </div>
             <div style={{ marginBottom: 16 }}>
-              <label style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 6 }}>Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="ton@email.fr" required style={{ ...inputStyle, borderColor: email && !emailValid ? '#ef4444' : undefined }} />
+              <label className="ds-label">Email</label>
+              <input type="email" className="ds-input" value={email} onChange={e => setEmail(e.target.value)} placeholder="ton@email.fr" required style={invalidBorder(!!email && !emailValid)} />
             </div>
             <div style={{ marginBottom: 24 }}>
-              <label style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 6 }}>Mot de passe</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="8 caractères minimum" required style={inputStyle} />
+              <label className="ds-label">Mot de passe</label>
+              <input type="password" className="ds-input" value={password} onChange={e => setPassword(e.target.value)} placeholder="8 caractères minimum" required />
               {password && (
                 <div style={{ marginTop: 8 }}>
                   <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
@@ -204,29 +186,22 @@ function RegisterForm() {
               />
               <span>
                 J&apos;ai lu et j&apos;accepte les{' '}
-                <a href="/legal#cgu" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>CGU</a>
+                <a href="/legal#cgu" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-cyan)' }}>CGU</a>
                 {', les '}
-                <a href="/legal#cgv" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>CGV</a>
+                <a href="/legal#cgv" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-cyan)' }}>CGV</a>
                 {' et la '}
-                <a href="/legal#confidentialite" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>Politique de confidentialité</a>
+                <a href="/legal#confidentialite" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-cyan)' }}>Politique de confidentialité</a>
               </span>
             </label>
-            <button type="submit" disabled={loading || !termsAccepted} style={{
-              width: '100%', background: loading ? 'rgba(79,142,247,0.4)' : 'var(--gradient-primary)',
-              color: '#fff', border: 'none', borderRadius: 9, padding: '13px',
-              fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
-              boxShadow: loading ? 'none' : 'var(--shadow-glow)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            }}>
-              {loading && <Spinner size={14} />}
+            <Button type="submit" variant="primary" size="lg" loading={loading} disabled={!termsAccepted} className="ds-btn--block">
               {loading ? 'Création...' : 'Créer mon compte'}
-            </button>
+            </Button>
           </form>
           <div style={{ marginTop: 20, textAlign: 'center' }}>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Déjà un compte ? </span>
-            <a href={loginHref} style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Se connecter</a>
+            <a href={loginHref} style={{ fontSize: 12, color: 'var(--accent-cyan)', textDecoration: 'none', fontWeight: 600 }}>Se connecter</a>
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   )
