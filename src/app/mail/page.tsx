@@ -22,9 +22,12 @@ import MailFolderSidebar from '@/components/mail/MailFolderSidebar'
 import MailAddressLines from '@/components/mail/MailAddressLines'
 import MailComposePopup from '@/components/mail/MailComposePopup'
 import MailToolbar from '@/components/mail/MailToolbar'
+import MailSyncOverlay from '@/components/mail/MailSyncOverlay'
 import {
   initialMailSyncUI,
-  SYNC_DONE_DISMISS_MS,
+  SYNC_BLOCKING_TIMEOUT_MS,
+  SYNC_SUCCESS_DISMISS_MS,
+  type MailSyncOverlayMode,
   type MailSyncUIState,
 } from '@/lib/mail-sync-ui'
 import { runResumableMailSync, loadLocalSyncProcessed } from '@/lib/mail-sync-client'
@@ -155,8 +158,15 @@ export default function MailPage() {
   const [listHasMore, setListHasMore] = useState(false)
   const [loadingDetailBody, setLoadingDetailBody] = useState(false)
   const [syncUI, setSyncUI] = useState<MailSyncUIState>(() => initialMailSyncUI())
+  const [syncOverlay, setSyncOverlay] = useState<MailSyncOverlayMode>('hidden')
+  const [syncOverlayError, setSyncOverlayError] = useState<string | null>(null)
+  const [syncInBackground, setSyncInBackground] = useState(false)
   const [favoritesOnly, setFavoritesOnly] = useState(false)
   const syncDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const blockingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const syncOverlaySuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const blockingReleasedRef = useRef(false)
+  const blockingActiveRef = useRef(false)
   const [showMailWelcome, setShowMailWelcome] = useState(false)
   const autoSyncBootRef = useRef(false)
   const [selected, setSelected] = useState<Email | null>(null)
@@ -632,21 +642,52 @@ export default function MailPage() {
     }
   }, [folderSelection])
 
-  const finishSyncSuccess = useCallback((added: number, silent: boolean) => {
-    const now = new Date().toISOString()
-    setSyncUI({ status: 'done', added, lastSyncAt: now })
-    if (syncDoneTimerRef.current) clearTimeout(syncDoneTimerRef.current)
-    syncDoneTimerRef.current = setTimeout(() => {
-      setSyncUI({ status: 'idle', lastSyncAt: now })
-    }, SYNC_DONE_DISMISS_MS)
-    if (!silent && added > 0) showToast(`${added} nouveau(x) mail(s)`)
-    else if (!silent && added === 0) showToast('Boîte à jour')
+  const startBlockingSync = useCallback(() => {
+    blockingActiveRef.current = true
+    blockingReleasedRef.current = false
+    setSyncInBackground(false)
+    setSyncOverlay('progress')
+    setSyncOverlayError(null)
+    if (blockingTimerRef.current) clearTimeout(blockingTimerRef.current)
+    blockingTimerRef.current = setTimeout(() => {
+      blockingReleasedRef.current = true
+      setSyncOverlay('hidden')
+      if (syncInProgressRef.current) setSyncInBackground(true)
+    }, SYNC_BLOCKING_TIMEOUT_MS)
   }, [])
 
-  const runSync = useCallback(async (silent = true, force = false) => {
+  const finishSyncSuccess = useCallback((added: number, silent: boolean) => {
+    const now = new Date().toISOString()
+    setSyncInBackground(false)
+    if (blockingTimerRef.current) clearTimeout(blockingTimerRef.current)
+
+    if (blockingActiveRef.current && !blockingReleasedRef.current) {
+      setSyncOverlay('success')
+      if (syncOverlaySuccessTimerRef.current) clearTimeout(syncOverlaySuccessTimerRef.current)
+      syncOverlaySuccessTimerRef.current = setTimeout(() => {
+        setSyncOverlay('hidden')
+        blockingActiveRef.current = false
+        setSyncUI({ status: 'idle', lastSyncAt: now })
+      }, SYNC_SUCCESS_DISMISS_MS)
+    } else {
+      blockingActiveRef.current = false
+      setSyncOverlay('hidden')
+      setSyncUI({ status: 'idle', lastSyncAt: now })
+    }
+
+    if (!silent && blockingReleasedRef.current) {
+      if (added > 0) showToast(`${added} nouveau(x) mail(s)`)
+      else showToast('Boîte à jour')
+    }
+  }, [])
+
+  const runSync = useCallback(async (silent = true, force = false, blocking = true) => {
     if (syncInProgressRef.current && !force) return
     syncInProgressRef.current = true
     if (syncDoneTimerRef.current) clearTimeout(syncDoneTimerRef.current)
+    if (syncOverlaySuccessTimerRef.current) clearTimeout(syncOverlaySuccessTimerRef.current)
+
+    if (blocking) startBlockingSync()
 
     try {
       const ok = await runResumableMailSync({
@@ -655,8 +696,16 @@ export default function MailPage() {
         onProgress: setSyncUI,
         onBatch: async () => { await pullMailDelta() },
         onError: message => {
-          if (!silent) showToast(message)
+          if (blockingTimerRef.current) clearTimeout(blockingTimerRef.current)
+          setSyncInBackground(false)
+          if (blocking && !blockingReleasedRef.current) {
+            setSyncOverlayError(message)
+            setSyncOverlay('error')
+          } else {
+            setSyncOverlay('hidden')
+          }
           setSyncUI({ status: 'error', message })
+          if (!silent) showToast(message)
         },
         onDone: added => { finishSyncSuccess(added, silent) },
       })
@@ -670,8 +719,9 @@ export default function MailPage() {
       }
     } finally {
       syncInProgressRef.current = false
+      setSyncInBackground(false)
     }
-  }, [loadEmails, loadEmailDetail, refreshFolders, finishSyncSuccess, localFirst])
+  }, [loadEmails, loadEmailDetail, refreshFolders, finishSyncSuccess, localFirst, startBlockingSync])
 
   useEffect(() => {
     if (!ready || !userId || autoSyncBootRef.current) return
@@ -764,8 +814,13 @@ export default function MailPage() {
   }, [filter, priorityFilter, fromFilter, tenderFilter, labelFilter, sinceFilter, untilFilter, ready, userId, loadEmails, getListCacheKey, localFirst])
 
   const syncing = syncUI.status === 'syncing'
+  const mailInteractionBlocked = syncOverlay === 'progress' || syncOverlay === 'success'
 
-  const handleSync = () => void runSync(false, true)
+  const handleSync = () => {
+    setSyncOverlay('hidden')
+    setSyncOverlayError(null)
+    void runSync(false, true, true)
+  }
 
   const prefetchEmail = useCallback((emailId: string) => {
     if (emailId.startsWith('elog-')) return
@@ -785,8 +840,9 @@ export default function MailPage() {
   }, [fetchEmailDetail])
 
   useEffect(() => {
+    if (mailInteractionBlocked) return
     emails.slice(0, 15).forEach(e => prefetchEmail(e.id))
-  }, [emails, prefetchEmail])
+  }, [emails, prefetchEmail, mailInteractionBlocked])
 
   const selectEmail = (email: Email) => {
     const cached = getMailDetailCache(email.id) as EmailWithQuote | null
@@ -1524,7 +1580,7 @@ export default function MailPage() {
           gap: 12,
         }}>
           <p style={{ flex: 1, margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--text-secondary)' }}>
-            Bienvenue dans votre messagerie 👋 Comme c&apos;est votre première visite, la synchronisation de vos mails peut prendre quelques minutes (les plus récents apparaissent en premier). Vous pouvez continuer à utiliser Operis pendant ce temps.
+            Bienvenue dans votre messagerie 👋 Comme c&apos;est votre première visite, nous synchronisons votre boîte mail (les plus récents apparaissent en premier). Patientez quelques instants pendant la synchronisation initiale.
           </p>
           <button
             type="button"
@@ -1553,6 +1609,7 @@ export default function MailPage() {
           onNewMail={() => openCompose()}
           onRefresh={handleSync}
           syncUI={syncUI}
+          syncInBackground={syncInBackground}
           onRetrySync={handleSync}
           search={searchQuery}
           onSearchChange={v => { setSearchQuery(v); if (!localFirst) loadEmails(false) }}
@@ -1561,7 +1618,27 @@ export default function MailPage() {
         />
       )}
 
-      <div className="mail-page-body" style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden', alignItems: 'stretch' }}>
+      {syncOverlay !== 'hidden' && (
+        <MailSyncOverlay
+          mode={syncOverlay}
+          syncUI={syncUI}
+          errorMessage={syncOverlayError ?? undefined}
+          onRetry={syncOverlay === 'error' ? handleSync : undefined}
+        />
+      )}
+
+      <div
+        className="mail-page-body"
+        style={{
+          display: 'flex',
+          flex: 1,
+          minHeight: 0,
+          overflow: 'hidden',
+          alignItems: 'stretch',
+          pointerEvents: mailInteractionBlocked ? 'none' : 'auto',
+          userSelect: mailInteractionBlocked ? 'none' : 'auto',
+        }}
+      >
       {!isMobile && (
         <MailFolderSidebar
           accounts={mailAccounts}
@@ -1709,7 +1786,28 @@ export default function MailPage() {
                     }}>{unreadTotal}</span>
                   )}
                 </div>
-                {!syncing && syncUI.status === 'idle' && syncUI.lastSyncAt && (
+                {syncInBackground && syncing && isMobile && (
+                  <div style={{
+                    fontSize: 9,
+                    color: 'var(--text-muted)',
+                    fontFamily: 'DM Mono, monospace',
+                    marginTop: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                  }}>
+                    <span style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: '50%',
+                      background: 'var(--accent)',
+                      animation: 'pulse 1.5s ease infinite',
+                      flexShrink: 0,
+                    }} />
+                    Synchro en arrière-plan
+                  </div>
+                )}
+                {!syncing && syncUI.status === 'idle' && syncUI.lastSyncAt && !syncInBackground && (
                   <div style={{
                     fontSize: 9, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace',
                     marginTop: 4, lineHeight: 1.3, whiteSpace: 'nowrap',
@@ -1748,7 +1846,7 @@ export default function MailPage() {
                       type="button"
                       data-tour="mail-sync"
                       onClick={handleSync}
-                      disabled={syncing}
+                      disabled={syncing || mailInteractionBlocked}
                       title="Synchroniser la boîte mail"
                       style={{
                         background: syncing ? 'var(--bg-hover)' : 'transparent',
@@ -1929,7 +2027,7 @@ export default function MailPage() {
                 <button
                   type="button"
                   onClick={handleSync}
-                  disabled={syncing}
+                  disabled={syncing || mailInteractionBlocked}
                   style={{
                     background: 'var(--accent)',
                     color: '#fff',
@@ -1958,7 +2056,7 @@ export default function MailPage() {
                 isMobile={isMobile}
                 selectedId={selected?.id ?? null}
                 onSelect={selectEmail}
-                onHover={prefetchEmail}
+                onHover={mailInteractionBlocked ? () => {} : prefetchEmail}
                 onContextMenu={setContextMenuEmailId}
                 onNearBottom={() => {
                   if (localFirst) return

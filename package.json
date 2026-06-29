@@ -67,7 +67,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.1",
-    "@tanstack/react-virtual": "^3.14.3",
+    "@tanstack/react-virtual": "^3.14.4",
     "autoprefixer": "^10.5.0",
     "dexie": "^4.4.4",
     "dexie-react-hooks": "^4.4.0",

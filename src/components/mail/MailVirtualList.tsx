@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { Email } from '@/types/database'
 
@@ -54,9 +54,21 @@ export default function MailVirtualList({
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
+    getItemKey: index => rows[index]?.id ?? index,
     estimateSize: index => (rows[index]?.kind === 'header' ? HEADER_HEIGHT : rowHeight),
     overscan: 8,
   })
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !onNearBottom) return
+    const onScroll = () => {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160
+      if (nearBottom) onNearBottom()
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [scrollRef, onNearBottom])
 
   const virtualItems = virtualizer.getVirtualItems()
 
@@ -67,19 +79,13 @@ export default function MailVirtualList({
         width: '100%',
         position: 'relative',
       }}
-      onScrollCapture={() => {
-        const el = scrollRef.current
-        if (!el || !onNearBottom) return
-        const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160
-        if (nearBottom) onNearBottom()
-      }}
     >
       {virtualItems.map(vRow => {
         const row = rows[vRow.index]
         if (!row) return null
         return (
           <div
-            key={row.id}
+            key={vRow.key}
             data-index={vRow.index}
             ref={virtualizer.measureElement}
             style={{
@@ -95,7 +101,7 @@ export default function MailVirtualList({
                 padding: '8px 14px 4px', fontSize: 10, fontWeight: 600,
                 color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace',
                 textTransform: 'uppercase', letterSpacing: '0.06em',
-                background: 'var(--bg-secondary)', height: HEADER_HEIGHT,
+                background: 'var(--bg-secondary)', minHeight: HEADER_HEIGHT,
                 boxSizing: 'border-box',
               }}>
                 {row.label}

@@ -8,7 +8,11 @@ export const MAIL_LAST_SYNC_KEY = 'operis:lastSyncAt'
 export const MAIL_SYNC_CURSOR_KEY = 'operis:mailSyncCursor'
 export const MAIL_SYNC_PROCESSED_KEY = 'operis:mailSyncProcessed'
 export const SYNC_DONE_DISMISS_MS = 4000
+export const SYNC_BLOCKING_TIMEOUT_MS = 30_000
+export const SYNC_SUCCESS_DISMISS_MS = 1800
 export const MAIL_SYNC_BATCH_TIMEOUT_MS = 30_000
+
+export type MailSyncOverlayMode = 'hidden' | 'progress' | 'success' | 'error'
 
 export function readLastSyncAt(): string | null {
   if (typeof window === 'undefined') return null

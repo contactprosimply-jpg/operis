@@ -3,10 +3,52 @@
 import type { MailSyncUIState } from '@/lib/mail-sync-ui'
 import { SyncProgressRing } from '@/components/mail/SyncProgressRing'
 
+/** Indicateur passif : affiche l'état uniquement, aucune action au survol ni au clic. */
+function PassiveSyncIndicator({
+  syncing,
+  syncDone,
+  syncProgress,
+}: {
+  syncing: boolean
+  syncDone: boolean
+  syncProgress: { percent: number | null; label: string }
+}) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label={syncProgress.label}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '4px 10px',
+        borderRadius: 8,
+        border: `1px solid ${syncDone ? 'rgba(22,163,74,0.35)' : 'var(--border)'}`,
+        background: syncDone ? 'rgba(22,163,74,0.08)' : 'transparent',
+        pointerEvents: 'none',
+        userSelect: 'none',
+        fontFamily: 'DM Sans, system-ui',
+      }}
+    >
+      <SyncProgressRing percent={syncProgress.percent} size={32} done={syncDone} />
+      <span style={{
+        fontSize: 11,
+        color: syncDone ? '#10b981' : 'var(--text-muted)',
+        fontFamily: 'DM Mono, monospace',
+        whiteSpace: 'nowrap',
+      }}>
+        {syncing ? 'Synchronisation…' : 'Terminé'}
+      </span>
+    </div>
+  )
+}
+
 export default function MailToolbar({
   onNewMail,
   onRefresh,
   syncUI,
+  syncInBackground,
   onRetrySync,
   search,
   onSearchChange,
@@ -16,6 +58,7 @@ export default function MailToolbar({
   onNewMail: () => void
   onRefresh: () => void
   syncUI: MailSyncUIState
+  syncInBackground?: boolean
   onRetrySync: () => void
   search: string
   onSearchChange: (v: string) => void
@@ -75,24 +118,7 @@ export default function MailToolbar({
       </button>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {(syncing || syncDone) && syncProgress ? (
-          <button
-            type="button"
-            disabled={syncing}
-            title={syncProgress.label}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '4px 10px',
-              borderRadius: 8,
-              border: `1px solid ${syncDone ? 'rgba(22,163,74,0.35)' : 'var(--border)'}`,
-              background: syncDone ? 'rgba(22,163,74,0.08)' : 'transparent',
-              cursor: syncing ? 'wait' : 'default',
-              fontFamily: 'DM Sans, system-ui',
-            }}
-          >
-            <SyncProgressRing percent={syncProgress.percent} size={32} done={syncDone} />
-          </button>
+          <PassiveSyncIndicator syncing={syncing} syncDone={syncDone} syncProgress={syncProgress} />
         ) : (
           <button
             type="button"
@@ -111,7 +137,28 @@ export default function MailToolbar({
             ↻ Synchroniser
           </button>
         )}
-        {syncUI.status === 'error' && (
+        {syncInBackground && syncing && (
+          <span style={{
+            fontSize: 10,
+            color: 'var(--text-muted)',
+            fontFamily: 'DM Mono, monospace',
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+          }}>
+            <span style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: 'var(--accent)',
+              animation: 'pulse 1.5s ease infinite',
+              flexShrink: 0,
+            }} />
+            Synchro en cours en arrière-plan
+          </span>
+        )}
+        {syncUI.status === 'error' && !syncing && (
           <span style={{ fontSize: 11, color: '#ef4444', fontFamily: 'DM Sans, system-ui', display: 'flex', alignItems: 'center', gap: 6 }}>
             Synchro interrompue
             <button
@@ -133,7 +180,7 @@ export default function MailToolbar({
           </span>
         )}
       </div>
-      {(syncUI.status === 'idle' || syncUI.status === 'done') && (
+      {(syncUI.status === 'idle' || syncUI.status === 'done') && !syncInBackground && (
         <span style={{
           fontSize: 11,
           color: syncUI.status === 'done' ? '#10b981' : 'var(--text-muted)',
