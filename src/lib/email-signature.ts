@@ -8,7 +8,7 @@ export type SignatureFields = {
   html?: string
 }
 
-export function buildFieldsSignatureHtml(sig: SignatureFields, accentColor = '#3b7fe8'): string {
+export function buildFieldsSignatureHtml(sig: SignatureFields, accentColor = '#4f8ef7'): string {
   if (!sig.name) return ''
   return `<table cellpadding="0" cellspacing="0" style="font-family: DM Sans, Arial, sans-serif; font-size: 13px; color: #374151; margin-top: 8px;">
   <tr><td style="font-weight: 600; font-size: 14px; color: #111827; padding-bottom: 2px;">${sig.name}</td></tr>
@@ -47,7 +47,7 @@ export function getSignatureData(): { text: string; html: string } {
 
     const mode = localStorage.getItem('operis_signature_mode') ?? 'fields'
     const sig = JSON.parse(localStorage.getItem('operis_signature') ?? '{}') as SignatureFields
-    const accentColor = localStorage.getItem('operis_accent') ?? '#3b7fe8'
+    const accentColor = localStorage.getItem('operis_accent') ?? '#4f8ef7'
     const htmlFromStorage = (sig.html ?? '').trim()
 
     // Mode HTML ou contenu HTML présent (fichier importé, collage, etc.)
@@ -78,7 +78,7 @@ export function stripSignatureFromBody(body: string, sigText: string): string {
 }
 
 export function saveSignatureToStorage(sig: SignatureFields, mode: 'fields' | 'html', accentColor?: string) {
-  const accent = accentColor ?? localStorage.getItem('operis_accent') ?? '#3b7fe8'
+  const accent = accentColor ?? localStorage.getItem('operis_accent') ?? '#4f8ef7'
   const payload: SignatureFields = { ...sig }
   if (mode === 'fields' && sig.name) {
     payload.html = buildFieldsSignatureHtml(sig, accent)

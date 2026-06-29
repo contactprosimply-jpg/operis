@@ -20,7 +20,7 @@ type MailAccountRow = {
   last_sync?: string | null
 }
 
-const ACCENT_COLORS = ['#3b7fe8', '#1ecbe1', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316']
+const ACCENT_COLORS = ['#3b7ef6', '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316']
 
 const TABS = [
   { id: 'general',    label: 'General',    icon: '⚙' },

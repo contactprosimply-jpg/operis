@@ -53,7 +53,7 @@ export const THEMES = [
 ] as const
 
 export const DEFAULT_THEME_ID = 'light'
-export const DEFAULT_ACCENT = '#3b7fe8'
+export const DEFAULT_ACCENT = '#2563eb'
 
 export function applyTheme(themeId: string, accent = DEFAULT_ACCENT) {
   const t = THEMES.find(th => th.id === themeId) ?? THEMES[0]

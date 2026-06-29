@@ -461,7 +461,7 @@ export default function Sidebar() {
                 <Link href={item.href} prefetch={true} data-tour={`nav-${item.href.slice(1)}`} style={{
                   width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   borderRadius: 11, textDecoration: 'none',
-                  color: active ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                  color: active ? '#6ba3f9' : 'var(--text-muted)',
                   background: active ? 'var(--accent-soft)' : 'transparent',
                   border: active ? '1px solid rgba(79,142,247,0.25)' : '1px solid transparent',
                   boxShadow: active ? 'var(--shadow-glow)' : 'none',
@@ -496,7 +496,7 @@ export default function Sidebar() {
               width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
               borderRadius: 11, background: showNotifPanel ? 'var(--accent-soft)' : 'transparent',
               border: showNotifPanel ? '1px solid rgba(79,142,247,0.25)' : '1px solid transparent',
-              cursor: 'pointer', color: showNotifPanel ? 'var(--accent-cyan)' : 'var(--text-muted)', position: 'relative',
+              cursor: 'pointer', color: showNotifPanel ? '#6ba3f9' : 'var(--text-muted)', position: 'relative',
             }}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20">
@@ -568,7 +568,7 @@ export default function Sidebar() {
           const isMail = item.href === '/mail'
           return (
             <Link key={item.href} href={item.href} prefetch={true} data-tour={`nav-${item.href.slice(1)}`} className="mobile-nav-item" style={{
-              color: active ? 'var(--accent-cyan)' : 'var(--text-muted)',
+              color: active ? '#6ba3f9' : 'var(--text-muted)',
               background: active ? 'var(--accent-soft)' : 'transparent',
             }}>
               {item.icon(active)}
@@ -587,7 +587,7 @@ export default function Sidebar() {
           type="button"
           className="mobile-nav-item"
           onClick={() => { setShowNotifPanel(v => !v); setShowAccountPanel(false) }}
-          style={{ background: showNotifPanel ? 'var(--accent-soft)' : 'transparent', border: 'none', cursor: 'pointer', color: showNotifPanel ? 'var(--accent-cyan)' : 'var(--text-muted)' }}
+          style={{ background: showNotifPanel ? 'var(--accent-soft)' : 'transparent', border: 'none', cursor: 'pointer', color: showNotifPanel ? '#6ba3f9' : 'var(--text-muted)' }}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20">
             <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />

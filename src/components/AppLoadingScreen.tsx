@@ -16,7 +16,7 @@ export function AppLoadingScreen({ message }: { message?: string }) {
       <div style={{
         width: 52,
         height: 52,
-        background: 'linear-gradient(135deg, #3b7fe8 0%, #1ecbe1 100%)',
+        background: 'linear-gradient(135deg, #4f8ef7 0%, #818cf8 100%)',
         borderRadius: 14,
         display: 'flex',
         alignItems: 'center',
@@ -26,7 +26,7 @@ export function AppLoadingScreen({ message }: { message?: string }) {
         fontWeight: 700,
         color: '#fff',
         marginBottom: 28,
-        boxShadow: 'var(--shadow-glow)',
+        boxShadow: '0 0 24px rgba(79,142,247,0.25)',
       }}>
         OP
       </div>
@@ -34,7 +34,7 @@ export function AppLoadingScreen({ message }: { message?: string }) {
         width: 28,
         height: 28,
         borderRadius: '50%',
-        background: 'conic-gradient(from 0deg, #3b7fe8, #1ecbe1, transparent)',
+        background: 'conic-gradient(from 0deg, #4f8ef7, #818cf8, transparent)',
         WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px))',
         mask: 'radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px))',
         animation: 'spin 0.75s linear infinite',

@@ -38,12 +38,12 @@ function ResponseBarChart({ pct }: { pct: number }) {
     <svg viewBox="0 0 200 48" width="100%" height="48" style={{ marginTop: 8 }}>
       {bars.map((h, i) => (
         <rect key={i} x={i * 25 + 4} y={48 - (h / 100) * 40} width="16" height={(h / 100) * 40} rx="3"
-          fill={i === 5 ? 'url(#barGrad)' : 'rgba(59,127,232,0.2)'} />
+          fill={i === 5 ? 'url(#barGrad)' : 'rgba(59,126,246,0.2)'} />
       ))}
       <defs>
         <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#3b7fe8" />
-          <stop offset="100%" stopColor="#1ecbe1" />
+          <stop offset="0%" stopColor="#3b7ef6" />
+          <stop offset="100%" stopColor="#6366f1" />
         </linearGradient>
       </defs>
     </svg>

@@ -26,10 +26,10 @@ function ContactRow({
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px',
-      background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)',
+      background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10,
     }}>
       <div style={{
-        width: 40, height: 40, borderRadius: 'var(--radius-md)', flexShrink: 0,
+        width: 40, height: 40, borderRadius: 10, flexShrink: 0,
         background: color, color: '#fff', fontWeight: 700, fontSize: 13,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
@@ -56,9 +56,9 @@ function ContactRow({
                 type="button"
                 onClick={() => router.push(`/tenders/${tid}`)}
                 style={{
-                  fontSize: 10, padding: '2px 8px', borderRadius: 'var(--radius-sm)',
-                  border: '1px solid rgba(59,127,232,0.28)', background: 'rgba(59,127,232,0.1)',
-                  color: 'var(--accent-cyan)', cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
+                  fontSize: 10, padding: '2px 8px', borderRadius: 6,
+                  border: '1px solid rgba(2,18,70,0.25)', background: 'rgba(2,18,70,0.06)',
+                  color: '#021246', cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
                 }}
               >
                 AO
@@ -162,13 +162,16 @@ export default function ContactsPage() {
           placeholder="Rechercher…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="ds-input"
-          style={{ minWidth: 220 }}
+          style={{
+            padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)',
+            background: 'var(--bg-card)', fontSize: 13, minWidth: 220,
+            fontFamily: 'DM Sans, system-ui', color: 'var(--text-primary)',
+          }}
         />
       </div>
 
       <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-cyan)', marginBottom: 10 }}>⭐ Favoris ({favorites.length})</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#021246', marginBottom: 10 }}>⭐ Favoris ({favorites.length})</div>
         {favorites.length === 0 ? (
           <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>Aucun favori — cliquez ☆ sur un mail reçu</div>
         ) : (
