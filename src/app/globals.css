@@ -2,34 +2,89 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ══════════════════════════════════════════════════════════════
+   OPERIS DESIGN TOKENS — Étape 1 (fondations)
+   Navy #021246 · Accent #3B7FE8 → #1ECBE1 · Dark fintech
+   ══════════════════════════════════════════════════════════════ */
 :root {
-  --bg-primary: #080d18;
-  --mail-sidebar-bg: #12151c;
-  --bg-secondary: #0f1624;
-  --bg-card: #141c2e;
-  --bg-hover: #1a2340;
-  --accent: #4f8ef7;
-  --accent-soft: rgba(79,142,247,0.1);
-  --accent-2: #818cf8;
+  /* ── Palette brute ── */
+  --color-navy-950: #010a1f;
+  --color-navy-900: #021246;
+  --color-navy-800: #03155a;
+  --color-navy-700: #0a2478;
+  --color-navy-600: #12308f;
+  --color-accent-blue: #3b7fe8;
+  --color-accent-cyan: #1ecbe1;
+
+  /* ── Sémantique surfaces ── */
+  --bg: var(--color-navy-900);
+  --bg-deep: var(--color-navy-950);
+  --surface: #0a1d5c;
+  --surface-raised: #0f2668;
+  --surface-hover: #142f75;
+
+  /* ── Rétrocompat (écrans existants) ── */
+  --bg-primary: var(--bg);
+  --mail-sidebar-bg: var(--surface);
+  --bg-secondary: var(--surface);
+  --bg-card: var(--surface-raised);
+  --bg-hover: var(--surface-hover);
+  --bg-tertiary: var(--surface);
+
+  /* ── Accent & dégradés ── */
+  --accent: var(--color-accent-blue);
+  --accent-cyan: var(--color-accent-cyan);
+  --accent-soft: rgba(59, 127, 232, 0.12);
+  --accent-2: var(--color-accent-cyan);
+  --accent-gradient: linear-gradient(135deg, #3b7fe8 0%, #1ecbe1 100%);
+  --gradient-primary: var(--accent-gradient);
+  --gradient-logo: var(--accent-gradient);
+
+  /* ── Statuts ── */
   --success: #10b981;
-  --success-soft: rgba(16,185,129,0.1);
+  --success-soft: rgba(16, 185, 129, 0.12);
   --warn: #f59e0b;
-  --warn-soft: rgba(245,158,11,0.1);
+  --warn-soft: rgba(245, 158, 11, 0.12);
   --danger: #ef4444;
-  --danger-soft: rgba(239,68,68,0.1);
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #475569;
-  --border: rgba(148,163,184,0.07);
-  --border-hi: rgba(148,163,184,0.13);
-  --shadow-sm: 0 2px 8px rgba(0,0,0,0.4);
-  --shadow-md: 0 4px 20px rgba(0,0,0,0.5);
-  --shadow-glow: 0 0 24px rgba(79,142,247,0.15);
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --gradient-primary: linear-gradient(135deg, #4f8ef7 0%, #818cf8 100%);
-  --gradient-logo: linear-gradient(135deg, #4f8ef7 0%, #818cf8 100%);
+  --danger-soft: rgba(239, 68, 68, 0.12);
+
+  /* ── Texte ── */
+  --text-primary: #f0f6ff;
+  --text-secondary: #94b4e0;
+  --text-muted: #5a7aa8;
+
+  /* ── Bordures ── */
+  --border: rgba(59, 127, 232, 0.12);
+  --border-hi: rgba(30, 203, 225, 0.22);
+
+  /* ── Rayons ── */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* ── Ombres & glow ── */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.38), 0 0 0 1px var(--border);
+  --shadow-glow: 0 0 24px rgba(59, 127, 232, 0.2);
+  --glow: 0 0 20px rgba(59, 127, 232, 0.42), 0 0 40px rgba(30, 203, 225, 0.14);
+  --glow-strong: 0 0 28px rgba(59, 127, 232, 0.55), 0 0 56px rgba(30, 203, 225, 0.22);
+
+  /* ── Espacements ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ── Typographie ── */
+  --font-sans: 'DM Sans', system-ui, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, monospace;
 }
 
 @keyframes fadeUp { from { opacity:0; transform:translateY(10px) } to { opacity:1; transform:translateY(0) } }
@@ -110,7 +165,7 @@ body.modal-open {
   min-height: 100vh;
   min-height: 100dvh;
   z-index: 10000;
-  background: rgba(8, 13, 24, 0.82);
+  background: rgba(1, 10, 31, 0.82);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   display: flex;
@@ -404,7 +459,7 @@ body {
   position: fixed;
   inset: 0;
   z-index: 190;
-  background: rgba(8, 13, 24, 0.55);
+  background: rgba(1, 10, 31, 0.55);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
