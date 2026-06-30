@@ -44,28 +44,31 @@ const DEMO_TENDERS = [
 
 const PLANS = [
   {
-    name: 'Essentiel',
-    price: '49',
-    desc: 'Pour les petites équipes qui démarrent',
-    features: ['Jusqu\'à 10 AO actifs', '1 boîte mail connectée', '50 fournisseurs', 'Support email'],
-    cta: 'Commencer',
+    name: 'Pro',
+    price: '99,99',
+    desc: 'Pour les petites équipes BTP',
+    features: [
+      '2 utilisateurs max',
+      '20 Go de stockage documents',
+      'AO & messagerie synchronisée',
+      'Consultations fournisseurs',
+    ],
+    cta: "S'abonner",
     highlight: false,
   },
   {
-    name: 'Pro',
-    price: '99',
-    desc: 'Le choix des entreprises BTP actives',
-    features: ['AO illimités', '3 boîtes mail', 'Fournisseurs illimités', 'Analyse IA des devis', 'Support prioritaire'],
+    name: 'Business',
+    price: '129,99',
+    desc: 'Pour les équipes qui veulent aller plus vite',
+    features: [
+      '5 utilisateurs max',
+      '50 Go de stockage documents',
+      'Analyse IA des devis',
+      'Rapports avancés',
+      'Support prioritaire',
+    ],
     cta: "S'abonner",
     highlight: true,
-  },
-  {
-    name: 'Entreprise',
-    price: 'Sur mesure',
-    desc: 'Pour les groupes et grands comptes',
-    features: ['Multi-sites & équipes', 'SSO & admin avancé', 'API & intégrations', 'Account manager dédié'],
-    cta: 'Nous contacter',
-    highlight: false,
   },
 ]
 
