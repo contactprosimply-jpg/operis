@@ -14,7 +14,7 @@ const PLANS: Array<{
   {
     id: 'pro',
     name: 'Pro',
-    price: '99,99',
+    price: '79,99',
     desc: 'Pour les petites équipes BTP',
     features: [
       '2 utilisateurs max',
