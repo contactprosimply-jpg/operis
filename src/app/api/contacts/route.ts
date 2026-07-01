@@ -34,6 +34,20 @@ export async function PATCH(req: NextRequest) {
   if (!userId) return unauthorized()
 
   const body = await req.json()
+
+  if (body.all_favorites === true) {
+    const db = createAdminClient()
+    const { error, count } = await db
+      .from('contacts')
+      .update({ is_favorite: true })
+      .eq('user_id', userId)
+      .eq('is_favorite', false)
+      .select('id', { count: 'exact', head: true })
+
+    if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
+    return Response.json({ success: true, updated: count ?? 0 })
+  }
+
   const email = clampString(body.email, 320)?.toLowerCase().trim()
   if (!email) {
     return Response.json({ success: false, error: 'email requis' }, { status: 400 })

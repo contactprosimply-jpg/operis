@@ -88,6 +88,7 @@ export default function ContactsPage() {
   const [contacts, setContacts] = useState<OperisContact[]>([])
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState<string | null>(null)
+  const [favoritingAll, setFavoritingAll] = useState(false)
   const [search, setSearch] = useState('')
   const { show, ToastComponent } = useToast()
 
@@ -127,6 +128,32 @@ export default function ContactsPage() {
     setToggling(null)
   }
 
+  const favoriteAll = async () => {
+    const nonFavorites = contacts.filter(c => !c.is_favorite)
+    if (!nonFavorites.length) return
+
+    setFavoritingAll(true)
+    const prev = contacts
+    setContacts(list => list.map(c => ({ ...c, is_favorite: true })))
+    try {
+      const res = await authFetch('/api/contacts', {
+        method: 'PATCH',
+        body: JSON.stringify({ all_favorites: true }),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        setContacts(prev)
+        show(`Erreur : ${data.error}`)
+      } else {
+        show(`${data.updated ?? nonFavorites.length} contact${(data.updated ?? nonFavorites.length) > 1 ? 's' : ''} ajouté${(data.updated ?? nonFavorites.length) > 1 ? 's' : ''} aux favoris`)
+      }
+    } catch {
+      setContacts(prev)
+      show('Erreur favoris')
+    }
+    setFavoritingAll(false)
+  }
+
   const q = search.trim().toLowerCase()
   const filtered = contacts.filter(c =>
     !q
@@ -136,6 +163,7 @@ export default function ContactsPage() {
   )
   const favorites = filtered.filter(c => c.is_favorite)
   const others = filtered.filter(c => !c.is_favorite)
+  const hasNonFavorites = contacts.some(c => !c.is_favorite)
 
   if (loading) {
     return (
@@ -157,23 +185,42 @@ export default function ContactsPage() {
             ({contacts.length})
           </span>
         </div>
-        <input
-          type="search"
-          placeholder="Rechercher…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{
-            padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)',
-            background: 'var(--bg-card)', fontSize: 13, minWidth: 220,
-            fontFamily: 'DM Sans, system-ui', color: 'var(--text-primary)',
-          }}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {hasNonFavorites && (
+            <button
+              type="button"
+              disabled={favoritingAll}
+              onClick={() => void favoriteAll()}
+              style={{
+                padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(251,191,36,0.35)',
+                background: 'rgba(251,191,36,0.12)', color: '#b45309',
+                fontSize: 12, fontWeight: 600, cursor: favoritingAll ? 'wait' : 'pointer',
+                fontFamily: 'DM Sans, system-ui', opacity: favoritingAll ? 0.7 : 1,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              {favoritingAll ? <Spinner size={14} /> : '★'}
+              Tout ajouter en favoris
+            </button>
+          )}
+          <input
+            type="search"
+            placeholder="Rechercher…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{
+              padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)',
+              background: 'var(--bg-card)', fontSize: 13, minWidth: 220,
+              fontFamily: 'DM Sans, system-ui', color: 'var(--text-primary)',
+            }}
+          />
+        </div>
       </div>
 
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: '#021246', marginBottom: 10 }}>⭐ Favoris ({favorites.length})</div>
         {favorites.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>Aucun favori — cliquez ☆ sur un mail reçu</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>Aucun favori — cliquez ☆ sur un contact ou utilisez « Tout ajouter en favoris »</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {favorites.map(c => (
