@@ -35,6 +35,16 @@ export const PRESET_EMAIL_LABELS: EmailLabel[] = [
   { id: 'corbeille', name: 'Corbeille', color: '#94a3b8' },
 ]
 
+/** Touches 1–9 → étiquette prédéfinie (comme Thunderbird). */
+export function emailLabelForShortcutKey(key: string): EmailLabel | null {
+  if (key.length !== 1 || key < '1' || key > '9') return null
+  return PRESET_EMAIL_LABELS[key.charCodeAt(0) - 49] ?? null
+}
+
+export function emailLabelShortcutDigit(index: number): string {
+  return String(index + 1)
+}
+
 export function tenderAutoLabel(tenderId: string, title: string, status: string): EmailLabel {
   return {
     id: `ao-${tenderId}`,

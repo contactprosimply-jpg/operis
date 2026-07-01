@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
 import { Email, EmailAttachment, EmailLabel, EmailPriority } from '@/types/database'
-import { PRESET_EMAIL_LABELS } from '@/lib/mail-api'
+import { PRESET_EMAIL_LABELS, emailLabelForShortcutKey, emailLabelShortcutDigit } from '@/lib/mail-api'
 import {
   applySmartLabelsToLabels,
   labelBadgeStyle,
@@ -1545,6 +1545,38 @@ export default function MailPage() {
       showToast('Erreur lors de la mise à jour des étiquettes')
     })
   }
+  const handleToggleLabelRef = useRef(handleToggleLabel)
+  handleToggleLabelRef.current = handleToggleLabel
+
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!target || !(target instanceof HTMLElement)) return false
+      const tag = target.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+      return target.isContentEditable
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (isTypingTarget(e.target)) return
+      if (composing || linkModalOpen || closeConfirmOpen) return
+
+      const label = emailLabelForShortcutKey(e.key)
+      if (!label) return
+
+      const emailId = selectedIdRef.current
+      if (!emailId) return
+
+      const email = emailsRef.current.find(item => item.id === emailId)
+      if (!email) return
+
+      e.preventDefault()
+      handleToggleLabelRef.current(email, label)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [composing, linkModalOpen, closeConfirmOpen])
 
   const handleMarkAsAo = async (email: Email) => {
     try {
@@ -2705,8 +2737,10 @@ export default function MailPage() {
               {PRIORITY_STYLES[p].label}
             </button>
           ))}
-          <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '6px 8px 4px', fontFamily: 'DM Mono, monospace', borderTop: '1px solid var(--border)', marginTop: 4 }}>ÉTIQUETTES</div>
-          {PRESET_EMAIL_LABELS.map(label => {
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '6px 8px 4px', fontFamily: 'DM Mono, monospace', borderTop: '1px solid var(--border)', marginTop: 4 }}>
+            ÉTIQUETTES <span style={{ opacity: 0.75 }}>(1–9)</span>
+          </div>
+          {PRESET_EMAIL_LABELS.map((label, index) => {
             const active = (contextMenuEmail.labels ?? []).some(l => l.id === label.id)
             return (
               <button
@@ -2714,14 +2748,18 @@ export default function MailPage() {
                 type="button"
                 onClick={() => handleToggleLabel(contextMenuEmail, label)}
                 style={{
-                  display: 'block', width: '100%', textAlign: 'left',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                  width: '100%', textAlign: 'left',
                   padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
                   background: active ? `${label.color}18` : 'transparent',
                   color: active ? label.color : 'var(--text-secondary)',
                   fontSize: 11, fontFamily: 'DM Sans, system-ui',
                 }}
               >
-                {active ? '✓ ' : ''}{label.name}
+                <span>{active ? '✓ ' : ''}{label.name}</span>
+                <span style={{ fontSize: 9, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+                  {emailLabelShortcutDigit(index)}
+                </span>
               </button>
             )
           })}
