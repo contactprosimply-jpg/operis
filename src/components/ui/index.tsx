@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, ReactNode } from 'react'
+import { useState, useEffect, useCallback, ReactNode, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { TenderStatus, ConsultationStatus } from '@/types/database'
 
@@ -266,6 +266,7 @@ export function Modal({
   }, [open])
 
   const [mounted, setMounted] = useState(false)
+  const backdropMouseDown = useRef(false)
   useEffect(() => setMounted(true), [])
 
   if (!open || !mounted) return null
@@ -273,7 +274,11 @@ export function Modal({
   return createPortal(
     <div
       className="modal-overlay"
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      onMouseDown={e => { backdropMouseDown.current = e.target === e.currentTarget }}
+      onClick={e => {
+        if (backdropMouseDown.current && e.target === e.currentTarget) onClose()
+        backdropMouseDown.current = false
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"

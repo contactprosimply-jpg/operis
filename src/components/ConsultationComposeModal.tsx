@@ -139,11 +139,16 @@ export default function ConsultationComposeModal({
 
   const selectedRecipients = recipients.filter(r => selected.includes(r.supplier_id))
   const toPreview = selectedRecipients.map(r => r.email).join(', ')
+  const backdropMouseDown = useRef(false)
 
   return createPortal(
     <div
       className="modal-overlay"
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      onMouseDown={e => { backdropMouseDown.current = e.target === e.currentTarget }}
+      onClick={e => {
+        if (backdropMouseDown.current && e.target === e.currentTarget) onClose()
+        backdropMouseDown.current = false
+      }}
       role="dialog"
       aria-modal="true"
     >
