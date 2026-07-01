@@ -220,7 +220,8 @@ export default function MailPage() {
   const [untilFilter, setUntilFilter] = useState('')
   const [tendersForFilter, setTendersForFilter] = useState<Array<{ id: string; title: string; client: string }>>([])
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
-  const [contextMenuEmailId, setContextMenuEmailId] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ emailId: string; top: number; left: number } | null>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [isListening, setIsListening] = useState(false)
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
@@ -285,6 +286,15 @@ export default function MailPage() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3500) }
 
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
+
+  const openEmailContextMenu = useCallback((emailId: string, x: number, y: number) => {
+    const menuWidth = 176
+    const left = Math.min(Math.max(8, x), window.innerWidth - menuWidth - 8)
+    const top = Math.min(Math.max(8, y), window.innerHeight - 16)
+    setContextMenu({ emailId, top, left })
+  }, [])
+
   const toggleSpeech = () => {
     const w = window as Window & {
       SpeechRecognition?: new () => SpeechRecognitionLike
@@ -325,11 +335,19 @@ export default function MailPage() {
   }, [])
 
   useEffect(() => {
-    if (!contextMenuEmailId) return
-    const close = () => setContextMenuEmailId(null)
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
-  }, [contextMenuEmailId])
+    if (!contextMenu) return
+    const onPointerDown = (e: MouseEvent) => {
+      if (contextMenuRef.current?.contains(e.target as Node)) return
+      setContextMenu(null)
+    }
+    const timer = window.setTimeout(() => {
+      document.addEventListener('mousedown', onPointerDown)
+    }, 0)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('mousedown', onPointerDown)
+    }
+  }, [contextMenu])
 
   const refreshFolders = useCallback(() => {
     authFetch('/api/mail/folders')
@@ -1350,7 +1368,7 @@ export default function MailPage() {
     const next = !email.is_starred
     applyEmailPatch(email.id, { is_starred: next })
     void setLocalFlag(email.id, { is_starred: next })
-    setContextMenuEmailId(null)
+    closeContextMenu()
     void mailAction('star', { emailId: email.id, starred: next }).catch(() => {
       applyEmailPatch(email.id, { is_starred: !next })
       void setLocalFlag(email.id, { is_starred: !next })
@@ -1509,7 +1527,7 @@ export default function MailPage() {
   const handleSetPriority = (email: Email, priority: EmailPriority) => {
     const previous = email.priority
     applyEmailPatch(email.id, { priority })
-    setContextMenuEmailId(null)
+    closeContextMenu()
     void patchEmail(email.id, { priority }).catch(() => {
       applyEmailPatch(email.id, { priority: previous })
       showToast('Erreur priorité')
@@ -1521,6 +1539,7 @@ export default function MailPage() {
     const has = previous.some(l => l.id === label.id)
     const next = has ? previous.filter(l => l.id !== label.id) : [...previous, manualLabel(label)]
     applyEmailPatch(email.id, { labels: next })
+    closeContextMenu()
     void patchEmail(email.id, { labels: next }).catch(() => {
       applyEmailPatch(email.id, { labels: previous })
       showToast('Erreur lors de la mise à jour des étiquettes')
@@ -1547,6 +1566,10 @@ export default function MailPage() {
     ? emails.filter(e => !e.is_read).length
     : inboxUnread
   const grouped = groupEmailsByDate(emails)
+  const contextMenuEmail = useMemo(() => {
+    if (!contextMenu) return null
+    return emails.find(e => e.id === contextMenu.emailId) ?? null
+  }, [contextMenu, emails])
   const folderBadges: Partial<Record<string, number>> = {
     inbox: unreadTotal,
     drafts: drafts.length,
@@ -2116,7 +2139,7 @@ export default function MailPage() {
                 selectedId={selected?.id ?? null}
                 onSelect={selectEmail}
                 onHover={mailInteractionBlocked ? () => {} : prefetchEmail}
-                onContextMenu={setContextMenuEmailId}
+                onContextMenu={(emailId, x, y) => openEmailContextMenu(emailId, x, y)}
                 onNearBottom={() => {
                   if (loadingMoreRef.current || !listHasMoreRef.current || loading) return
                   if (cacheModeRef.current) {
@@ -2221,10 +2244,15 @@ export default function MailPage() {
                         </span>
                         <button
                           type="button"
-                          title="Priorité"
+                          title="Actions"
                           onClick={(e) => {
                             e.stopPropagation()
-                            setContextMenuEmailId(contextMenuEmailId === email.id ? null : email.id)
+                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                            if (contextMenu?.emailId === email.id) {
+                              closeContextMenu()
+                              return
+                            }
+                            openEmailContextMenu(email.id, rect.right - 176, rect.bottom + 4)
                           }}
                           style={{
                             background: 'transparent', color: 'var(--text-muted)',
@@ -2264,68 +2292,6 @@ export default function MailPage() {
                         </button>
                       </div>
                     </div>
-                    {contextMenuEmailId === email.id && (
-                      <div
-                        onClick={e => e.stopPropagation()}
-                        style={{
-                          position: 'absolute', right: 8, top: '100%', zIndex: 10,
-                          background: 'var(--bg-card)', border: '1px solid var(--border-hi)',
-                          borderRadius: 8, padding: 4, minWidth: 130,
-                          boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
-                        }}
-                      >
-                        <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '4px 8px', fontFamily: 'DM Mono, monospace' }}>ACTIONS</div>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleStar(email)}
-                          style={{
-                            display: 'block', width: '100%', textAlign: 'left',
-                            padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
-                            background: email.is_starred ? 'rgba(255,180,0,0.12)' : 'transparent',
-                            color: email.is_starred ? '#FFB400' : 'var(--text-secondary)',
-                            fontSize: 11, fontFamily: 'DM Sans, system-ui',
-                          }}
-                        >
-                          {email.is_starred ? '★ Retirer des favoris' : '☆ Ajouter aux favoris'}
-                        </button>
-                        <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '6px 8px 4px', fontFamily: 'DM Mono, monospace', borderTop: '1px solid var(--border)', marginTop: 4 }}>PRIORITÉ</div>
-                        {(['urgent', 'normal', 'info'] as EmailPriority[]).map(p => (
-                          <button
-                            key={p}
-                            type="button"
-                            onClick={() => handleSetPriority(email, p)}
-                            style={{
-                              display: 'block', width: '100%', textAlign: 'left',
-                              padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
-                              background: email.priority === p ? PRIORITY_STYLES[p].bg : 'transparent',
-                              color: PRIORITY_STYLES[p].color, fontSize: 11, fontFamily: 'DM Sans, system-ui',
-                            }}
-                          >
-                            {PRIORITY_STYLES[p].label}
-                          </button>
-                        ))}
-                        <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '6px 8px 4px', fontFamily: 'DM Mono, monospace', borderTop: '1px solid var(--border)', marginTop: 4 }}>ÉTIQUETTES</div>
-                        {PRESET_EMAIL_LABELS.map(label => {
-                          const active = (email.labels ?? []).some(l => l.id === label.id)
-                          return (
-                            <button
-                              key={label.id}
-                              type="button"
-                              onClick={() => handleToggleLabel(email, label)}
-                              style={{
-                                display: 'block', width: '100%', textAlign: 'left',
-                                padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
-                                background: active ? `${label.color}18` : 'transparent',
-                                color: active ? label.color : 'var(--text-secondary)',
-                                fontSize: 11, fontFamily: 'DM Sans, system-ui',
-                              }}
-                            >
-                              {active ? '✓ ' : ''}{label.name}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
                   </div>
                 )}
               />
@@ -2660,6 +2626,105 @@ export default function MailPage() {
             )}
             </div>
           </div>
+        </div>,
+        document.body,
+      )}
+      {modalPortalReady && contextMenu && contextMenuEmail && createPortal(
+        <div
+          ref={contextMenuRef}
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            top: contextMenu.top,
+            left: contextMenu.left,
+            zIndex: 500,
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-hi)',
+            borderRadius: 8,
+            padding: 4,
+            minWidth: 176,
+            maxHeight: 'min(70vh, 420px)',
+            overflowY: 'auto',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+          }}
+        >
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '4px 8px', fontFamily: 'DM Mono, monospace' }}>ACTIONS</div>
+          <button
+            type="button"
+            onClick={() => handleToggleStar(contextMenuEmail)}
+            style={{
+              display: 'block', width: '100%', textAlign: 'left',
+              padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+              background: contextMenuEmail.is_starred ? 'rgba(255,180,0,0.12)' : 'transparent',
+              color: contextMenuEmail.is_starred ? '#FFB400' : 'var(--text-secondary)',
+              fontSize: 11, fontFamily: 'DM Sans, system-ui',
+            }}
+          >
+            {contextMenuEmail.is_starred ? '★ Retirer des favoris' : '☆ Ajouter aux favoris'}
+          </button>
+          {contextMenuEmail.is_read ? (
+            <button
+              type="button"
+              onClick={() => { void handleMarkUnread(contextMenuEmail); closeContextMenu() }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left',
+                padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+                background: 'transparent', color: 'var(--text-secondary)',
+                fontSize: 11, fontFamily: 'DM Sans, system-ui',
+              }}
+            >
+              Marquer comme non lu
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => { handleMarkRead(contextMenuEmail); closeContextMenu() }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left',
+                padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+                background: 'transparent', color: 'var(--text-secondary)',
+                fontSize: 11, fontFamily: 'DM Sans, system-ui',
+              }}
+            >
+              Marquer comme lu
+            </button>
+          )}
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '6px 8px 4px', fontFamily: 'DM Mono, monospace', borderTop: '1px solid var(--border)', marginTop: 4 }}>PRIORITÉ</div>
+          {(['urgent', 'normal', 'info'] as EmailPriority[]).map(p => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => handleSetPriority(contextMenuEmail, p)}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left',
+                padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+                background: contextMenuEmail.priority === p ? PRIORITY_STYLES[p].bg : 'transparent',
+                color: PRIORITY_STYLES[p].color, fontSize: 11, fontFamily: 'DM Sans, system-ui',
+              }}
+            >
+              {PRIORITY_STYLES[p].label}
+            </button>
+          ))}
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '6px 8px 4px', fontFamily: 'DM Mono, monospace', borderTop: '1px solid var(--border)', marginTop: 4 }}>ÉTIQUETTES</div>
+          {PRESET_EMAIL_LABELS.map(label => {
+            const active = (contextMenuEmail.labels ?? []).some(l => l.id === label.id)
+            return (
+              <button
+                key={label.id}
+                type="button"
+                onClick={() => handleToggleLabel(contextMenuEmail, label)}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+                  background: active ? `${label.color}18` : 'transparent',
+                  color: active ? label.color : 'var(--text-secondary)',
+                  fontSize: 11, fontFamily: 'DM Sans, system-ui',
+                }}
+              >
+                {active ? '✓ ' : ''}{label.name}
+              </button>
+            )
+          })}
         </div>,
         document.body,
       )}

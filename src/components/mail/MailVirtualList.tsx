@@ -32,7 +32,7 @@ type MailVirtualListProps = {
   selectedId?: string | null
   onSelect: (email: Email) => void
   onHover: (emailId: string) => void
-  onContextMenu?: (emailId: string) => void
+  onContextMenu?: (emailId: string, x: number, y: number) => void
   onNearBottom?: () => void
   renderEmailRow: (email: Email, selected: boolean) => React.ReactNode
 }
@@ -112,7 +112,8 @@ export default function MailVirtualList({
                 onMouseEnter={() => onHover(row.email.id)}
                 onContextMenu={e => {
                   e.preventDefault()
-                  onContextMenu?.(row.email.id)
+                  e.stopPropagation()
+                  onContextMenu?.(row.email.id, e.clientX, e.clientY)
                 }}
               >
                 {renderEmailRow(row.email, selectedId === row.email.id)}
