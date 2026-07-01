@@ -12,6 +12,7 @@ import {
   getTenderAssigneeLabel,
   getTenderCreatorLabel,
 } from '@/lib/tender-member-label'
+import { tenderSetupUrl } from '@/lib/tender-setup-nav'
 import { Button, Modal, Field, Badge, useToast, Card, KpiCard, tableRowHoverHandlers, tenderListRowStyle, TableSkeleton } from '@/components/ui'
 import type { TenderStatus } from '@/types/database'
 
@@ -80,7 +81,7 @@ export default function TendersPage() {
       setShowModal(false)
       setForm({ title: '', client: '', deadline: '', description: '' })
       show('AO cree')
-      router.push(`/tenders/${(res.data as any).id}`)
+      router.push(tenderSetupUrl((res.data as any).id))
     } else show(`Erreur : ${res.error}`)
   }
 

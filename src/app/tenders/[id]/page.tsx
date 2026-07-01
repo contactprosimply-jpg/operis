@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast, Card } from '@/components/ui'
 import ConsultationComposeModal, { type ConsultationComposePayload } from '@/components/ConsultationComposeModal'
@@ -24,6 +24,7 @@ import { getTenderAssigneeLabel, getTenderCreatorLabel } from '@/lib/tender-memb
 import { groupEmailsByThread, computeThreadStatus, THREAD_STATUS_META } from '@/lib/email-threading'
 import { AO_CATEGORY_BADGE, type AoKeywordCategory } from '@/lib/ao-email-analysis'
 import { normalizeAttachments } from '@/lib/mail-attachments'
+import { isTenderSetupQuery } from '@/lib/tender-setup-nav'
 
 const STATUS_OPTIONS = [
   { value: 'nouveau', label: 'Nouveau', color: '#60a5fa' },
@@ -78,6 +79,8 @@ export default function TenderDetailPage() {
   const params = useParams<{ id: string }>()
   const id = Array.isArray(params.id) ? params.id[0] : params.id
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const setupOpenedRef = useRef(false)
   const { userId, ready } = useAuth()
   const currentUserId = userId
   const { show, ToastComponent } = useToast()
@@ -92,6 +95,7 @@ export default function TenderDetailPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
   const [showEdit, setShowEdit] = useState(false)
+  const [isNewAoSetup, setIsNewAoSetup] = useState(false)
   const [showConsultModal, setShowConsultModal] = useState(false)
   const [consultPreselect, setConsultPreselect] = useState<string[]>([])
   const [showValidateModal, setShowValidateModal] = useState(false)
@@ -168,7 +172,7 @@ export default function TenderDetailPage() {
           title: data.data.title ?? '',
           client: data.data.client ?? '',
           description: data.data.description ?? '',
-          deadline: data.data.deadline ?? '',
+          deadline: data.data.deadline ? String(data.data.deadline).slice(0, 10) : '',
           budget_ht: data.data.budget_ht ? String(data.data.budget_ht) : '',
           zone_geo: data.data.zone_geo ?? '',
           maitre_ouvrage: data.data.maitre_ouvrage ?? '',
@@ -191,6 +195,20 @@ export default function TenderDetailPage() {
   }, [id, currentUserId])
 
   const refreshTender = useCallback(() => loadTender(true), [loadTender])
+
+  const closeEditModal = useCallback(() => {
+    setShowEdit(false)
+    setIsNewAoSetup(false)
+  }, [])
+
+  useEffect(() => {
+    if (!tender || loading || setupOpenedRef.current) return
+    if (!isTenderSetupQuery(searchParams)) return
+    setupOpenedRef.current = true
+    setIsNewAoSetup(true)
+    setShowEdit(true)
+    router.replace(`/tenders/${id}`, { scroll: false })
+  }, [tender, loading, searchParams, id, router])
 
   useEffect(() => {
     authFetch('/api/organization')
@@ -539,8 +557,8 @@ export default function TenderDetailPage() {
       const data = await res.json()
       if (data.success) {
         setTender((prev: any) => ({ ...prev, ...data.data }))
-        setShowEdit(false)
-        show('AO mis à jour ✓')
+        closeEditModal()
+        show(isNewAoSetup ? 'AO configuré ✓' : 'AO mis à jour ✓')
         await refreshTender()
       }
       else show(`Erreur : ${data.error}`)
@@ -1710,8 +1728,13 @@ export default function TenderDetailPage() {
       )}
 
       {/* === MODAL MODIFIER AO === */}
-      <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Modifier l'appel d'offres" size="xl">
+      <Modal open={showEdit} onClose={closeEditModal} title={isNewAoSetup ? "Configurer l'appel d'offres" : "Modifier l'appel d'offres"} size="xl">
         <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 4 }}>
+          {isNewAoSetup && (
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 16px', lineHeight: 1.5 }}>
+              Vérifiez la deadline, le budget et les informations clés avant de commencer sur cet AO.
+            </p>
+          )}
           {/* Statut */}
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>Statut</div>
@@ -1772,8 +1795,10 @@ export default function TenderDetailPage() {
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-          <Button variant="ghost" onClick={() => setShowEdit(false)}>Annuler</Button>
-          <Button variant="primary" loading={savingEdit} onClick={handleSaveEdit}>Sauvegarder</Button>
+          <Button variant="ghost" onClick={closeEditModal}>Annuler</Button>
+          <Button variant="primary" loading={savingEdit} onClick={handleSaveEdit}>
+            {isNewAoSetup ? 'Enregistrer et continuer' : 'Sauvegarder'}
+          </Button>
         </div>
       </Modal>
 

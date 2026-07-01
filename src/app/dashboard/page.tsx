@@ -10,6 +10,7 @@ import { Email } from '@/types/database'
 import TenderOriginBadge from '@/components/TenderOriginBadge'
 import type { OrganizationPayload } from '@/lib/organization'
 import { getTenderCreatorLabel } from '@/lib/tender-member-label'
+import { tenderSetupUrl } from '@/lib/tender-setup-nav'
 
 const IconDoc = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
@@ -124,7 +125,7 @@ export default function DashboardPage() {
       const data = await res.json()
       if (data.success) {
         show('AO cree')
-        router.push(`/tenders/${data.data.tender_id}`)
+        router.push(tenderSetupUrl(data.data.tender_id))
       } else show(`Erreur : ${data.error}`)
     } catch (e: any) { show(`Erreur : ${e.message}`) }
     setCreatingAo(null)

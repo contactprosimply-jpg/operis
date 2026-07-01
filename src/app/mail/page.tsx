@@ -18,6 +18,7 @@ import { Spinner, useModalBodyLock } from '@/components/ui'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
 import { AO_CATEGORY_BADGE, type AoKeywordCategory } from '@/lib/ao-email-analysis'
+import { tenderSetupUrl } from '@/lib/tender-setup-nav'
 import MailFolderSidebar from '@/components/mail/MailFolderSidebar'
 import MailAddressLines from '@/components/mail/MailAddressLines'
 import MailComposePopup from '@/components/mail/MailComposePopup'
@@ -1404,7 +1405,7 @@ export default function MailPage() {
           setSelected(prev => prev ? { ...prev, tender_id: tenderId, is_ao: true, ao_score: Math.max(prev.ao_score ?? 0, 80) } : prev)
         }
         showToast('AO créé !')
-        router.push(`/tenders/${tenderId}`)
+        router.push(tenderSetupUrl(tenderId))
       } else showToast(`Erreur : ${data.error}`)
     } catch (e: unknown) {
       const err = e as { message?: string }

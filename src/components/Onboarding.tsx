@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { authFetch } from '@/lib/auth-client'
 import { Button, Field, ProgressBar } from '@/components/ui'
+import { tenderSetupUrl } from '@/lib/tender-setup-nav'
 
 const STORAGE_KEY = 'operis_onboarding_step'
 
@@ -187,7 +188,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     })
     localStorage.removeItem(STORAGE_KEY)
     onComplete()
-    if (tenderId) router.push(`/tenders/${tenderId}`)
+    if (tenderId) router.push(tenderSetupUrl(tenderId))
   }
 
   const cardStyle: React.CSSProperties = {
