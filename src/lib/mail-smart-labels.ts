@@ -10,7 +10,7 @@ const REMOVE_ON_REPLY_IDS = new Set(['urgent-label', 'a-traiter', 'en-attente', 
 const REMOVE_ON_REPLY_NAMES = new Set(['Urgent', 'À traiter', 'En attente'])
 
 export const AUTO_LABEL_TOOLTIPS: Record<string, string> = {
-  repondu: 'Ajouté automatiquement car vous avez répondu à ce mail',
+  repondu: 'Ajouté automatiquement car le mail est marqué comme fait',
   transfere: 'Ajouté automatiquement car vous avez transféré ce mail',
   'en-retard': 'Ajouté automatiquement : aucune réponse depuis 3 jours',
   'a-traiter': 'Ajouté automatiquement : mail lu sans action depuis 24h',
@@ -124,7 +124,9 @@ export async function runSmartLabelPeriodicChecks(
         l.name === 'Urgent' ||
         l.name === 'À traiter',
     )
-    const hasRepondu = labels.some(l => l.id === SMART_LABEL_IDS.repondu || l.name === 'Répondu')
+    const hasRepondu = labels.some(
+      l => l.id === SMART_LABEL_IDS.repondu || l.name === 'Fait' || l.name === 'Répondu',
+    )
     if (!hasTrigger || hasRepondu) continue
     if (labels.some(l => l.id === SMART_LABEL_IDS.enRetard)) continue
 
@@ -173,4 +175,8 @@ export function labelTooltip(label: EmailLabel): string | undefined {
 
 export function manualLabel(label: EmailLabel): EmailLabel {
   return { ...label, source: 'manual', autoReason: undefined }
+}
+
+export function resolveLabelDisplayName(label: EmailLabel): string {
+  return PRESET_EMAIL_LABELS.find(l => l.id === label.id)?.name ?? label.name
 }

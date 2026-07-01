@@ -12,6 +12,7 @@ import {
   labelBadgeStyle,
   labelTooltip,
   manualLabel,
+  resolveLabelDisplayName,
 } from '@/lib/mail-smart-labels'
 import { emitMailUnreadChanged } from '@/lib/mail-unread-events'
 import { Spinner, useModalBodyLock } from '@/components/ui'
@@ -2073,7 +2074,7 @@ export default function MailPage() {
                 >
                   <option value="">Étiquette</option>
                   {PRESET_EMAIL_LABELS.map(l => (
-                    <option key={l.id} value={l.name}>{l.name}</option>
+                    <option key={l.id} value={l.id}>{l.name}</option>
                   ))}
                 </select>
                 <input
@@ -2264,7 +2265,7 @@ export default function MailPage() {
                                   border: badge.border,
                                 }}
                               >
-                                {label.source === 'auto' ? '⚡ ' : ''}{label.name}
+                                {label.source === 'auto' ? '⚡ ' : ''}{resolveLabelDisplayName(label)}
                               </span>
                             )
                           })}

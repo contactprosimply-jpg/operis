@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import {
+  PRESET_EMAIL_LABELS,
   EMAIL_LIST_FIELDS,
   EMAIL_LIST_FIELDS_LEGACY,
   EMAIL_LIST_FIELDS_STANDARD,
@@ -137,7 +138,8 @@ export async function GET(req: NextRequest) {
     if (since) q = q.gte('received_at', since)
     if (until) q = q.lte('received_at', until)
     if (useV8Filters && labelFilter) {
-      q = q.contains('labels', [{ name: labelFilter }] as EmailLabel[])
+      const preset = PRESET_EMAIL_LABELS.find(p => p.id === labelFilter || p.name === labelFilter)
+      q = q.contains('labels', [{ id: preset?.id ?? labelFilter }] as EmailLabel[])
     }
     return q
   }
