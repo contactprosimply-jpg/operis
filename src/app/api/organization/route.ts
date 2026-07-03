@@ -82,8 +82,23 @@ export async function PUT(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
-  const { action, member_id, tender_id, assigned_to, organization_id, delete_all } = await req.json()
+  const { action, member_id, tender_id, assigned_to, organization_id, delete_all, name } = await req.json()
   const db = createAdminClient()
+
+  if (action === 'rename') {
+    const nextName = typeof name === 'string' ? name.trim() : ''
+    if (nextName.length < 2) {
+      return Response.json({ success: false, error: 'Nom du groupe invalide' }, { status: 400 })
+    }
+    const { data: org } = await db.from('organizations').select('id').eq('owner_id', userId).maybeSingle()
+    if (!org) {
+      return Response.json({ success: false, error: 'Seul le créateur peut renommer le groupe' }, { status: 403 })
+    }
+    const { error } = await db.from('organizations').update({ name: nextName }).eq('id', org.id)
+    if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
+    const payload = await getOrganizationPayloadForUser(userId)
+    return Response.json({ success: true, data: payload })
+  }
 
   if (action === 'regenerate_invite') {
     const { data: org } = await db.from('organizations').select('id').eq('owner_id', userId).maybeSingle()

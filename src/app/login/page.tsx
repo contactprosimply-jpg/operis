@@ -3,6 +3,8 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { setAccessToken } from '@/lib/auth-client'
+import { markAuthBootstrapped, syncAuthSessionSilent } from '@/lib/auth-session-store'
 import { Spinner } from '@/components/ui'
 
 function LoginForm() {
@@ -31,9 +33,14 @@ function LoginForm() {
       return
     }
 
+    setAccessToken(data.session.access_token)
+    markAuthBootstrapped(data.session)
+    syncAuthSessionSilent(data.session)
+
     const redirect = searchParams.get('redirect')
     const safeRedirect = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : '/dashboard'
-    window.location.href = safeRedirect
+    router.push(safeRedirect)
+    router.refresh()
   }
 
   return (
@@ -110,7 +117,7 @@ function LoginForm() {
           </form>
           <div style={{ marginTop: 20, textAlign: 'center' }}>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Pas encore de compte ? </span>
-            <a href={`/register${searchParams.get('redirect') ? `?redirect=${encodeURIComponent(searchParams.get('redirect')!)}` : ''}`} style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Créer un compte</a>
+            <a href={`/signup${searchParams.get('redirect') ? `?redirect=${encodeURIComponent(searchParams.get('redirect')!)}` : ''}`} style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Créer un compte</a>
           </div>
         </div>
       </div>

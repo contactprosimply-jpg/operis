@@ -1,5 +1,5 @@
 /** Routes accessibles sans session (landing, auth, tarifs publics, invitation). */
-export const PUBLIC_ROUTE_EXACT = ['/', '/login', '/register', '/pricing'] as const
+export const PUBLIC_ROUTE_EXACT = ['/', '/login', '/register', '/signup', '/pricing', '/legal'] as const
 
 export const BILLING_EXEMPT_ROUTES = ['/choose-plan', '/settings/billing', '/billing/activating'] as const
 
@@ -15,5 +15,5 @@ export function isBillingExemptRoute(pathname: string): boolean {
 
 /** Après login, rediriger depuis ces pages vers l'app. */
 export function isAuthEntryRoute(pathname: string): boolean {
-  return pathname === '/' || pathname === '/login' || pathname === '/register'
+  return pathname === '/' || pathname === '/login' || pathname === '/register' || pathname === '/signup'
 }

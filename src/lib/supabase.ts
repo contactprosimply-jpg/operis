@@ -1,15 +1,15 @@
+import { createBrowserClient } from '@supabase/ssr'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 let browserClient: SupabaseClient | null = null
 
 function getBrowserClient(): SupabaseClient {
   if (!browserClient) {
-    browserClient = createClient(
+    browserClient = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         auth: {
-          // Évite le hang ~60s au réveil d'onglet (contention Web Locks API)
           lock: async (_name, _acquireTimeout, fn) => await fn(),
         },
       },

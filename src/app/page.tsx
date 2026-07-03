@@ -136,7 +136,7 @@ export default function LandingPage() {
             <a href="/pricing" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500 }} className="landing-nav-link">Tarifs</a>
             <a href="#appels-offres" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500 }} className="landing-nav-link">Appels d&apos;offres</a>
             <BtnGhost href="/login?redirect=/tenders">Se connecter</BtnGhost>
-            <BtnPrimary href="/register">Créer un compte</BtnPrimary>
+            <BtnPrimary href="/signup">Créer un compte</BtnPrimary>
           </nav>
         </div>
       </header>
@@ -168,7 +168,7 @@ export default function LandingPage() {
           Conçu pour les entreprises du BTP qui veulent gagner du temps sur chaque dossier.
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <BtnPrimary href="/register">Créer un compte gratuit</BtnPrimary>
+          <BtnPrimary href="/signup">Créer un compte gratuit</BtnPrimary>
           <BtnGhost href="/pricing">Voir les tarifs</BtnGhost>
           <BtnGhost href="/login?redirect=/tenders">Se connecter</BtnGhost>
           <BtnGhost href="#appels-offres">Voir les appels d&apos;offres</BtnGhost>
@@ -231,7 +231,7 @@ export default function LandingPage() {
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <BtnGhost href="/login?redirect=/tenders">Accéder à mes AO</BtnGhost>
-              <BtnPrimary href="/register">Créer un compte</BtnPrimary>
+              <BtnPrimary href="/signup">Créer un compte</BtnPrimary>
             </div>
           </div>
           <div style={{ overflowX: 'auto' }}>
@@ -275,7 +275,7 @@ export default function LandingPage() {
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
               Créez votre compte pour gérer vos consultations, relances et devis fournisseurs.
             </span>
-            <a href="/register" style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600, textDecoration: 'none', marginLeft: 8 }}>
+            <a href="/signup" style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600, textDecoration: 'none', marginLeft: 8 }}>
               Commencer gratuitement →
             </a>
           </div>
@@ -482,7 +482,7 @@ export default function LandingPage() {
           Rejoignez les entreprises BTP qui centralisent leurs consultations avec Operis.
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <a href="/register" style={{
+          <a href="/signup" style={{
             display: 'inline-flex', background: '#fff', color: 'var(--accent)',
             borderRadius: 9, padding: '13px 28px', fontSize: 14, fontWeight: 700,
             textDecoration: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
@@ -518,7 +518,7 @@ export default function LandingPage() {
             <a href="/legal#confidentialite" style={{ fontSize: 12, color: 'var(--text-secondary)', textDecoration: 'none' }}>Confidentialité</a>
             <a href="/pricing" style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Tarifs</a>
             <a href="/login" style={{ fontSize: 12, color: 'var(--text-secondary)', textDecoration: 'none' }}>Connexion</a>
-            <a href="/register" style={{ fontSize: 12, color: 'var(--text-secondary)', textDecoration: 'none' }}>Inscription</a>
+            <a href="/signup" style={{ fontSize: 12, color: 'var(--text-secondary)', textDecoration: 'none' }}>Inscription</a>
           </div>
         </div>
       </footer>

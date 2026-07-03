@@ -200,7 +200,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Paywall : redirection sans bloquer le rendu
   useEffect(() => {
     if (!session && !isPublic) {
-      router.replace('/login')
+      const redirect = pathname && pathname !== '/login' ? encodeURIComponent(pathname) : ''
+      router.replace(redirect ? `/login?redirect=${redirect}` : '/login')
       return
     }
 
