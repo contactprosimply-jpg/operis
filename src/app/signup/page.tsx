@@ -26,7 +26,7 @@ function SignupForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get('redirect')
-  const safeRedirect = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : '/dashboard'
+  const safeRedirect = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : '/compte'
   const loginHref = redirect
     ? `/login?redirect=${encodeURIComponent(redirect)}`
     : '/login'

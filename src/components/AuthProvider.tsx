@@ -15,7 +15,7 @@ import {
   wasBillingFetched,
 } from '@/lib/auth-session-store'
 import { readBillingCache, writeBillingCache, clearBillingCache } from '@/lib/billing/billing-cache'
-import { isAuthEntryRoute, isBillingExemptRoute, isPublicRoute } from '@/lib/public-routes'
+import { isAuthEntryRoute, isAppRoute, isBillingExemptRoute, isPublicRoute, isWebsiteMemberRoute, POST_AUTH_ROUTE } from '@/lib/public-routes'
 
 const LOADING_GUARD_MS = 8000
 
@@ -73,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isPublic = isPublicRoute(pathname)
   const isBillingExempt = isBillingExemptRoute(pathname)
+  const isMemberSite = isWebsiteMemberRoute(pathname)
 
   const refreshBillingAccess = useCallback(async () => {
     if (!userIdRef.current) return false
@@ -199,7 +200,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Paywall : redirection sans bloquer le rendu
   useEffect(() => {
-    if (!session && !isPublic) {
+    if (!session && isMemberSite) {
+      router.replace(`/login?redirect=${encodeURIComponent(pathname)}`)
+      return
+    }
+
+    if (!session && !isPublic && !isBillingExempt) {
       const redirect = pathname && pathname !== '/login' ? encodeURIComponent(pathname) : ''
       router.replace(redirect ? `/login?redirect=${redirect}` : '/login')
       return
@@ -208,15 +214,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!session) return
 
     if (isAuthEntryRoute(pathname)) {
-      const target = hasBillingAccess ? '/dashboard' : '/choose-plan'
-      if (pathname !== target) router.replace(target)
+      if (pathname !== POST_AUTH_ROUTE) router.replace(POST_AUTH_ROUTE)
       return
     }
 
-    if (!hasBillingAccess && !isPublic && !isBillingExempt && pathname !== '/choose-plan') {
+    if (!hasBillingAccess && isAppRoute(pathname) && !isBillingExempt) {
       router.replace('/choose-plan')
     }
-  }, [session, hasBillingAccess, pathname, router, isPublic, isBillingExempt])
+  }, [session, hasBillingAccess, pathname, router, isPublic, isBillingExempt, isMemberSite])
 
   return (
     <AuthContext.Provider value={{

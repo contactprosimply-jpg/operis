@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { authFetch } from '@/lib/auth-client'
 import { supabase } from '@/lib/supabase'
 import { clearAuthSessionStore } from '@/lib/auth-session-store'
+import WebsiteLayout from '@/components/website/WebsiteLayout'
 import { Spinner, useToast } from '@/components/ui'
 import type { OrganizationPayload } from '@/lib/organization'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
@@ -216,14 +217,20 @@ export default function ComptePage() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
-        <Spinner size={28} />
-      </div>
+      <WebsiteLayout>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
+          <Spinner size={28} />
+        </div>
+      </WebsiteLayout>
     )
   }
 
   if (!account) {
-    return <div style={{ padding: 24, color: 'var(--text-muted)' }}>Impossible de charger le compte.</div>
+    return (
+      <WebsiteLayout>
+        <div style={{ color: 'var(--text-muted)' }}>Impossible de charger le compte.</div>
+      </WebsiteLayout>
+    )
   }
 
   const createdLabel = account.created_at
@@ -235,7 +242,8 @@ export default function ComptePage() {
     : '—'
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto' }}>
+    <WebsiteLayout>
+    <div style={{ maxWidth: 720 }}>
       {ToastComponent}
       <div style={{ marginBottom: 24 }}>
         <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>
@@ -379,6 +387,14 @@ export default function ComptePage() {
               Choisir une offre
             </Link>
           )}
+          {account.billing.has_access && (
+            <Link href="/telechargement" style={{
+              background: 'rgba(2,18,70,0.08)', color: '#021246', border: '1px solid rgba(2,18,70,0.2)',
+              borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 600, textDecoration: 'none',
+            }}>
+              Télécharger l&apos;application →
+            </Link>
+          )}
         </div>
       </Section>
 
@@ -408,5 +424,6 @@ export default function ComptePage() {
         </form>
       </Section>
     </div>
+    </WebsiteLayout>
   )
 }

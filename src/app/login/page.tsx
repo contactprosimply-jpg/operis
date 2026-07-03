@@ -38,7 +38,7 @@ function LoginForm() {
     syncAuthSessionSilent(data.session)
 
     const redirect = searchParams.get('redirect')
-    const safeRedirect = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : '/dashboard'
+    const safeRedirect = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : '/compte'
     router.push(safeRedirect)
     router.refresh()
   }

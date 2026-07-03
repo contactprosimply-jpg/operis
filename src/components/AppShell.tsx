@@ -6,13 +6,12 @@ import Sidebar from '@/components/Sidebar'
 import PwaInstaller from '@/components/PwaInstaller'
 import ProductTour from '@/components/ProductTour'
 import UserJourney from '@/components/UserJourney'
-import { isBillingExemptRoute, isPublicRoute } from '@/lib/public-routes'
+import { isBillingExemptRoute, isWebsiteShellRoute } from '@/lib/public-routes'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const isPublic = isPublicRoute(pathname)
   const isPaywall = pathname === '/choose-plan' || pathname === '/billing/activating'
-  const minimalShell = isPublic || isPaywall
+  const minimalShell = isWebsiteShellRoute(pathname) || isPaywall
   const isFillPage = pathname === '/mail' || pathname.startsWith('/mail/')
 
   return (

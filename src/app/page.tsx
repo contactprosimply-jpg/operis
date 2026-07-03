@@ -1,3 +1,7 @@
+'use client'
+
+import WebsiteNav from '@/components/website/WebsiteNav'
+
 const FEATURES = [
   {
     title: 'Appels d\'offres centralisés',
@@ -117,29 +121,7 @@ export default function LandingPage() {
       height: '100vh', overflowY: 'auto', background: 'var(--bg-primary)',
       backgroundImage: 'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(37,99,235,0.12), transparent), radial-gradient(ellipse 40% 30% at 100% 0%, rgba(99,102,241,0.08), transparent)',
     }}>
-      {/* Nav */}
-      <header style={{
-        position: 'sticky', top: 0, zIndex: 50,
-        background: 'rgba(248,250,252,0.85)', backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid var(--border)',
-      }}>
-        <div style={{
-          maxWidth: 1100, margin: '0 auto', padding: '14px 24px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Logo size={36} />
-            <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>Operis</span>
-          </div>
-          <nav style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <a href="#fonctionnalites" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500, display: 'none' }} className="landing-nav-link">Fonctionnalités</a>
-            <a href="/pricing" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500 }} className="landing-nav-link">Tarifs</a>
-            <a href="#appels-offres" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500 }} className="landing-nav-link">Appels d&apos;offres</a>
-            <BtnGhost href="/login?redirect=/tenders">Se connecter</BtnGhost>
-            <BtnPrimary href="/signup">Créer un compte</BtnPrimary>
-          </nav>
-        </div>
-      </header>
+      <WebsiteNav />
 
       {/* Hero */}
       <section style={{ maxWidth: 1100, margin: '0 auto', padding: '72px 24px 56px', textAlign: 'center' }}>
@@ -170,7 +152,9 @@ export default function LandingPage() {
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
           <BtnPrimary href="/signup">Créer un compte gratuit</BtnPrimary>
           <BtnGhost href="/pricing">Voir les tarifs</BtnGhost>
-          <BtnGhost href="/login?redirect=/tenders">Se connecter</BtnGhost>
+          <BtnGhost href="/login">Se connecter</BtnGhost>
+          <BtnPrimary href="/signup">Créer un compte</BtnPrimary>
+          <BtnGhost href="/telechargement">Télécharger l&apos;app</BtnGhost>
           <BtnGhost href="#appels-offres">Voir les appels d&apos;offres</BtnGhost>
         </div>
         <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 16 }}>
@@ -230,7 +214,7 @@ export default function LandingPage() {
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Exemple de tableau — données de démonstration</div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <BtnGhost href="/login?redirect=/tenders">Accéder à mes AO</BtnGhost>
+              <BtnGhost href="/telechargement">Télécharger Operis</BtnGhost>
               <BtnPrimary href="/signup">Créer un compte</BtnPrimary>
             </div>
           </div>

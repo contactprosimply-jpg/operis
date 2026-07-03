@@ -1,15 +1,9 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
+import { isPublicRoute, isWebsiteMemberRoute, POST_AUTH_ROUTE } from '@/lib/public-routes'
 
-const PUBLIC_EXACT = new Set(['/', '/login', '/signup', '/register', '/pricing', '/legal'])
 const AUTH_ENTRY = new Set(['/', '/login', '/signup', '/register'])
 const BILLING_EXEMPT = new Set(['/choose-plan', '/settings/billing', '/billing/activating'])
-
-function isPublicPath(pathname: string): boolean {
-  if (PUBLIC_EXACT.has(pathname)) return true
-  if (pathname.startsWith('/join/')) return true
-  return false
-}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -26,12 +20,19 @@ export async function middleware(request: NextRequest) {
 
   if (user && AUTH_ENTRY.has(pathname)) {
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
+    url.pathname = POST_AUTH_ROUTE
     url.search = ''
     return NextResponse.redirect(url)
   }
 
-  if (!user && !isPublicPath(pathname) && !BILLING_EXEMPT.has(pathname)) {
+  if (!user && isWebsiteMemberRoute(pathname)) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.searchParams.set('redirect', pathname)
+    return NextResponse.redirect(url)
+  }
+
+  if (!user && !isPublicRoute(pathname) && !BILLING_EXEMPT.has(pathname)) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     url.searchParams.set('redirect', pathname)
