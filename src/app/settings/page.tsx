@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, Suspense } from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import type { OrganizationPayload } from '@/lib/organization'
 import { authFetch } from '@/lib/auth-client'
@@ -399,6 +400,14 @@ function SettingsPageContent() {
           <div style={card}>
             <div style={sTitle}>Informations generales</div>
             <div style={sSub}>Parametres de base de votre compte Operis</div>
+            <Link href="/compte" style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 20,
+              padding: '10px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              color: 'var(--accent)', background: 'var(--accent-soft)',
+              border: '1px solid rgba(79,142,247,0.25)', textDecoration: 'none',
+            }}>
+              Mon compte, abonnement et téléchargement →
+            </Link>
             <Field label="Nom de la societe" value={general.companyName} onChange={v => setGeneral(g => ({ ...g, companyName: v }))} placeholder="Ex: Nikodex" />
             <Field label="Votre nom" value={general.userName} onChange={v => setGeneral(g => ({ ...g, userName: v }))} placeholder="Ex: Uros Baralic" />
             <Button variant="primary" onClick={handleSaveGeneral}>Sauvegarder</Button>
