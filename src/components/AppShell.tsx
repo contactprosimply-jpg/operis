@@ -16,7 +16,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthProvider>
-      <PwaInstaller />
+      {!minimalShell && <PwaInstaller />}
       {minimalShell ? (
         children
       ) : (

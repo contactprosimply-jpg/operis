@@ -21,6 +21,10 @@
 /build
 /dist-desktop
 
+# Installateurs Windows (trop volumineux pour git — hébergés sur Supabase Storage)
+/public/downloads/*.exe
+!/public/downloads/.gitkeep
+
 # misc
 .DS_Store
 *.pem

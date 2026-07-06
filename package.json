@@ -13,6 +13,8 @@
     "desktop:icon": "node scripts/generate-icon.mjs",
     "desktop": "electron .",
     "desktop:build": "npm run desktop:icon && electron-builder --win --x64",
+    "desktop:release": "node scripts/build-desktop-release.mjs",
+    "desktop:upload": "node scripts/upload-desktop-release.mjs",
     "sync": "npx tsx scripts/sync-mail.ts",
     "test": "vitest run",
     "test:watch": "vitest"
