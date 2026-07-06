@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { authFetch } from '@/lib/auth-client'
 import { supabase } from '@/lib/supabase'
 import { clearAuthSessionStore } from '@/lib/auth-session-store'
 import WebsiteLayout from '@/components/website/WebsiteLayout'
+import SimplyGreenTab from '@/components/compte/SimplyGreenTab'
 import { Spinner, useToast } from '@/components/ui'
 import type { OrganizationPayload } from '@/lib/organization'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
@@ -75,8 +76,18 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-export default function ComptePage() {
+const COMPTE_TABS = [
+  { id: 'profil', label: 'Profil', icon: '👤' },
+  { id: 'simply-green', label: 'Simply Green', icon: '🌿' },
+] as const
+
+type CompteTabId = typeof COMPTE_TABS[number]['id']
+
+function ComptePageContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const tab: CompteTabId = COMPTE_TABS.some(t => t.id === tabParam) ? (tabParam as CompteTabId) : 'profil'
   const { show, ToastComponent } = useToast()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -241,6 +252,11 @@ export default function ComptePage() {
     ? new Date(account.billing.current_period_end).toLocaleDateString('fr-FR')
     : '—'
 
+  const setTab = (id: CompteTabId) => {
+    const url = id === 'profil' ? '/compte' : `/compte?tab=${id}`
+    router.push(url)
+  }
+
   return (
     <WebsiteLayout>
     <div style={{ maxWidth: 720 }}>
@@ -253,6 +269,33 @@ export default function ComptePage() {
         <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>Gérez vos informations, votre organisation et votre abonnement.</p>
       </div>
 
+      <div style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
+        {COMPTE_TABS.map(t => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            style={{
+              padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer',
+              fontSize: 13, fontWeight: tab === t.id ? 600 : 400,
+              color: tab === t.id ? '#16a34a' : 'var(--text-muted)',
+              borderBottom: tab === t.id ? '2px solid #16a34a' : '2px solid transparent',
+              marginBottom: -1, transition: 'all 0.12s', fontFamily: 'DM Sans, system-ui',
+              display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+            }}
+          >
+            <span>{t.icon}</span>{t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'simply-green' ? (
+        <SimplyGreenTab
+          hasActiveSubscription={account.billing.has_access}
+          companyName={account.profile.company ?? companyName}
+        />
+      ) : (
+      <>
       <Section title="Identité">
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
           <div style={{
@@ -423,7 +466,23 @@ export default function ComptePage() {
           </button>
         </form>
       </Section>
+      </>
+      )}
     </div>
     </WebsiteLayout>
+  )
+}
+
+export default function ComptePage() {
+  return (
+    <Suspense fallback={
+      <WebsiteLayout>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
+          <Spinner size={28} />
+        </div>
+      </WebsiteLayout>
+    }>
+      <ComptePageContent />
+    </Suspense>
   )
 }
