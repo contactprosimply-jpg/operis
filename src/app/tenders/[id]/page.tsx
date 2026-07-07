@@ -54,6 +54,10 @@ function appendSignatureToBody(body: string, signatureHtml: string, signatureTex
   return body.trim() ? `${body.trim()}\n\n--\n${plainSig}` : plainSig
 }
 
+function isElectronDesktop(): boolean {
+  return typeof window !== 'undefined' && !!window.operisDesktop
+}
+
 async function fileToBase64(file: File): Promise<string> {
   const buffer = await file.arrayBuffer()
   const bytes = new Uint8Array(buffer)
@@ -124,6 +128,9 @@ export default function TenderDetailPage() {
   const contactsRef = useRef<OperisContact[] | null>(null)
   const [suggestedTenderContacts, setSuggestedTenderContacts] = useState<OperisContact[]>([])
   const [exportingPdf, setExportingPdf] = useState(false)
+  const [showFolderPathModal, setShowFolderPathModal] = useState(false)
+  const [savingFolderPath, setSavingFolderPath] = useState(false)
+  const [folderPathInput, setFolderPathInput] = useState('')
   const [retainingQuote, setRetainingQuote] = useState<string | null>(null)
   const [linkedEmails, setLinkedEmails] = useState<any[]>([])
   const [tenderDocuments, setTenderDocuments] = useState<{
@@ -308,7 +315,9 @@ export default function TenderDetailPage() {
       setMailsLoading(true)
       void loadLinkedEmails().finally(() => setMailsLoading(false))
     }
-    if (activeTab === 'documents' && !loadedTabsRef.current.has('documents')) {
+    // Chargé dès que le tender est prêt (pas seulement au clic sur l'onglet) : le badge
+    // de comptage documents doit refléter le vrai total dès le premier affichage.
+    if (!loadedTabsRef.current.has('documents')) {
       loadedTabsRef.current.add('documents')
       void loadDocuments()
     }
@@ -659,9 +668,13 @@ export default function TenderDetailPage() {
       const data = await res.json()
       if (data.success) {
         const errCount = data.data.errors ?? 0
-        show(errCount > 0
-          ? `${data.data.sent} envoyée(s), ${errCount} erreur(s)`
-          : `${data.data.sent} consultation(s) envoyée(s)`)
+        const pendingCount = data.data.pendingVerification ?? 0
+        const parts = [
+          data.data.sent > 0 ? `${data.data.sent} envoyée(s)` : null,
+          pendingCount > 0 ? `${pendingCount} en attente de vérification (1er contact)` : null,
+          errCount > 0 ? `${errCount} erreur(s)` : null,
+        ].filter(Boolean)
+        show(parts.join(', ') || 'Aucune consultation envoyée')
         setShowConsultModal(false)
         await refreshTender()
       } else show(`Erreur : ${data.error}`)
@@ -708,6 +721,35 @@ export default function TenderDetailPage() {
       await refreshTender()
     } else show(`Erreur : ${data.error}`)
     setRetainingQuote(null)
+  }
+
+  const handleOpenFolder = async () => {
+    const folderPath = tender?.local_folder_path?.trim()
+    if (!folderPath) {
+      setShowFolderPathModal(true)
+      return
+    }
+    const result = await window.operisDesktop?.openFolder(folderPath)
+    if (!result?.success) show(`Erreur : ${result?.error ?? 'dossier introuvable'}`)
+  }
+
+  const handleSaveFolderPath = async (path: string) => {
+    setSavingFolderPath(true)
+    try {
+      const res = await authFetch(`/api/tenders/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ local_folder_path: path.trim() || null }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setShowFolderPathModal(false)
+        await refreshTender()
+      } else show(`Erreur : ${data.error}`)
+    } catch (e: unknown) {
+      const err = e as { message?: string }
+      show(`Erreur : ${err.message ?? 'réseau'}`)
+    }
+    setSavingFolderPath(false)
   }
 
   const handleExportPdf = async () => {
@@ -967,6 +1009,15 @@ export default function TenderDetailPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>{tender.title}</h1>
               <TenderStatusBadge status={tender.status} pulse={tender.status === 'urgence'} />
+              {tender.is_own_client && (
+                <span style={{
+                  fontSize: 10, fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em',
+                  color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid rgba(79,142,247,0.3)',
+                  borderRadius: 6, padding: '3px 9px', fontWeight: 600,
+                }}>
+                  Vous êtes le client
+                </span>
+              )}
               {prioriteOpt && tender.priorite !== 'normale' && (
                 <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: prioriteOpt.color, background: `${prioriteOpt.color}20`, border: `1px solid ${prioriteOpt.color}40`, borderRadius: 6, padding: '3px 9px', fontWeight: 600 }}>{prioriteOpt.label}</span>
               )}
@@ -1042,6 +1093,16 @@ export default function TenderDetailPage() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+            {isElectronDesktop() && (
+              <span style={{ display: 'inline-flex', gap: 2 }}>
+                <span title={tender.local_folder_path ? `Ouvrir : ${tender.local_folder_path}` : 'Aucun dossier configuré — cliquez pour le renseigner'}>
+                  <Button variant="ghost" onClick={handleOpenFolder}>📂 Ouvrir le dossier</Button>
+                </span>
+                <span title="Modifier le chemin du dossier">
+                  <Button variant="ghost" onClick={() => setShowFolderPathModal(true)}>✏️</Button>
+                </span>
+              </span>
+            )}
             <Button variant="ghost" onClick={handleExportPdf} loading={exportingPdf}>Exporter PDF</Button>
             <Button variant="ghost" onClick={() => refreshTender()} disabled={refreshing}>Actualiser</Button>
             <Button variant="ghost" onClick={() => setShowEdit(true)}>Modifier</Button>
@@ -1842,6 +1903,36 @@ export default function TenderDetailPage() {
         sending={sendingConsult}
         onSend={handleSendConsult}
       />
+
+      {/* === MODAL CHEMIN DOSSIER LOCAL (desktop) === */}
+      <Modal
+        open={showFolderPathModal}
+        onClose={() => setShowFolderPathModal(false)}
+        title="Dossier local du chantier"
+      >
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
+            Chemin du dossier (local ou réseau) à ouvrir dans l&apos;Explorateur Windows.
+            Ex: <code>C:\Chantiers\{tender?.title}</code> ou <code>\\NAS\Chantiers\...</code>
+          </div>
+          <Field
+            label="Chemin du dossier"
+            value={folderPathInput || tender?.local_folder_path || ''}
+            onChange={setFolderPathInput}
+            placeholder="C:\Chantiers\Nom du chantier"
+          />
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <Button variant="ghost" onClick={() => setShowFolderPathModal(false)}>Annuler</Button>
+          <Button
+            variant="primary"
+            loading={savingFolderPath}
+            onClick={() => handleSaveFolderPath(folderPathInput || tender?.local_folder_path || '')}
+          >
+            Enregistrer
+          </Button>
+        </div>
+      </Modal>
 
       {/* === MODAL VALIDER DEVIS === */}
       <Modal open={showValidateModal} onClose={() => setShowValidateModal(false)} title="Valider un devis">

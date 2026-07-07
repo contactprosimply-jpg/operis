@@ -99,9 +99,25 @@ interface SpeechRecognitionLike {
   interimResults: boolean
   onresult: (e: SpeechRecognitionEventLike) => void
   onend: () => void
-  onerror: () => void
+  onerror: (e: { error?: string }) => void
   start: () => void
   stop: () => void
+}
+
+function speechErrorMessage(code?: string): string {
+  switch (code) {
+    case 'not-allowed':
+    case 'permission-denied':
+      return 'Accès au micro refusé — autorisez-le dans les paramètres du navigateur.'
+    case 'no-speech':
+      return 'Aucune parole détectée.'
+    case 'audio-capture':
+      return 'Aucun micro détecté.'
+    case 'network':
+      return 'Reconnaissance vocale indisponible (réseau).'
+    default:
+      return 'Dictée vocale indisponible.'
+  }
 }
 
 type MailFilter = 'all' | 'unread' | 'ao' | 'attachments'
@@ -227,6 +243,12 @@ export default function MailPage() {
   const [isListening, setIsListening] = useState(false)
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
   const [isMobile, setIsMobile] = useState(false)
+  const [mailLayout, setMailLayout] = useState<'vertical' | 'horizontal'>('vertical')
+  const [mailDensity, setMailDensity] = useState<'compact' | 'cozy' | 'comfortable'>('cozy')
+  const [folderSidebarCollapsed, setFolderSidebarCollapsed] = useState(false)
+  const [listSizeVertical, setListSizeVertical] = useState(320)
+  const [listSizeHorizontal, setListSizeHorizontal] = useState(42)
+  const [resizingList, setResizingList] = useState(false)
   const [mobileShowDetail, setMobileShowDetail] = useState(false)
   const [mobileFolderSidebarOpen, setMobileFolderSidebarOpen] = useState(false)
   const [listSortOrder, setListSortOrder] = useState<'desc' | 'asc'>('desc')
@@ -297,17 +319,23 @@ export default function MailPage() {
   }, [])
 
   const toggleSpeech = () => {
+    if (isListening) {
+      recognitionRef.current?.stop()
+      setIsListening(false)
+      return
+    }
+    // Electron embarque Chromium mais pas le service cloud de reconnaissance vocale de
+    // Google utilisé par webkitSpeechRecognition — indisponible dans l'app desktop.
+    if (/electron/i.test(navigator.userAgent)) {
+      showToast('Dictée vocale indisponible dans l\'application desktop — utilisez la version web')
+      return
+    }
     const w = window as Window & {
       SpeechRecognition?: new () => SpeechRecognitionLike
       webkitSpeechRecognition?: new () => SpeechRecognitionLike
     }
     const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition
     if (!SR) { showToast('Reconnaissance vocale non supportée'); return }
-    if (isListening) {
-      recognitionRef.current?.stop()
-      setIsListening(false)
-      return
-    }
     const rec = new SR()
     rec.lang = 'fr-FR'
     rec.continuous = true
@@ -322,10 +350,17 @@ export default function MailPage() {
       }
     }
     rec.onend = () => setIsListening(false)
-    rec.onerror = () => setIsListening(false)
+    rec.onerror = (e: { error?: string }) => {
+      setIsListening(false)
+      showToast(speechErrorMessage(e.error))
+    }
     recognitionRef.current = rec
-    rec.start()
-    setIsListening(true)
+    try {
+      rec.start()
+      setIsListening(true)
+    } catch {
+      showToast('Impossible de démarrer la dictée vocale.')
+    }
   }
 
   useEffect(() => {
@@ -334,6 +369,72 @@ export default function MailPage() {
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])
+
+  useEffect(() => {
+    const stored = localStorage.getItem('operis_mail_layout')
+    if (stored === 'horizontal' || stored === 'vertical') setMailLayout(stored)
+    const storedCollapsed = localStorage.getItem('operis_mail_folder_sidebar_collapsed')
+    if (storedCollapsed === '1') setFolderSidebarCollapsed(true)
+    const storedSizeV = Number(localStorage.getItem('operis_mail_list_size_vertical'))
+    if (storedSizeV >= 240 && storedSizeV <= 800) setListSizeVertical(storedSizeV)
+    const storedSizeH = Number(localStorage.getItem('operis_mail_list_size_horizontal'))
+    if (storedSizeH >= 20 && storedSizeH <= 80) setListSizeHorizontal(storedSizeH)
+    const storedDensity = localStorage.getItem('operis_mail_density')
+    if (storedDensity === 'compact' || storedDensity === 'cozy' || storedDensity === 'comfortable') {
+      setMailDensity(storedDensity)
+    }
+  }, [])
+
+  const changeMailDensity = (next: 'compact' | 'cozy' | 'comfortable') => {
+    setMailDensity(next)
+    localStorage.setItem('operis_mail_density', next)
+  }
+
+  const toggleMailLayout = (next: 'vertical' | 'horizontal') => {
+    setMailLayout(next)
+    localStorage.setItem('operis_mail_layout', next)
+  }
+
+  const toggleFolderSidebar = () => {
+    setFolderSidebarCollapsed(prev => {
+      const next = !prev
+      localStorage.setItem('operis_mail_folder_sidebar_collapsed', next ? '1' : '0')
+      return next
+    })
+  }
+
+  const startListResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setResizingList(true)
+    const startX = e.clientX
+    const startY = e.clientY
+    const startSizeV = listSizeVertical
+    const startSizeH = listSizeHorizontal
+    const liveSize = { current: mailLayout === 'horizontal' ? startSizeH : startSizeV }
+    const onMove = (moveEvent: MouseEvent) => {
+      if (mailLayout === 'horizontal') {
+        const containerHeight = window.innerHeight - 60
+        const deltaPct = ((moveEvent.clientY - startY) / containerHeight) * 100
+        const next = Math.min(80, Math.max(20, startSizeH + deltaPct))
+        liveSize.current = next
+        setListSizeHorizontal(next)
+      } else {
+        const delta = moveEvent.clientX - startX
+        const next = Math.min(800, Math.max(240, startSizeV + delta))
+        liveSize.current = next
+        setListSizeVertical(next)
+      }
+    }
+    const onUp = () => {
+      setResizingList(false)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      const key = mailLayout === 'horizontal' ? 'operis_mail_list_size_horizontal' : 'operis_mail_list_size_vertical'
+      localStorage.setItem(key, String(liveSize.current))
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
 
   useEffect(() => {
     if (!contextMenu) return
@@ -1315,7 +1416,11 @@ export default function MailPage() {
         setActiveDraftId(null)
         closeCompose()
         void runSync(true, true)
-        showToast('Email envoyé ✓')
+        showToast(
+          data.data?.pendingVerification
+            ? 'Premier contact — email de vérification envoyé, le message sera transmis après confirmation du destinataire'
+            : 'Email envoyé ✓',
+        )
       } else {
         setSendError(data.error)
         if (composeSource && composeSourceLabelsBefore) {
@@ -1662,6 +1767,12 @@ export default function MailPage() {
   const showList = !isMobile || !mobileShowDetail
   const showPanel = !isMobile || mobileShowDetail
 
+  const mailRowDensity = {
+    compact: { padding: '5px 14px', gap: 2, innerGap: 1 },
+    cozy: { padding: '12px 14px', gap: 4, innerGap: 3 },
+    comfortable: { padding: '17px 16px', gap: 6, innerGap: 5 },
+  }[mailDensity]
+
   const filterButtons: { key: MailFilter; label: string }[] = [
     { key: 'all', label: 'Tous' },
     { key: 'unread', label: 'Non lus' },
@@ -1730,6 +1841,12 @@ export default function MailPage() {
           onSearchChange={v => { setSearchQuery(v); reloadMailList() }}
           favoritesOnly={favoritesOnly}
           onFavoritesOnlyChange={v => { setFavoritesOnly(v); reloadMailList() }}
+          layout={mailLayout}
+          onLayoutChange={toggleMailLayout}
+          density={mailDensity}
+          onDensityChange={changeMailDensity}
+          folderSidebarCollapsed={folderSidebarCollapsed}
+          onToggleFolderSidebar={toggleFolderSidebar}
         />
       )}
 
@@ -1765,6 +1882,7 @@ export default function MailPage() {
           onCreateFolder={handleCreateFolder}
           onDeleteFolder={handleDeleteFolder}
           folderActionLoading={folderActionLoading}
+          collapsed={folderSidebarCollapsed}
         />
       )}
 
@@ -1842,11 +1960,20 @@ export default function MailPage() {
         </>
       )}
 
+      <div style={{
+        display: 'flex',
+        flex: 1,
+        minWidth: 0,
+        minHeight: 0,
+        flexDirection: !isMobile && mailLayout === 'horizontal' ? 'column' : 'row',
+      }}>
       {/* Liste emails */}
       {showList && (
         <div style={{
-          width: isMobile ? '100%' : 320,
-          borderRight: isMobile ? 'none' : '1px solid var(--border)',
+          width: !isMobile && mailLayout === 'horizontal' ? '100%' : (isMobile ? '100%' : listSizeVertical),
+          height: !isMobile && mailLayout === 'horizontal' ? `${listSizeHorizontal}%` : undefined,
+          borderRight: isMobile || mailLayout === 'horizontal' ? 'none' : '1px solid var(--border)',
+          borderBottom: !isMobile && mailLayout === 'horizontal' ? '1px solid var(--border)' : 'none',
           display: 'flex', flexDirection: 'column',
           background: 'var(--bg-card)', flexShrink: 0,
           minHeight: 0,
@@ -2184,14 +2311,93 @@ export default function MailPage() {
                 renderEmailRow={(email, isSelected) => (
                   <div
                     style={{
-                      padding: isMobile ? '14px 12px' : '12px 14px',
+                      padding: isMobile ? '14px 12px' : mailDensity === 'compact' ? '4px 14px' : mailRowDensity.padding,
                       borderBottom: '1px solid var(--border)', cursor: 'pointer',
                       background: isSelected ? 'var(--bg-hover)' : 'transparent',
                       position: 'relative',
                     }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
+                    {!isMobile && mailDensity === 'compact' ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {!email.is_read && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />}
+                        {email.is_starred && (
+                          <span title="Favori" style={{ color: '#FFB400', fontSize: 11, flexShrink: 0, lineHeight: 1 }}>★</span>
+                        )}
+                        <span style={{
+                          fontSize: 12, fontWeight: email.is_read ? 400 : 600, flexShrink: 0,
+                          maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          color: email.is_read ? 'var(--text-secondary)' : 'var(--text-primary)',
+                        }}>
+                          {folder === 'sent'
+                            ? `À : ${email.to_address?.split('<')[0].trim() || email.to_address || '—'}`
+                            : email.from_address?.split('<')[0].trim() || email.from_address}
+                        </span>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>—</span>
+                        <span style={{
+                          fontSize: 12, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          color: email.is_read ? 'var(--text-muted)' : 'var(--text-primary)',
+                        }}>
+                          {email.subject}
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                          {email.has_attachments && <span title="Pièce jointe" style={{ fontSize: 11 }}>📎</span>}
+                          {(email.is_ao_related || email.is_ao) && <span title="AO détecté" style={{ fontSize: 11 }}>📋</span>}
+                          {email.tender_id && <span title="Lié à un AO" style={{ fontSize: 11 }}>🔗</span>}
+                        </div>
+                        <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', flexShrink: 0 }}>
+                          {formatMailTime(email.received_at)}
+                        </span>
+                        <button
+                          type="button"
+                          title="Actions"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                            if (contextMenu?.emailId === email.id) {
+                              closeContextMenu()
+                              return
+                            }
+                            openEmailContextMenu(email.id, rect.right - 176, rect.bottom + 4)
+                          }}
+                          style={{
+                            background: 'transparent', color: 'var(--text-muted)',
+                            border: '1px solid var(--border)', borderRadius: 6,
+                            padding: '1px 5px', fontSize: 10, cursor: 'pointer',
+                            fontFamily: 'DM Mono, monospace', flexShrink: 0,
+                          }}
+                        >
+                          ⋮
+                        </button>
+                        <button
+                          type="button"
+                          title={email.tender_id ? 'Voir l\'AO' : 'Créer un appel d\'offres'}
+                          disabled={creatingAoId === email.id}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (email.tender_id) router.push(`/tenders/${email.tender_id}`)
+                            else if (email.is_ao) handleCreateAo(email)
+                            else openLinkTenderModal(email)
+                          }}
+                          style={{
+                            background: email.tender_id ? 'rgba(34,197,94,0.12)' : email.is_ao ? 'rgba(245,158,11,0.15)' : 'var(--bg-hover)',
+                            color: email.tender_id ? '#4ade80' : email.is_ao ? '#fbbf24' : 'var(--text-secondary)',
+                            border: `1px solid ${email.tender_id ? 'rgba(34,197,94,0.25)' : email.is_ao ? 'rgba(245,158,11,0.25)' : 'var(--border-hi)'}`,
+                            borderRadius: 6,
+                            padding: '1px 7px',
+                            fontSize: 10,
+                            fontWeight: 700,
+                            cursor: creatingAoId === email.id ? 'wait' : 'pointer',
+                            fontFamily: 'DM Mono, monospace',
+                            flexShrink: 0,
+                            opacity: creatingAoId === email.id ? 0.6 : 1,
+                          }}
+                        >
+                          {creatingAoId === email.id ? '…' : email.tender_id ? 'Voir' : email.is_ao ? 'AO' : 'Lier'}
+                        </button>
+                      </div>
+                    ) : (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: mailRowDensity.gap }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: mailRowDensity.innerGap }}>
                           {!email.is_read && <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />}
                           {email.is_starred && (
                             <span title="Favori" style={{ color: '#FFB400', fontSize: 12, flexShrink: 0, lineHeight: 1 }}>★</span>
@@ -2208,7 +2414,7 @@ export default function MailPage() {
                         </div>
                         <div style={{
                           fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          color: email.is_read ? 'var(--text-muted)' : 'var(--text-primary)', marginBottom: 3,
+                          color: email.is_read ? 'var(--text-muted)' : 'var(--text-primary)', marginBottom: mailRowDensity.innerGap,
                         }}>
                           {email.subject}
                         </div>
@@ -2325,6 +2531,7 @@ export default function MailPage() {
                         </button>
                       </div>
                     </div>
+                    )}
                   </div>
                 )}
               />
@@ -2345,6 +2552,41 @@ export default function MailPage() {
                 Chargement…
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {!isMobile && showList && showPanel && (
+        <div
+          onMouseDown={startListResize}
+          title={mailLayout === 'horizontal' ? 'Glisser pour redimensionner (hauteur)' : 'Glisser pour redimensionner (largeur)'}
+          style={{
+            flexShrink: 0,
+            cursor: mailLayout === 'horizontal' ? 'row-resize' : 'col-resize',
+            background: resizingList ? 'var(--accent)' : 'var(--border-hi)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            ...(mailLayout === 'horizontal'
+              ? { height: 7, width: '100%' }
+              : { width: 7, height: 'auto' }),
+            zIndex: 5,
+            transition: resizingList ? 'none' : 'background 0.15s ease',
+          }}
+          onMouseEnter={e => { if (!resizingList) (e.currentTarget as HTMLDivElement).style.background = 'var(--accent)' }}
+          onMouseLeave={e => { if (!resizingList) (e.currentTarget as HTMLDivElement).style.background = 'var(--border-hi)' }}
+        >
+          <div style={{
+            display: 'flex',
+            flexDirection: mailLayout === 'horizontal' ? 'row' : 'column',
+            gap: 3, pointerEvents: 'none',
+          }}>
+            {[0, 1, 2].map(i => (
+              <span key={i} style={{
+                width: mailLayout === 'horizontal' ? 4 : 3,
+                height: mailLayout === 'horizontal' ? 3 : 4,
+                borderRadius: 1,
+                background: 'rgba(255,255,255,0.6)',
+              }} />
+            ))}
           </div>
         </div>
       )}
@@ -2569,6 +2811,8 @@ export default function MailPage() {
           )}
         </div>
       )}
+
+      </div>
 
       </div>
 

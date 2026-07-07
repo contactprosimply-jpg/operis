@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { AuthProvider } from '@/components/AuthProvider'
 import Sidebar from '@/components/Sidebar'
@@ -13,6 +14,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isPaywall = pathname === '/choose-plan' || pathname === '/billing/activating'
   const minimalShell = isWebsiteShellRoute(pathname) || isPaywall
   const isFillPage = pathname === '/mail' || pathname.startsWith('/mail/')
+
+  useEffect(() => {
+    document.body.classList.toggle('app-shell-mode', !minimalShell)
+    return () => { document.body.classList.remove('app-shell-mode') }
+  }, [minimalShell])
 
   return (
     <AuthProvider>

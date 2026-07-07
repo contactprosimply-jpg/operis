@@ -1,7 +1,115 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import type { MailSyncUIState } from '@/lib/mail-sync-ui'
 import { SyncProgressRing } from '@/components/mail/SyncProgressRing'
+
+type MailLayoutValue = 'vertical' | 'horizontal'
+type MailDensityValue = 'compact' | 'cozy' | 'comfortable'
+
+/** Menu d'affichage façon Thunderbird : disposition + densité des lignes, regroupées
+ *  dans un seul menu déclenché par une icône, plutôt que des boutons séparés. */
+function DisplayOptionsMenu({
+  layout,
+  onLayoutChange,
+  density,
+  onDensityChange,
+}: {
+  layout: MailLayoutValue
+  onLayoutChange: (v: MailLayoutValue) => void
+  density: MailDensityValue
+  onDensityChange: (v: MailDensityValue) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onEscape = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onClickOutside)
+    document.addEventListener('keydown', onEscape)
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside)
+      document.removeEventListener('keydown', onEscape)
+    }
+  }, [open])
+
+  const layoutOptions: { value: MailLayoutValue; label: string }[] = [
+    { value: 'vertical', label: 'Vue verticale (liste | aperçu)' },
+    { value: 'horizontal', label: 'Vue horizontale (liste au-dessus)' },
+  ]
+  const densityOptions: { value: MailDensityValue; label: string }[] = [
+    { value: 'compact', label: 'Compacte' },
+    { value: 'cozy', label: 'Cosy' },
+    { value: 'comfortable', label: 'Spacieuse' },
+  ]
+
+  const itemStyle = (active: boolean): React.CSSProperties => ({
+    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+    padding: '7px 12px', borderRadius: 6, border: 'none', textAlign: 'left',
+    background: active ? 'var(--accent-soft)' : 'transparent',
+    color: active ? 'var(--accent)' : 'var(--text-secondary)',
+    fontSize: 12, fontWeight: active ? 600 : 400, cursor: 'pointer',
+    fontFamily: 'DM Sans, system-ui',
+  })
+
+  return (
+    <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        title="Options d'affichage"
+        style={{
+          minHeight: 36, minWidth: 36, padding: '6px 10px', borderRadius: 8,
+          border: `1px solid ${open ? 'var(--accent)' : 'var(--border)'}`,
+          background: open ? 'var(--accent-soft)' : 'transparent',
+          color: open ? 'var(--accent)' : 'var(--text-muted)',
+          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <svg viewBox="0 0 20 20" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+          <line x1="3" y1="6" x2="17" y2="6" />
+          <circle cx="12" cy="6" r="1.6" fill="currentColor" stroke="none" />
+          <line x1="3" y1="10" x2="17" y2="10" />
+          <circle cx="7" cy="10" r="1.6" fill="currentColor" stroke="none" />
+          <line x1="3" y1="14" x2="17" y2="14" />
+          <circle cx="14" cy="14" r="1.6" fill="currentColor" stroke="none" />
+        </svg>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', right: 0, marginTop: 6, zIndex: 50,
+          minWidth: 220, padding: 6, borderRadius: 10,
+          background: 'var(--bg-card)', border: '1px solid var(--border-hi)',
+          boxShadow: 'var(--shadow-md)',
+        }}>
+          <div style={{ padding: '4px 10px', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Disposition
+          </div>
+          {layoutOptions.map(opt => (
+            <button key={opt.value} type="button" style={itemStyle(layout === opt.value)}
+              onClick={() => { onLayoutChange(opt.value); setOpen(false) }}>
+              {layout === opt.value ? '●' : '○'} {opt.label}
+            </button>
+          ))}
+          <div style={{ height: 1, background: 'var(--border)', margin: '6px 4px' }} />
+          <div style={{ padding: '4px 10px', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Densité des lignes
+          </div>
+          {densityOptions.map(opt => (
+            <button key={opt.value} type="button" style={itemStyle(density === opt.value)}
+              onClick={() => { onDensityChange(opt.value); setOpen(false) }}>
+              {density === opt.value ? '●' : '○'} {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 /** Indicateur passif : affiche l'état uniquement, aucune action au survol ni au clic. */
 function PassiveSyncIndicator({
@@ -54,6 +162,12 @@ export default function MailToolbar({
   onSearchChange,
   favoritesOnly,
   onFavoritesOnlyChange,
+  layout,
+  onLayoutChange,
+  density,
+  onDensityChange,
+  folderSidebarCollapsed,
+  onToggleFolderSidebar,
 }: {
   onNewMail: () => void
   onRefresh: () => void
@@ -64,6 +178,12 @@ export default function MailToolbar({
   onSearchChange: (v: string) => void
   favoritesOnly: boolean
   onFavoritesOnlyChange: (v: boolean) => void
+  layout: MailLayoutValue
+  onLayoutChange: (v: MailLayoutValue) => void
+  density: MailDensityValue
+  onDensityChange: (v: MailDensityValue) => void
+  folderSidebarCollapsed: boolean
+  onToggleFolderSidebar: () => void
 }) {
   const syncing = syncUI.status === 'syncing'
   const syncDone = syncUI.status === 'done'
@@ -99,6 +219,18 @@ export default function MailToolbar({
         flexShrink: 0,
       }}
     >
+      <button
+        type="button"
+        onClick={onToggleFolderSidebar}
+        title={folderSidebarCollapsed ? 'Afficher le panneau comptes/dossiers' : 'Masquer le panneau comptes/dossiers'}
+        style={{
+          minHeight: 36, minWidth: 36, padding: '6px 10px', borderRadius: 8,
+          border: '1px solid var(--border)', background: 'transparent',
+          color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', flexShrink: 0,
+        }}
+      >
+        {folderSidebarCollapsed ? '▶│' : '│◀'}
+      </button>
       <button
         type="button"
         onClick={onNewMail}
@@ -227,6 +359,12 @@ export default function MailToolbar({
         >
           ★
         </button>
+        <DisplayOptionsMenu
+          layout={layout}
+          onLayoutChange={onLayoutChange}
+          density={density}
+          onDensityChange={onDensityChange}
+        />
       </div>
     </div>
   )

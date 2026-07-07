@@ -53,7 +53,7 @@ export default function TendersPage() {
   const [showModal, setShowModal] = useState(false)
   const [filter, setFilter] = useState('actifs')
   const [creating, setCreating] = useState(false)
-  const [form, setForm] = useState({ title: '', client: '', deadline: '', description: '' })
+  const [form, setForm] = useState({ title: '', client: '', deadline: '', description: '', is_own_client: false })
   const [org, setOrg] = useState<OrganizationPayload | null>(null)
 
   useEffect(() => {
@@ -75,11 +75,17 @@ export default function TendersPage() {
   const handleCreate = async () => {
     if (!form.title || !form.client) return
     setCreating(true)
-    const res = await create({ title: form.title, client: form.client, deadline: form.deadline || undefined, description: form.description || undefined })
+    const res = await create({
+      title: form.title,
+      client: form.client,
+      deadline: form.deadline || undefined,
+      description: form.description || undefined,
+      is_own_client: form.is_own_client,
+    })
     setCreating(false)
     if (res.success) {
       setShowModal(false)
-      setForm({ title: '', client: '', deadline: '', description: '' })
+      setForm({ title: '', client: '', deadline: '', description: '', is_own_client: false })
       show('AO cree')
       router.push(tenderSetupUrl((res.data as any).id))
     } else show(`Erreur : ${res.error}`)
@@ -233,6 +239,15 @@ export default function TendersPage() {
         <Field label="Client *" value={form.client} onChange={v => setForm(f => ({ ...f, client: v }))} placeholder="Ex: Nexity Grand Paris" />
         <Field label="Deadline" value={form.deadline} onChange={v => setForm(f => ({ ...f, deadline: v }))} type="date" />
         <Field label="Description" value={form.description} onChange={v => setForm(f => ({ ...f, description: v }))} placeholder="Description du marche..." />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={form.is_own_client}
+            onChange={e => setForm(f => ({ ...f, is_own_client: e.target.checked }))}
+            style={{ width: 16, height: 16, cursor: 'pointer' }}
+          />
+          Je suis le client de ce dossier (pas d&apos;intermédiaire)
+        </label>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
           <Button variant="ghost" onClick={() => setShowModal(false)}>Annuler</Button>
           <Button variant="primary" onClick={handleCreate} loading={creating}>Creer l'AO</Button>

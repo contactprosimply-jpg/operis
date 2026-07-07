@@ -10,6 +10,7 @@ import {
   resolveTenderForSupplierReply,
 } from '@/lib/email-tender-link'
 import { looksLikeSupplierQuoteEmail } from '@/services/aoDetector.service'
+import { applySmartLabels } from '@/lib/mail-smart-labels'
 
 export { extractFinalPriceFromText, extractPriceFromText } from '@/lib/quote-price-extract'
 
@@ -247,6 +248,8 @@ export async function tryCreateQuoteFromInboundEmail(
     .eq('tender_id', tenderId)
     .eq('supplier_id', supplier.id)
 
+  await applySmartLabels(db, userId, emailId, 'replied')
+
   return quote
 }
 
@@ -340,6 +343,8 @@ export async function backfillQuotesForTender(
           .update({ status: 'repondu', updated_at: new Date().toISOString() })
           .eq('tender_id', tenderId)
           .eq('supplier_id', supplier.id)
+
+        await applySmartLabels(db, userId, email.id, 'replied')
 
         updated++
         if (quote.price_ht != null) break

@@ -28,6 +28,7 @@ type AccountData = {
     plan: BillingPlan | null
     status: string | null
     current_period_end: string | null
+    subscription_created_at: string | null
     is_owner: boolean
     is_billing_admin: boolean
     limits: { seats: number; storageGb: number }
@@ -68,7 +69,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       padding: '20px 22px', marginBottom: 16,
     }}>
       <h2 style={{
-        fontSize: 11, fontWeight: 600, color: '#021246', textTransform: 'uppercase',
+        fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', textTransform: 'uppercase',
         letterSpacing: '0.08em', fontFamily: 'DM Mono, monospace', margin: '0 0 16px',
       }}>{title}</h2>
       {children}
@@ -262,11 +263,19 @@ function ComptePageContent() {
     <div style={{ maxWidth: 720 }}>
       {ToastComponent}
       <div style={{ marginBottom: 24 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>
-          Mon compte
-        </span>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: '#021246', margin: '8px 0 4px' }}>Profil & abonnement</h1>
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>Gérez vos informations, votre organisation et votre abonnement.</p>
+        <Link href="/dashboard" style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 14,
+          fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', textDecoration: 'none',
+        }}>
+          ← Retour à mon espace
+        </Link>
+        <div>
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>
+            Mon compte
+          </span>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', margin: '8px 0 4px' }}>Profil & abonnement</h1>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>Gérez vos informations, votre organisation et votre abonnement.</p>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
@@ -292,6 +301,7 @@ function ComptePageContent() {
       {tab === 'simply-green' ? (
         <SimplyGreenTab
           hasActiveSubscription={account.billing.has_access}
+          subscriptionCreatedAt={account.billing.subscription_created_at}
           companyName={account.profile.company ?? companyName}
         />
       ) : (
@@ -375,13 +385,13 @@ function ComptePageContent() {
                 </div>
               </div>
             )}
-            <Link href="/settings?tab=famille" style={{ display: 'inline-block', marginTop: 12, fontSize: 12, color: '#021246', fontWeight: 600 }}>
+            <Link href="/settings?tab=famille" style={{ display: 'inline-block', marginTop: 12, fontSize: 12, color: 'var(--text-primary)', fontWeight: 600 }}>
               Gérer la famille →
             </Link>
           </>
         ) : (
           <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>
-            Aucune organisation. <Link href="/settings?tab=famille" style={{ color: '#021246' }}>Créer un groupe</Link>
+            Aucune organisation. <Link href="/settings?tab=famille" style={{ color: 'var(--text-primary)' }}>Créer un groupe</Link>
           </p>
         )}
       </Section>
@@ -390,7 +400,7 @@ function ComptePageContent() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16, marginBottom: 16 }}>
           <div>
             <div style={labelStyle}>Plan</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#021246' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
               {planLabel(account.billing.plan, account.billing.is_billing_admin)}
             </div>
           </div>
@@ -424,7 +434,7 @@ function ComptePageContent() {
           )}
           {!account.billing.has_access && (
             <Link href="/choose-plan" style={{
-              background: 'rgba(2,18,70,0.08)', color: '#021246', border: '1px solid rgba(2,18,70,0.2)',
+              background: 'rgba(2,18,70,0.08)', color: 'var(--text-primary)', border: '1px solid rgba(2,18,70,0.2)',
               borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 600, textDecoration: 'none',
             }}>
               Choisir une offre
@@ -432,7 +442,7 @@ function ComptePageContent() {
           )}
           {account.billing.has_access && (
             <Link href="/telechargement" style={{
-              background: 'rgba(2,18,70,0.08)', color: '#021246', border: '1px solid rgba(2,18,70,0.2)',
+              background: 'rgba(2,18,70,0.08)', color: 'var(--text-primary)', border: '1px solid rgba(2,18,70,0.2)',
               borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 600, textDecoration: 'none',
             }}>
               Télécharger l&apos;application →
@@ -452,7 +462,7 @@ function ComptePageContent() {
             <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required minLength={8} style={inputStyle} />
           </div>
           <button type="submit" disabled={changingPassword} style={{
-            background: 'var(--bg-secondary)', color: '#021246', border: '1px solid var(--border)',
+            background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border)',
             borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 600,
             cursor: changingPassword ? 'wait' : 'pointer', marginRight: 10,
           }}>

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { setAccessToken } from '@/lib/auth-client'
 import { markAuthBootstrapped, syncAuthSessionSilent } from '@/lib/auth-session-store'
+import { POST_AUTH_ROUTE } from '@/lib/public-routes'
 import { Spinner } from '@/components/ui'
 
 const TERMS_VERSION = '1.0'
@@ -26,7 +27,7 @@ function SignupForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get('redirect')
-  const safeRedirect = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : '/compte'
+  const safeRedirect = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : POST_AUTH_ROUTE
   const loginHref = redirect
     ? `/login?redirect=${encodeURIComponent(redirect)}`
     : '/login'

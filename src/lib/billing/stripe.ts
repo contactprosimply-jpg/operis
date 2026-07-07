@@ -1,6 +1,10 @@
 import Stripe from 'stripe'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
 
+export function isStripeConfigured(): boolean {
+  return !!process.env.STRIPE_SECRET_KEY
+}
+
 export function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY
   if (!key) throw new Error('STRIPE_SECRET_KEY requis')

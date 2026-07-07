@@ -3,6 +3,7 @@ import type { BillingPlan } from '@/lib/billing/plan-limits'
 import { planLimits, storageLimitBytes } from '@/lib/billing/plan-limits'
 import { getOrgStorageBytes } from '@/lib/billing/storage-usage'
 import { listOwnedOrganizations, userBelongsToOrganization } from '@/lib/organization'
+import { isStripeConfigured } from '@/lib/billing/stripe'
 
 export const BILLING_ADMIN_EMAIL = 'contact@nikodex.fr'
 
@@ -15,6 +16,7 @@ export type SubscriptionRow = {
   plan: BillingPlan | null
   current_period_end: string | null
   trial_ends_at: string | null
+  created_at: string
 }
 
 export type BillingContext = {
@@ -135,9 +137,11 @@ export async function getBillingContext(db: SupabaseClient, userId: string): Pro
     seatCount = 1
   }
 
-  const hasAccess = isBillingAdmin || hasActiveSubscription(subscription)
+  // Sans clé Stripe (dev local sans facturation configurée), on ne bloque jamais l'accès.
+  const stripeBypass = !isStripeConfigured()
+  const hasAccess = isBillingAdmin || stripeBypass || hasActiveSubscription(subscription)
   const effectivePlan = hasAccess
-    ? (isBillingAdmin && !subscription?.plan ? 'business' : (subscription?.plan ?? null))
+    ? ((isBillingAdmin || stripeBypass) && !subscription?.plan ? 'business' : (subscription?.plan ?? null))
     : null
 
   return {

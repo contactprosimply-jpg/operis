@@ -24,6 +24,7 @@ import { analyzeEmailWithKeywords, aoDetectionDisplayScore } from '@/lib/ao-emai
 import type { AoKeyword } from '@/lib/ao-keywords'
 import { listAoKeywords } from '@/lib/ao-keywords'
 import { autoLinkEmailToTender, applyTenderStatusFromDetection } from '@/lib/ao-tender-auto-link'
+import { isSenderBlocked } from '@/lib/mail-blocklist'
 import {
   parseInReplyToHeader,
   parseReferencesHeader,
@@ -345,9 +346,14 @@ async function quickInsertFromEnvelope(
   mailFolder: DbMailFolder,
   mailboxPath: string,
   source?: MailSourceMeta,
-): Promise<string | null> {
+): Promise<{ id: string; folder: DbMailFolder } | null> {
   const detection = detectAo(envelope.subject, '')
   const messageId = envelopeMessageId(userId, envelope, mailboxPath)
+  // Expéditeur bloqué (liste noire) : route vers Indésirables même si le serveur mail
+  // l'a laissé passer en INBOX.
+  const effectiveFolder = mailFolder === 'inbox' && envelope.from && await isSenderBlocked(db, userId, envelope.from)
+    ? 'spam'
+    : mailFolder
   const insertPayload: Record<string, unknown> = {
     user_id: userId,
     message_id: messageId,
@@ -367,7 +373,7 @@ async function quickInsertFromEnvelope(
     tender_id: null,
     attachments: [],
     has_attachments: false,
-    mail_folder: mailFolder,
+    mail_folder: effectiveFolder,
     imap_uid: envelope.uid,
     imap_mailbox: mailboxPath,
   }
@@ -405,14 +411,16 @@ async function quickInsertFromEnvelope(
         .eq('message_id', messageId)
         .maybeSingle()
       if (existing?.id) {
-        return await mergeDuplicateEnvelopeRow(db, existing, mailFolder, envelope, mailboxPath)
+        const mergedId = await mergeDuplicateEnvelopeRow(db, existing, effectiveFolder, envelope, mailboxPath)
+        return { id: mergedId, folder: (existing.mail_folder as DbMailFolder) ?? effectiveFolder }
       }
       return null
     }
     console.error('[Mail sync] quick insert:', error.message, envelope.subject)
     return null
   }
-  return inserted?.id ?? null
+  if (!inserted) return null
+  return { id: inserted.id, folder: (inserted.mail_folder as DbMailFolder) ?? effectiveFolder }
 }
 
 async function mergeDuplicateEnvelopeRow(
@@ -718,17 +726,18 @@ async function syncOneMailboxFolder(
   for (const envelope of newEnvelopes) {
     if (maxNewMessages != null && result.stored >= maxNewMessages) break
     try {
-      const emailId = await quickInsertFromEnvelope(
+      const insertedRow = await quickInsertFromEnvelope(
         db, userId, envelope, job.folder, job.mailboxPath, source,
       )
-      if (emailId) {
+      if (insertedRow) {
+        const { id: emailId, folder: storedFolder } = insertedRow
         newEmailMap.set(envelope.uid, emailId)
         result.stored++
         result.quickStored = (result.quickStored ?? 0) + 1
-        if (job.folder === 'inbox' && detectAo(envelope.subject, '').isAo) result.aoDetected++
-        if (job.folder === 'inbox' && newEnvelopes.length <= 25) {
+        if (storedFolder === 'inbox' && detectAo(envelope.subject, '').isAo) result.aoDetected++
+        if (storedFolder === 'inbox' && newEnvelopes.length <= 25) {
           try {
-            await notifyInboundEmailStored(db, userId, emailId, envelope, job.folder)
+            await notifyInboundEmailStored(db, userId, emailId, envelope, storedFolder)
           } catch (err) {
             console.error('[Mail sync] notification new mail:', err)
           }

@@ -19,7 +19,8 @@
   --danger-soft: rgba(239,68,68,0.1);
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
-  --text-muted: #475569;
+  /* #475569 ne passait qu'à 2.56:1 sur --bg-primary (WCAG AA exige 4.5:1 pour du texte) */
+  --text-muted: #7a869e;
   --border: rgba(148,163,184,0.07);
   --border-hi: rgba(148,163,184,0.13);
   --shadow-sm: 0 2px 8px rgba(0,0,0,0.4);
@@ -80,6 +81,15 @@
 }
 
 * { box-sizing: border-box; }
+
+/* Indicateur de focus clavier cohérent sur toute l'app (WCAG 2.4.7) — invisible au clic
+   souris, visible uniquement à la navigation clavier. Beaucoup de composants posent
+   `outline: none` au clic sans fournir d'alternative ; ce filet de sécurité global comble ça. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 
 html, body {
   margin: 0;
@@ -263,10 +273,11 @@ html {
   height: 100dvh;
 }
 
-body {
+/* Uniquement pour les pages "app" (sidebar + zone de contenu à scroll interne, voir .app-main).
+   Les pages "site" (compte, téléchargement, marketing) doivent garder le scroll naturel du body. */
+body.app-shell-mode {
   height: 100%;
   height: 100dvh;
-  margin: 0;
   overflow: hidden;
 }
 
@@ -289,7 +300,10 @@ body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
-  background: var(--bg-secondary);
+  background:
+    radial-gradient(ellipse 60% 380px at 50% 0%, rgba(79,142,247,0.07), transparent 70%),
+    var(--bg-secondary);
+  background-attachment: local, local;
   display: flex;
   flex-direction: column;
 }

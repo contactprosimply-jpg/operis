@@ -17,16 +17,17 @@ export const THEMES = [
     light: true,
   },
   {
+    // Valeurs alignées exactement sur le design system Operis (dark navy officiel).
     id: 'dark',
     label: 'Sombre',
     vars: {
-      '--bg-primary': '#0f1117',
-      '--bg-secondary': '#1a1d27',
-      '--bg-card': '#1e2130',
-      '--bg-hover': '#252839',
-      '--text-primary': '#f1f3f9',
-      '--text-secondary': '#8b92a5',
-      '--text-muted': '#4a5168',
+      '--bg-primary': '#080d18',
+      '--bg-secondary': '#0f1624',
+      '--bg-card': '#141c2e',
+      '--bg-hover': '#1a2340',
+      '--text-primary': '#f8fafc',
+      '--text-secondary': '#94a3b8',
+      '--text-muted': '#7a869e',
       '--shadow-sm': '0 2px 8px rgba(0,0,0,0.4)',
       '--shadow-md': '0 4px 20px rgba(0,0,0,0.5)',
       '--shadow-glow': '0 0 24px rgba(79,142,247,0.15)',
@@ -52,11 +53,13 @@ export const THEMES = [
   },
 ] as const
 
-export const DEFAULT_THEME_ID = 'light'
-export const DEFAULT_ACCENT = '#2563eb'
+// Le design system Operis impose le dark navy par défaut (pas de light mode) —
+// voir spec UX. Le sélecteur de thème dans les paramètres reste disponible tel quel.
+export const DEFAULT_THEME_ID = 'dark'
+export const DEFAULT_ACCENT = '#4f8ef7'
 
 export function applyTheme(themeId: string, accent = DEFAULT_ACCENT) {
-  const t = THEMES.find(th => th.id === themeId) ?? THEMES[0]
+  const t = THEMES.find(th => th.id === themeId) ?? THEMES.find(th => th.id === DEFAULT_THEME_ID)!
   const root = document.documentElement
   Object.entries(t.vars).forEach(([key, val]) => root.style.setProperty(key, val))
   root.style.setProperty('--accent', accent)
@@ -70,7 +73,7 @@ export function applyTheme(themeId: string, accent = DEFAULT_ACCENT) {
   root.style.setProperty('--warn-soft', t.light ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.1)')
   root.style.setProperty('--danger-soft', t.light ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.1)')
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute('content', t.light ? '#f8fafc' : '#0f1117')
+  if (meta) meta.setAttribute('content', t.light ? '#f8fafc' : '#080d18')
 }
 
 export function loadStoredTheme() {

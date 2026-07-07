@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { PROD_SUPABASE_PROJECT_REF } from '../setup'
+import { BLOCKED_SUPABASE_PROJECT_REFS } from '../setup'
 
 export type TestUsers = {
   userA: { id: string; client: SupabaseClient }
@@ -22,7 +22,7 @@ export function integrationConfigured(): boolean {
   const aPass = process.env.TEST_USER_A_PASSWORD
   const bPass = process.env.TEST_USER_B_PASSWORD
   if (!url || !anon || !service || !aEmail || !bEmail || !aPass || !bPass) return false
-  if (url.includes(PROD_SUPABASE_PROJECT_REF) && process.env.VITEST_ALLOW_PROD !== '1') return false
+  if (BLOCKED_SUPABASE_PROJECT_REFS.some(ref => url.includes(ref)) && process.env.VITEST_ALLOW_PROD !== '1') return false
   return true
 }
 

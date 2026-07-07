@@ -2,47 +2,30 @@
 
 export const SIMPLY_GREEN_PROGRAM = {
   name: 'Simply Green',
-  tagline: 'Chaque abonnement contribue à réduire l\'empreinte carbone du secteur du bâtiment.',
-  rule: '1 abonnement = 1 arbre planté',
+  tagline: 'Chaque mois d\'abonnement finance la plantation d\'un arbre pour réduire l\'empreinte carbone du secteur du bâtiment.',
+  rule: '1 mois d\'abonnement = 1 arbre planté',
   partner: 'Reforest\'Action',
   partnerUrl: 'https://www.reforestaction.com',
   partnerDescription:
     'Organisation française reconnue par les entreprises, avec un haut niveau de transparence et des outils adaptés aux partenariats B2B.',
 } as const
 
-/** Compteurs collectifs communauté Operis (mis à jour périodiquement). */
-export const SIMPLY_GREEN_GLOBAL = {
-  treesFinanced: 8_427,
-  co2Tonnes: 216,
-  participatingCompanies: 538,
-} as const
+const MS_PER_MONTH = 30.44 * 24 * 60 * 60 * 1000
 
-export type SimplyGreenProject = {
-  id: string
-  name: string
-  region: string
-  country: string
-  treesPlanted: number
+/** Nombre de mois pleins écoulés depuis le début d'un abonnement (1 arbre / mois). */
+export function treesForSubscription(createdAt: string | null | undefined, hasEverSubscribed: boolean): number {
+  if (!hasEverSubscribed || !createdAt) return 0
+  const elapsedMs = Date.now() - new Date(createdAt).getTime()
+  if (elapsedMs <= 0) return 0
+  return Math.max(1, Math.floor(elapsedMs / MS_PER_MONTH))
 }
 
-/** Projets Reforest'Action financés via Simply Green (illustratif — synchronisable avec l'API partenaire). */
-export const SIMPLY_GREEN_PROJECTS: SimplyGreenProject[] = [
-  { id: 'fr-bourgogne', name: 'Forêts de Bourgogne', region: 'Bourgogne-Franche-Comté', country: 'France', treesPlanted: 2_140 },
-  { id: 'mg-highlands', name: 'Hautes terres malgaches', region: 'Antananarivo', country: 'Madagascar', treesPlanted: 1_890 },
-  { id: 'pe-amazon', name: 'Reboisement amazonien', region: 'San Martín', country: 'Pérou', treesPlanted: 1_620 },
-  { id: 'sn-sahel', name: 'Grande muraille verte', region: 'Tambacounda', country: 'Sénégal', treesPlanted: 1_340 },
-  { id: 'fr-nouvelle-aquitaine', name: 'Pins landais', region: 'Nouvelle-Aquitaine', country: 'France', treesPlanted: 1_437 },
-]
-
 export function co2TonnesPerTree(): number {
-  return SIMPLY_GREEN_GLOBAL.co2Tonnes / SIMPLY_GREEN_GLOBAL.treesFinanced
+  // Estimation Reforest'Action : ~25 kg de CO2 absorbé par arbre sur sa durée de vie moyenne.
+  return 0.025
 }
 
 export function estimateCo2Tonnes(trees: number): number {
   if (trees <= 0) return 0
   return Math.round(trees * co2TonnesPerTree() * 10) / 10
-}
-
-export function userTreesFinanced(hasActiveSubscription: boolean): number {
-  return hasActiveSubscription ? 1 : 0
 }

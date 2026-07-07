@@ -11,7 +11,8 @@ import { sendUserEmail } from '@/lib/user-mailer'
 import { createAdminClient } from '@/lib/supabase'
 import { downloadDevisFile } from '@/lib/devis-storage'
 import { attachmentMetaOnly } from '@/lib/mail-storage'
-import { personalizeConsultationBody, buildConsultationDefaultBodyWithExtra } from '@/lib/email-compose'
+import { personalizeConsultationBody, buildConsultationDefaultBodyWithExtra, buildEmailWithSignature } from '@/lib/email-compose'
+import { isFirstTimeContact, queueVerificationChallenge } from '@/lib/mail-human-verification'
 import {
   CreateTenderPayload,
   UpdateTenderPayload,
@@ -134,7 +135,7 @@ export const tenderService = {
       document_ids?: string[]
       attachment_files?: Array<{ filename: string; contentType?: string; data: string }>
     }
-  ): Promise<ApiResponse<{ sent: number; errors: number }>> {
+  ): Promise<ApiResponse<{ sent: number; errors: number; pendingVerification: number }>> {
     try {
       const tender = await tenderRepository.findById(tenderId, userId)
       if (!tender) return { success: false, error: 'AO introuvable' }
@@ -191,6 +192,7 @@ export const tenderService = {
       const cc = options?.cc?.trim() || undefined
       let sent = 0
       let errors = 0
+      let pendingVerification = 0
 
       for (const supplierId of supplierIds) {
         const supplier = await supplierRepository.findById(supplierId, userId)
@@ -199,6 +201,45 @@ export const tenderService = {
         const bodyPlain = options?.body
           ? personalizeConsultationBody(options.body, supplier.name)
           : buildConsultationDefaultBodyWithExtra(tender, supplier.name, options?.message)
+
+        // Anti-bot : premier contact jamais échangé avec ce fournisseur → mail-défi au lieu
+        // d'un envoi direct, la consultation restera "en_attente" jusqu'à confirmation.
+        if (await isFirstTimeContact(db, userId, supplier.email)) {
+          const { html, text } = buildEmailWithSignature(bodyPlain, signature)
+          const challenge = await queueVerificationChallenge(db, userId, {
+            toAddress: supplier.email,
+            cc,
+            subject,
+            bodyText: text,
+            bodyHtml: html,
+            attachments: mailAttachments.map(a => ({
+              filename: a.filename,
+              contentType: a.contentType,
+              data: a.content.toString('base64'),
+            })),
+            tenderId,
+            supplierId,
+          })
+          if (challenge.success) {
+            pendingVerification++
+          } else {
+            await emailLogRepository.create({
+              user_id: userId,
+              tender_id: tenderId,
+              supplier_id: supplierId,
+              type: 'consultation',
+              to_address: supplier.email,
+              subject,
+              body: null,
+              sent_at: new Date().toISOString(),
+              success: false,
+              error_message: challenge.error ?? 'Erreur vérification anti-bot',
+              attachments: [],
+            })
+            errors++
+          }
+          continue
+        }
 
         try {
           const { text: sentText } = await sendUserEmail(db, userId, {
@@ -248,7 +289,7 @@ export const tenderService = {
         }
       }
 
-      return { success: true, data: { sent, errors } }
+      return { success: true, data: { sent, errors, pendingVerification } }
     } catch (e: any) {
       return { success: false, error: e.message }
     }

@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { clampString, badRequest } from '@/lib/api-validation'
 import { completeSignupOnboarding } from '@/lib/auth-onboarding'
+import { sitePath } from '@/lib/site-url'
 
 const TERMS_VERSION = '1.0'
 
@@ -87,6 +88,19 @@ export async function POST(req: NextRequest) {
   }
 
   const needsEmailConfirmation = !skipEmailConfirm && !data.user.email_confirmed_at
+
+  if (needsEmailConfirmation) {
+    // admin.createUser() ne déclenche jamais l'envoi de l'email de confirmation
+    // (contrairement à supabase.auth.signUp() côté client) — il faut le redemander explicitement.
+    const { error: resendError } = await db.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: sitePath('/login') },
+    })
+    if (resendError) {
+      console.error('[signup] échec envoi email de confirmation:', resendError.message)
+    }
+  }
 
   return Response.json({
     success: true,

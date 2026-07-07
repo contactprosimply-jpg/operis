@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { setAccessToken } from '@/lib/auth-client'
 import { markAuthBootstrapped, syncAuthSessionSilent } from '@/lib/auth-session-store'
+import { POST_AUTH_ROUTE } from '@/lib/public-routes'
 import { Spinner } from '@/components/ui'
 
 function LoginForm() {
@@ -38,7 +39,7 @@ function LoginForm() {
     syncAuthSessionSilent(data.session)
 
     const redirect = searchParams.get('redirect')
-    const safeRedirect = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : '/compte'
+    const safeRedirect = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : POST_AUTH_ROUTE
     router.push(safeRedirect)
     router.refresh()
   }

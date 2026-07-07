@@ -1,5 +1,5 @@
 ﻿-- ============================================================
--- OPERIS — Schéma complet (44 migrations consolidées, encodage corrigé)
+-- OPERIS — Schéma complet (49 migrations consolidées, encodage corrigé)
 -- À exécuter UNE fois dans le SQL Editor du NOUVEAU projet EU.
 -- ============================================================
 
@@ -1149,3 +1149,61 @@ exception
     return new;
 end;
 $function$;
+-- Bucket Supabase Storage pour les documents AO (devis, plans, pièces jointes tender_documents).
+-- Ce bucket n'a jamais été créé par migration (uniquement le référencement en base via
+-- tender_documents.bucket) — absent aussi bien en prod qu'en dev, d'où l'échec systématique
+-- de l'upload de documents sur une fiche AO ("erreur lors de l'ajout d'un document").
+INSERT INTO storage.buckets (id, name, public, file_size_limit)
+VALUES ('devis', 'devis', false, 52428800)
+ON CONFLICT (id) DO UPDATE SET file_size_limit = 52428800;
+-- Chemin local/réseau du dossier chantier (saisi manuellement par l'utilisateur), ouvert
+-- depuis l'app desktop (Electron) via un bouton dédié sur la fiche AO.
+ALTER TABLE tenders ADD COLUMN IF NOT EXISTS local_folder_path text DEFAULT NULL;
+-- Liste noire d'expéditeurs par utilisateur : les mails reçus de ces adresses sont
+-- automatiquement routés vers Indésirables dès la synchro IMAP, même si le serveur mail
+-- les a laissés passer en INBOX.
+CREATE TABLE IF NOT EXISTS blocked_senders (
+  id         uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id    uuid NOT NULL REFERENCES profiles (id) ON DELETE CASCADE,
+  sender     text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, sender)
+);
+
+CREATE INDEX IF NOT EXISTS idx_blocked_senders_user ON blocked_senders (user_id);
+
+ALTER TABLE blocked_senders ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS blocked_senders_own ON blocked_senders;
+CREATE POLICY blocked_senders_own ON blocked_senders
+  FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+-- Vérification anti-bot au premier contact : le vrai message est mis en attente et un
+-- email intermédiaire ("cliquez pour recevoir") est envoyé au destinataire. Le message réel
+-- n'est délivré qu'après clic sur le lien de confirmation.
+CREATE TABLE IF NOT EXISTS pending_mail_verifications (
+  id           uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id      uuid NOT NULL REFERENCES profiles (id) ON DELETE CASCADE,
+  to_address   text NOT NULL,
+  cc           text,
+  bcc          text,
+  subject      text NOT NULL,
+  body_text    text NOT NULL,
+  body_html    text NOT NULL,
+  attachments  jsonb NOT NULL DEFAULT '[]'::jsonb,
+  tender_id    uuid REFERENCES tenders (id) ON DELETE SET NULL,
+  supplier_id  uuid REFERENCES suppliers (id) ON DELETE SET NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  expires_at   timestamptz NOT NULL DEFAULT (now() + interval '7 days'),
+  verified_at  timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_mail_verifications_user ON pending_mail_verifications (user_id);
+
+ALTER TABLE pending_mail_verifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS pending_mail_verifications_own ON pending_mail_verifications;
+CREATE POLICY pending_mail_verifications_own ON pending_mail_verifications
+  FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+-- Indicateur "je suis le client de ce dossier" (pas d'intermédiaire) — coché à la création,
+-- affiché en badge sur la fiche AO. Purement informatif, ne change aucun comportement.
+ALTER TABLE tenders ADD COLUMN IF NOT EXISTS is_own_client boolean NOT NULL DEFAULT false;

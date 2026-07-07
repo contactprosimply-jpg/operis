@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
         plan: billing.effectivePlan,
         status: billing.subscription?.status ?? null,
         current_period_end: billing.subscription?.current_period_end ?? null,
+        subscription_created_at: billing.subscription?.created_at ?? null,
         is_owner: billing.isOwner,
         is_billing_admin: billing.isBillingAdmin ?? false,
         limits: billing.limits,

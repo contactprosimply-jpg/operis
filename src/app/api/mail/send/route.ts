@@ -15,7 +15,40 @@ import {
   resolveTenderIdFromSubject,
 } from '@/lib/tender-documents'
 import { upsertContactsFromOutboundSend } from '@/lib/contacts'
+import { extractEmailAddress } from '@/lib/mail-attachments'
+import { isFirstTimeContact, queueVerificationChallenge } from '@/lib/mail-human-verification'
 export const maxDuration = 30
+
+/** Si le destinataire est un fournisseur en attente sur cet AO, marque la consultation "envoyée"
+ *  — même logique que le bouton dédié "Envoyer consultation", mais depuis la messagerie générale. */
+async function markConsultationSentIfMatch(
+  db: ReturnType<typeof createAdminClient>,
+  tenderId: string,
+  toAddress: string,
+): Promise<void> {
+  const cleanTo = extractEmailAddress(toAddress) || toAddress.trim().toLowerCase()
+  if (!cleanTo) return
+
+  const { data: consultations } = await db
+    .from('consultation_suppliers')
+    .select('supplier_id, status, supplier:suppliers(id, email)')
+    .eq('tender_id', tenderId)
+    .eq('status', 'en_attente')
+
+  for (const c of consultations ?? []) {
+    const supplierRaw = c.supplier as { id: string; email: string } | { id: string; email: string }[] | null
+    const supplier = Array.isArray(supplierRaw) ? supplierRaw[0] : supplierRaw
+    if (!supplier?.email) continue
+    if (supplier.email.toLowerCase().trim() !== cleanTo) continue
+
+    await db
+      .from('consultation_suppliers')
+      .update({ status: 'envoye', last_sent_at: new Date().toISOString() })
+      .eq('tender_id', tenderId)
+      .eq('supplier_id', supplier.id)
+    break
+  }
+}
 
 async function resolveTenderIdForSend(
   db: ReturnType<typeof createAdminClient>,
@@ -204,6 +237,33 @@ export async function POST(req: NextRequest) {
     subject: subjectText,
   })
 
+  // Vérification anti-bot : un premier contact (jamais échangé) passe par un mail-défi avant
+  // livraison — sauf réponse à un mail reçu, où le destinataire n'est par définition pas nouveau.
+  if (!resolvedReplyId && await isFirstTimeContact(db, userId, toText)) {
+    const challenge = await queueVerificationChallenge(db, userId, {
+      toAddress: toText,
+      cc: typeof cc === 'string' ? cc.slice(0, 500) : undefined,
+      bcc: typeof bcc === 'string' ? bcc.slice(0, 500) : undefined,
+      subject: subjectText,
+      bodyText: finalText,
+      bodyHtml: finalHtml,
+      attachments: mailAttachments.map(a => ({
+        filename: a.filename,
+        contentType: a.contentType,
+        data: a.content.toString('base64'),
+        size: a.size,
+      })),
+      tenderId: resolvedTenderId,
+    })
+    if (!challenge.success) {
+      return Response.json({ success: false, error: `Erreur envoi: ${challenge.error}` }, { status: 500 })
+    }
+    return Response.json({
+      success: true,
+      data: { sent: false, pendingVerification: true, from: account.smtp_user },
+    })
+  }
+
   try {
     const info = await transporter.sendMail({
       from: `"${account.smtp_user.split('@')[0]}" <${account.smtp_user}>`,
@@ -284,6 +344,11 @@ export async function POST(req: NextRequest) {
         await persistMailLinkedDocuments(db, userId, resolvedTenderId, sentEmailId)
       } catch (docErr) {
         console.error('[Mail] persist tender docs from sent:', docErr)
+      }
+      try {
+        await markConsultationSentIfMatch(db, resolvedTenderId, toText)
+      } catch (consultErr) {
+        console.error('[Mail] maj statut consultation:', consultErr)
       }
     }
 

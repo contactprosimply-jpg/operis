@@ -1,5 +1,6 @@
-const { app, BrowserWindow, shell, nativeImage } = require('electron')
+const { app, BrowserWindow, shell, nativeImage, ipcMain } = require('electron')
 const path = require('path')
+const fs = require('fs')
 
 const APP_BASE = (process.env.OPERIS_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://operis-pro.com').replace(/\/$/, '')
 /** Application métier (dashboard) — le site vitrine reste sur operis-pro.com sans sidebar app. */
@@ -33,6 +34,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
   })
 
@@ -59,6 +61,20 @@ function createWindow() {
 if (process.platform === 'win32') {
   app.setAppUserModelId('fr.nikodex.operis')
 }
+
+/** Ouvre un chemin local/réseau dans l'Explorateur — saisi manuellement par l'utilisateur sur une fiche AO. */
+ipcMain.handle('open-folder', async (_event, folderPath) => {
+  if (typeof folderPath !== 'string' || !folderPath.trim()) {
+    return { success: false, error: 'Chemin vide' }
+  }
+  const normalized = folderPath.trim()
+  if (!fs.existsSync(normalized)) {
+    return { success: false, error: 'Dossier introuvable — vérifiez le chemin' }
+  }
+  const result = await shell.openPath(normalized)
+  if (result) return { success: false, error: result }
+  return { success: true }
+})
 
 app.whenReady().then(() => {
   createWindow()

@@ -90,6 +90,7 @@ export default function ConsultationComposeModal({
   const [files, setFiles] = useState<File[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [portalReady, setPortalReady] = useState(false)
+  const backdropMouseDown = useRef(false)
 
   useEffect(() => setPortalReady(true), [])
 
@@ -139,7 +140,6 @@ export default function ConsultationComposeModal({
 
   const selectedRecipients = recipients.filter(r => selected.includes(r.supplier_id))
   const toPreview = selectedRecipients.map(r => r.email).join(', ')
-  const backdropMouseDown = useRef(false)
 
   return createPortal(
     <div

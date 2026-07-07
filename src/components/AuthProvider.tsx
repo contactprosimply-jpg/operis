@@ -67,6 +67,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!uid) return false
     return readBillingCache(uid) === true
   })
+  // Un rechargement complet (hard reload / lien profond) démarre toujours avec `session`
+  // à null le temps que getSession() résolve en arrière-plan (readAuthSessionStore ne
+  // restaure que le userId, pas la session). Sans ce garde-fou, la redirection vers /login
+  // se déclenche à tort pour un utilisateur pourtant déjà connecté.
+  const hasPersistedUser = Boolean(initial.userId ?? initial.session?.user?.id)
+  const [sessionChecked, setSessionChecked] = useState(false)
 
   const userId = session?.user?.id ?? initial.userId ?? null
   userIdRef.current = userId
@@ -88,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const guard = setTimeout(() => {
       setReady(true)
+      setSessionChecked(true)
       if (!isAuthBootstrapped()) {
         markAuthBootstrapped(session)
       }
@@ -114,10 +121,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         markAuthBootstrapped(null)
       }
       setReady(true)
+      setSessionChecked(true)
       if (typeof console !== 'undefined' && console.timeEnd) console.timeEnd('[auth] bootstrap')
     }).catch(() => {
       if (!mounted) return
       setReady(true)
+      setSessionChecked(true)
       markAuthBootstrapped(session)
     })
 
@@ -137,6 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           markAuthBootstrapped(nextSession)
         }
         setReady(true)
+        setSessionChecked(true)
         return
       }
 
@@ -147,6 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAccessToken(null)
         setHasBillingAccess(false)
         setReady(true)
+        setSessionChecked(true)
         return
       }
 
@@ -161,6 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (cached === true) setHasBillingAccess(true)
         }
         setReady(true)
+        setSessionChecked(true)
         return
       }
 
@@ -169,6 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAccessToken(nextSession?.access_token ?? null)
         markAuthBootstrapped(nextSession)
         setReady(true)
+        setSessionChecked(true)
       }
     })
 
@@ -200,6 +213,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Paywall : redirection sans bloquer le rendu
   useEffect(() => {
+    // Un hard reload / lien profond démarre avec `session` à null le temps que la
+    // vérification réelle arrive (voir hasPersistedUser plus haut) — tant qu'on n'a pas la
+    // réponse et qu'on sait qu'un utilisateur était potentiellement connecté, on attend
+    // au lieu de bounce à tort vers /login.
+    if (!session && hasPersistedUser && !sessionChecked) return
+
     if (!session && isMemberSite) {
       router.replace(`/login?redirect=${encodeURIComponent(pathname)}`)
       return
@@ -214,14 +233,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!session) return
 
     if (isAuthEntryRoute(pathname)) {
-      if (pathname !== POST_AUTH_ROUTE) router.replace(POST_AUTH_ROUTE)
+      if (pathname !== POST_AUTH_ROUTE) {
+        const redirectParam = typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('redirect')
+          : null
+        const safeRedirectTo = redirectParam?.startsWith('/') && !redirectParam.startsWith('//')
+          ? redirectParam
+          : POST_AUTH_ROUTE
+        router.replace(safeRedirectTo)
+      }
       return
     }
 
     if (!hasBillingAccess && isAppRoute(pathname) && !isBillingExempt) {
       router.replace('/choose-plan')
     }
-  }, [session, hasBillingAccess, pathname, router, isPublic, isBillingExempt, isMemberSite])
+  }, [session, hasBillingAccess, pathname, router, isPublic, isBillingExempt, isMemberSite, sessionChecked, hasPersistedUser])
 
   return (
     <AuthContext.Provider value={{

@@ -11,6 +11,102 @@ import {
   contactTimeAgo,
 } from '@/lib/contacts'
 
+function ContactCard({
+  contact,
+  onToggleFavorite,
+  toggling,
+}: {
+  contact: OperisContact
+  onToggleFavorite: (email: string, next: boolean) => void
+  toggling: string | null
+}) {
+  const router = useRouter()
+  const color = contactAvatarColor(contact.email)
+
+  return (
+    <div style={{
+      background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10,
+      padding: '12px 14px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+          background: color, color: '#fff', fontWeight: 700, fontSize: 11,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {contactInitials(contact.name, contact.email)}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {contact.name ?? contact.email}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {contact.email}
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={toggling === contact.email}
+          title={contact.is_favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+          onClick={() => onToggleFavorite(contact.email, !contact.is_favorite)}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, flexShrink: 0,
+            color: contact.is_favorite ? '#fbbf24' : 'var(--text-muted)',
+            opacity: toggling === contact.email ? 0.5 : 1,
+          }}
+        >
+          {contact.is_favorite ? '★' : '☆'}
+        </button>
+      </div>
+      {contact.company && (
+        <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 6 }}>{contact.company}</div>
+      )}
+      <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+        {contact.email_count} mail{contact.email_count > 1 ? 's' : ''} · {contactTimeAgo(contact.last_contacted_at)}
+      </div>
+      {contact.ao_ids?.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+          {contact.ao_ids.slice(0, 3).map(tid => (
+            <button
+              key={tid}
+              type="button"
+              onClick={() => router.push(`/tenders/${tid}`)}
+              style={{
+                fontSize: 9, padding: '2px 6px', borderRadius: 5,
+                border: '1px solid rgba(2,18,70,0.25)', background: 'rgba(2,18,70,0.06)',
+                color: '#021246', cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
+              }}
+            >
+              AO
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+type KanbanColumnId = 'favoris' | 'ao' | 'recent' | 'inactif'
+
+const KANBAN_COLUMNS: { id: KanbanColumnId; label: string; icon: string }[] = [
+  { id: 'favoris', label: 'Favoris', icon: '⭐' },
+  { id: 'ao', label: 'Lié à un AO', icon: '🔨' },
+  { id: 'recent', label: 'Contacté récemment', icon: '🕓' },
+  { id: 'inactif', label: 'Inactif', icon: '💤' },
+]
+
+const RECENT_CONTACT_DAYS = 30
+
+function contactKanbanColumn(contact: OperisContact): KanbanColumnId {
+  if (contact.is_favorite) return 'favoris'
+  if (contact.ao_ids?.length > 0) return 'ao'
+  if (contact.last_contacted_at) {
+    const days = (Date.now() - new Date(contact.last_contacted_at).getTime()) / 86400000
+    if (days <= RECENT_CONTACT_DAYS) return 'recent'
+  }
+  return 'inactif'
+}
+
 function ContactRow({
   contact,
   onToggleFavorite,
@@ -90,6 +186,7 @@ export default function ContactsPage() {
   const [toggling, setToggling] = useState<string | null>(null)
   const [favoritingAll, setFavoritingAll] = useState(false)
   const [search, setSearch] = useState('')
+  const [view, setView] = useState<'list' | 'kanban'>('list')
   const { show, ToastComponent } = useToast()
 
   const load = useCallback(async () => {
@@ -186,6 +283,32 @@ export default function ContactsPage() {
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+            <button
+              type="button"
+              onClick={() => setView('list')}
+              style={{
+                padding: '7px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                fontFamily: 'DM Sans, system-ui',
+                background: view === 'list' ? 'var(--accent-soft)' : 'var(--bg-card)',
+                color: view === 'list' ? 'var(--accent)' : 'var(--text-secondary)',
+              }}
+            >
+              ☰ Liste
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('kanban')}
+              style={{
+                padding: '7px 12px', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                fontFamily: 'DM Sans, system-ui',
+                background: view === 'kanban' ? 'var(--accent-soft)' : 'var(--bg-card)',
+                color: view === 'kanban' ? 'var(--accent)' : 'var(--text-secondary)',
+              }}
+            >
+              ▦ Kanban
+            </button>
+          </div>
           {hasNonFavorites && (
             <button
               type="button"
@@ -217,33 +340,65 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: '#021246', marginBottom: 10 }}>⭐ Favoris ({favorites.length})</div>
-        {favorites.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>Aucun favori — cliquez ☆ sur un contact ou utilisez « Tout ajouter en favoris »</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {favorites.map(c => (
-              <ContactRow key={c.id} contact={c} onToggleFavorite={toggleFavorite} toggling={toggling} />
-            ))}
+      {view === 'list' ? (
+        <>
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#021246', marginBottom: 10 }}>⭐ Favoris ({favorites.length})</div>
+            {favorites.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>Aucun favori — cliquez ☆ sur un contact ou utilisez « Tout ajouter en favoris »</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {favorites.map(c => (
+                  <ContactRow key={c.id} contact={c} onToggleFavorite={toggleFavorite} toggling={toggling} />
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      <div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10 }}>
-          👥 Tous les contacts ({others.length})
-        </div>
-        {others.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucun contact</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {others.map(c => (
-              <ContactRow key={c.id} contact={c} onToggleFavorite={toggleFavorite} toggling={toggling} />
-            ))}
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10 }}>
+              👥 Tous les contacts ({others.length})
+            </div>
+            {others.length === 0 ? (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucun contact</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {others.map(c => (
+                  <ContactRow key={c.id} contact={c} onToggleFavorite={toggleFavorite} toggling={toggling} />
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      ) : (
+        <div style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
+          {KANBAN_COLUMNS.map(col => {
+            const items = filtered.filter(c => contactKanbanColumn(c) === col.id)
+            return (
+              <div key={col.id} style={{ flex: '0 0 280px', minWidth: 280 }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10,
+                  fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)',
+                }}>
+                  <span>{col.icon}</span>
+                  <span>{col.label}</span>
+                  <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>({items.length})</span>
+                </div>
+                <div style={{
+                  display: 'flex', flexDirection: 'column', gap: 8, padding: 10, borderRadius: 10,
+                  background: 'var(--bg-secondary)', border: '1px solid var(--border)', minHeight: 120,
+                }}>
+                  {items.length === 0 ? (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '8px 4px' }}>Aucun contact</div>
+                  ) : items.map(c => (
+                    <ContactCard key={c.id} contact={c} onToggleFavorite={toggleFavorite} toggling={toggling} />
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

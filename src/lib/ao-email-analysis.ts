@@ -47,11 +47,17 @@ export function analyzeEmailWithKeywords(
   const dominantCategory = Object.entries(categories)
     .sort((a, b) => b[1] - a[1])[0]?.[0] as AoKeywordCategory | undefined
 
+  // isAO ne dépend que du signal "detection" — les catégories question/reponse/relance/
+  // refus/acceptation servent à qualifier une correspondance déjà liée à un AO, pas à en
+  // déclencher un nouveau : un mail générique ("relance", "question", "ci-joint"...) sur
+  // un tout autre sujet ne doit jamais, à lui seul, se faire classer comme AO.
+  const detectionScore = categories.detection ?? 0
+
   return {
     score,
     categories,
     matchedKeywords,
-    isAO: score >= threshold,
+    isAO: detectionScore >= threshold,
     dominantCategory: dominantCategory ?? null,
   }
 }

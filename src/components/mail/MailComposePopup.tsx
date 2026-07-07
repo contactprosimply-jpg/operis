@@ -7,10 +7,10 @@ import { getSignatureData } from '@/lib/email-signature'
 import ContactRecipientField from '@/components/mail/ContactRecipientField'
 import type { OperisContact } from '@/lib/contacts'
 
-const POPUP_WIDTH = 560
-const POPUP_HEIGHT = 520
-const POPUP_WIDTH_LARGE = 760
-const POPUP_HEIGHT_LARGE = 680
+const POPUP_WIDTH = 720
+const POPUP_HEIGHT = 640
+const POPUP_WIDTH_LARGE = 920
+const POPUP_HEIGHT_LARGE = 780
 const POPUP_MIN_WIDTH = 420
 const POPUP_MIN_HEIGHT = 360
 const POPUP_Z_INDEX = 10050

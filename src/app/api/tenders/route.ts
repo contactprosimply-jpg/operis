@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   if (!body || typeof body !== 'object') return badRequest('Corps JSON requis')
 
-  const allowed = ['title', 'client', 'description', 'deadline', 'status', 'source_email_id']
+  const allowed = ['title', 'client', 'description', 'deadline', 'status', 'source_email_id', 'is_own_client']
   const fieldErr = rejectUnexpectedFields(body as Record<string, unknown>, allowed)
   if (fieldErr) return badRequest(fieldErr)
 

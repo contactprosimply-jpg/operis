@@ -53,7 +53,6 @@ const KEYWORDS: { terms: string[]; weight: number }[] = [
       'remise des offres',
       'date limite de réponse',
       'date limite de reponse',
-      'candidature',
       'invitation à soumissionner',
       'invitation a soumissionner',
       'acte d\'engagement',
@@ -74,17 +73,13 @@ const KEYWORDS: { terms: string[]; weight: number }[] = [
     ],
   },
   {
-    weight: 8,
+    // Volontairement restreint : "travaux", "chantier", "construction", "rénovation" sont
+    // juste le vocabulaire métier BTP (présent dans un mail sur deux, AO ou pas) — les garder
+    // ici ne fait que gonfler les faux positifs (ex: simples demandes de fiche technique).
+    weight: 6,
     terms: [
-      'lot ',
-      'travaux',
-      'chantier',
-      'réhabilitation',
-      'construction',
-      'rénovation',
       'date limite',
       'délai de réponse',
-      'remise des offres',
     ],
   },
 ]
@@ -169,6 +164,13 @@ export function detectAo(subject: string, body: string): DetectionResult {
     return { isAo: false, score: 0, matchedKeywords: ['réponse devis'] }
   }
 
+  // Les signaux négatifs priment sur le court-circuit "sujet AO" : un motif comme \bao\b
+  // peut matcher par accident, un mot négatif explicite (newsletter, désabonnement...) ne doit
+  // jamais être outrepassé par une détection de sujet plus large.
+  if (NEGATIVE_KEYWORDS.some(neg => text.includes(neg.toLowerCase()))) {
+    return { isAo: false, score: 0, matchedKeywords: [] }
+  }
+
   for (const pattern of SUBJECT_AO_PATTERNS) {
     if (pattern.test(cleanSubject)) {
       return { isAo: true, score: 85, matchedKeywords: ['sujet AO'] }
@@ -184,12 +186,6 @@ export function detectAo(subject: string, body: string): DetectionResult {
         score += category.weight
         matchedKeywords.push(term.trim())
       }
-    }
-  }
-
-  for (const neg of NEGATIVE_KEYWORDS) {
-    if (text.includes(neg.toLowerCase())) {
-      score -= 25
     }
   }
 

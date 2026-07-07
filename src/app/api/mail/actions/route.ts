@@ -13,6 +13,7 @@ import {
   type FolderTarget,
 } from '@/lib/mail-folder-actions'
 import type { MailFolderKind } from '@/lib/mail-folders'
+import { blockSender, unblockSender } from '@/lib/mail-blocklist'
 
 export const maxDuration = 60
 
@@ -52,6 +53,10 @@ export async function POST(req: NextRequest) {
     }
     const result = await moveEmailOnServer(db, userId, emailId, folderTarget, account)
     if (!result.success) return Response.json({ success: false, error: result.error }, { status: 400 })
+    if (folderTarget.kind === 'spam') {
+      const { data: email } = await db.from('emails').select('from_address').eq('id', emailId).maybeSingle()
+      if (email?.from_address) await blockSender(db, userId, email.from_address)
+    }
     return Response.json({ success: true })
   }
 
@@ -62,8 +67,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === 'not_spam') {
+    const { data: emailBefore } = await db.from('emails').select('from_address').eq('id', emailId).maybeSingle()
     const result = await markNotSpam(db, userId, emailId, account)
     if (!result.success) return Response.json({ success: false, error: result.error }, { status: 400 })
+    if (emailBefore?.from_address) await unblockSender(db, userId, emailBefore.from_address)
     return Response.json({ success: true })
   }
 

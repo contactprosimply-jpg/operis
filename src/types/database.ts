@@ -238,6 +238,7 @@ export interface CreateTenderPayload {
   description?: string
   deadline?: string
   source_email_id?: string
+  is_own_client?: boolean
 }
 
 export interface UpdateTenderPayload {
@@ -246,6 +247,7 @@ export interface UpdateTenderPayload {
   description?: string
   deadline?: string
   status?: TenderStatus
+  is_own_client?: boolean
 }
 
 export interface CreateSupplierPayload {

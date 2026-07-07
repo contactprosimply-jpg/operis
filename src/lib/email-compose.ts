@@ -1,3 +1,13 @@
+import { siteUrl } from '@/lib/site-url'
+
+function operisFooter(): { html: string; text: string } {
+  const url = siteUrl()
+  return {
+    html: `<p style="margin: 16px 0 0; font-family: DM Sans, Arial, sans-serif; font-size: 11px; color: #9ca3af;">Ce message a été envoyé via <a href="${url}" style="color: #9ca3af;">Operis</a></p>`,
+    text: `\n\n— Envoyé via Operis (${url})`,
+  }
+}
+
 /** Construit HTML + texte pour un email avec signature (messagerie + consultations). */
 export function buildEmailWithSignature(bodyText: string, signatureText: string): { html: string; text: string } {
   const bodyHtml = bodyText.replace(/\n/g, '<br>')
@@ -5,26 +15,29 @@ export function buildEmailWithSignature(bodyText: string, signatureText: string)
     ? `<div style="font-family: DM Sans, Arial, sans-serif; font-size: 14px; color: #374151; line-height: 1.6;">${bodyHtml}</div>`
     : ''
 
-  if (!signatureText.trim()) {
-    return {
-      html: bodyBlock || '<div></div>',
-      text: bodyText,
-    }
-  }
+  const footer = operisFooter()
+  let html: string
+  let text: string
 
-  const isHtmlSignature = signatureText.includes('<') && signatureText.includes('>')
-  if (isHtmlSignature) {
-    return {
-      html: `${bodyBlock}${bodyBlock ? '<br>' : ''}<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;">${signatureText}`,
-      text: bodyText.trim()
+  if (!signatureText.trim()) {
+    html = bodyBlock || '<div></div>'
+    text = bodyText
+  } else {
+    const isHtmlSignature = signatureText.includes('<') && signatureText.includes('>')
+    if (isHtmlSignature) {
+      html = `${bodyBlock}${bodyBlock ? '<br>' : ''}<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;">${signatureText}`
+      text = bodyText.trim()
         ? `${bodyText}\n\n--\n${signatureText.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`
-        : signatureText.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(),
+        : signatureText.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+    } else {
+      html = `${bodyBlock}${bodyBlock ? '<br>' : ''}<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;"><div style="font-family: DM Sans, Arial, sans-serif; font-size: 12px; color: #6b7280; line-height: 1.6;">${signatureText.replace(/\n/g, '<br>')}</div>`
+      text = bodyText.trim() ? `${bodyText}\n\n--\n${signatureText}` : signatureText
     }
   }
 
   return {
-    html: `${bodyBlock}${bodyBlock ? '<br>' : ''}<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;"><div style="font-family: DM Sans, Arial, sans-serif; font-size: 12px; color: #6b7280; line-height: 1.6;">${signatureText.replace(/\n/g, '<br>')}</div>`,
-    text: bodyText.trim() ? `${bodyText}\n\n--\n${signatureText}` : signatureText,
+    html: `${html}${footer.html}`,
+    text: `${text}${footer.text}`,
   }
 }
 
@@ -36,16 +49,13 @@ export function buildConsultationDefaultBody(
   const lines = [
     greeting,
     '',
-    "Nous vous contactons dans le cadre d'un appel d'offres et souhaiterions recueillir votre devis pour le projet suivant :",
-    '',
-    `Projet : ${tender.title}`,
-    `Client : ${tender.client}`,
+    'Je vous consulte pour ce dossier :',
+    `Nom : ${tender.title}`,
   ]
-  if (tender.description) lines.push(`Description : ${tender.description}`)
   if (tender.deadline) {
-    lines.push(`Date limite de réponse : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}`)
+    lines.push(`Date limite : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}`)
   }
-  lines.push('', 'Merci de nous faire parvenir votre offre dans les meilleurs délais.')
+  lines.push('', 'Merci de votre retour.')
   return lines.join('\n')
 }
 

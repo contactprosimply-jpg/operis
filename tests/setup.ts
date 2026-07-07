@@ -7,5 +7,5 @@ const root = process.cwd()
 loadEnv({ path: path.resolve(root, '.env.test'), override: true })
 loadEnv({ path: path.resolve(root, '.env.local'), override: false })
 
-/** Ref projet Supabase prod — les tests d'intégration refusent cette URL (voir supabase-test.ts). */
-export const PROD_SUPABASE_PROJECT_REF = 'lixlqcarbucmczjbgbhp'
+/** Refs Supabase bloqués pour les tests d'intégration : prod actuel + ancien projet prod (voir supabase-test.ts). */
+export const BLOCKED_SUPABASE_PROJECT_REFS = ['tbrxojcsahthzeowbzdi', 'lixlqcarbucmczjbgbhp']
