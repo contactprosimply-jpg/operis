@@ -55,7 +55,7 @@ export const THEMES = [
 
 // Le design system Operis impose le dark navy par défaut (pas de light mode) —
 // voir spec UX. Le sélecteur de thème dans les paramètres reste disponible tel quel.
-export const DEFAULT_THEME_ID = 'dark'
+export const DEFAULT_THEME_ID = 'light'
 export const DEFAULT_ACCENT = '#4f8ef7'
 
 export function applyTheme(themeId: string, accent = DEFAULT_ACCENT) {
