@@ -28,9 +28,12 @@ function parseAmount(raw: string): number | null {
   if (!/\d/.test(cleaned)) return null
   let normalized = cleaned
   if (/,\d{1,2}$/.test(normalized) && normalized.includes('.')) {
-    normalized = normalized.replace(/\./g, '').replace(',', '.')
+    normalized = normalized.replace(/\./g, '').replace(/\s/g, '').replace(',', '.')
   } else if (/,\d{1,2}$/.test(normalized)) {
-    normalized = normalized.replace(',', '.')
+    // Format FR "12 345,67" : s\u00e9parateur de milliers = espace (pas de point). Sans le
+    // retrait de l'espace, parseFloat("12 345.67") s'arr\u00eate au premier caract\u00e8re non
+    // num\u00e9rique et renvoie 12 au lieu de 12345.67 \u2014 troncature silencieuse du montant.
+    normalized = normalized.replace(/\s/g, '').replace(',', '.')
   } else {
     normalized = normalized.replace(/\s/g, '').replace(',', '.')
   }

@@ -15,7 +15,10 @@ export function requestOrigin(req: NextRequest): string {
 export function billingReturnUrlsFromOrigin(origin: string) {
   const base = origin.replace(/\/$/, '')
   return {
-    success: `${base}/billing/activating`,
+    // {CHECKOUT_SESSION_ID} est un template Stripe remplacé côté Stripe avant la redirection —
+    // ne pas encoder les accolades. Permet à /billing/activating de vérifier le paiement
+    // directement (indépendamment du délai du webhook).
+    success: `${base}/billing/activating?session_id={CHECKOUT_SESSION_ID}`,
     cancel: `${base}/settings/billing?canceled=1`,
   }
 }

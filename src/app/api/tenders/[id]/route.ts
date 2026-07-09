@@ -105,7 +105,7 @@ export async function PATCH(
   const allowed = [
     'title', 'client', 'description', 'deadline', 'status',
     'budget_ht', 'zone_geo', 'maitre_ouvrage', 'notes_internes',
-    'priorite', 'assigned_to', 'local_folder_path', 'is_own_client',
+    'priorite', 'assigned_to', 'dossier_url', 'is_own_client',
   ]
   const fieldErr = rejectUnexpectedFields(body as Record<string, unknown>, allowed)
   if (fieldErr) return badRequest(fieldErr)

@@ -58,6 +58,12 @@ function isElectronDesktop(): boolean {
   return typeof window !== 'undefined' && !!window.operisDesktop
 }
 
+/** true si le lien est une URL cloud ouvrable dans un onglet (par opposition à un chemin
+ *  local/UNC, bloqué par le navigateur en dehors d'Electron). */
+function isHttpsDossierUrl(value: string): boolean {
+  return /^https:\/\//i.test(value.trim())
+}
+
 async function fileToBase64(file: File): Promise<string> {
   const buffer = await file.arrayBuffer()
   const bytes = new Uint8Array(buffer)
@@ -136,9 +142,10 @@ export default function TenderDetailPage() {
   const [tenderDocuments, setTenderDocuments] = useState<{
     received: any[]
     sent: any[]
+    imported: any[]
     optional_png: any[]
     document_groups: any[]
-  }>({ received: [], sent: [], optional_png: [], document_groups: [] })
+  }>({ received: [], sent: [], imported: [], optional_png: [], document_groups: [] })
   const [documentsLoading, setDocumentsLoading] = useState(false)
   const [mailsLoading, setMailsLoading] = useState(false)
   const [documentsLoaded, setDocumentsLoaded] = useState(false)
@@ -300,7 +307,7 @@ export default function TenderDetailPage() {
 
   useEffect(() => {
     loadedTabsRef.current.clear()
-    setTenderDocuments({ received: [], sent: [], optional_png: [], document_groups: [] })
+    setTenderDocuments({ received: [], sent: [], imported: [], optional_png: [], document_groups: [] })
     setLinkedEmails([])
     setDocumentsLoaded(false)
     setMailsLoaded(false)
@@ -597,7 +604,7 @@ export default function TenderDetailPage() {
         const data = await fileToBase64(f)
         const res = await authFetch(`/api/tenders/${id}/documents`, {
           method: 'POST',
-          body: JSON.stringify({ filename: f.name, contentType: f.type, data, source: 'outbound' }),
+          body: JSON.stringify({ filename: f.name, contentType: f.type, data, source: 'manual_import' }),
         })
         const json = await res.json()
         if (!json.success) show(`Erreur : ${json.error}`)
@@ -724,13 +731,32 @@ export default function TenderDetailPage() {
   }
 
   const handleOpenFolder = async () => {
-    const folderPath = tender?.local_folder_path?.trim()
-    if (!folderPath) {
+    const link = tender?.dossier_url?.trim()
+    if (!link) {
       setShowFolderPathModal(true)
       return
     }
-    const result = await window.operisDesktop?.openFolder(folderPath)
-    if (!result?.success) show(`Erreur : ${result?.error ?? 'dossier introuvable'}`)
+
+    if (isHttpsDossierUrl(link)) {
+      window.open(link, '_blank', 'noopener,noreferrer')
+      return
+    }
+
+    // Chemin local / partage réseau (UNC) : file:// et \\serveur sont bloqués depuis une
+    // page https. Sur le desktop Electron, on peut l'ouvrir directement ; sinon on copie
+    // le chemin dans le presse-papier pour que l'utilisateur le colle dans l'Explorateur.
+    if (isElectronDesktop()) {
+      const result = await window.operisDesktop?.openFolder(link)
+      if (!result?.success) show(`Erreur : ${result?.error ?? 'dossier introuvable'}`)
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(link)
+      show('Chemin copié, collez-le dans l\'explorateur de fichiers')
+    } catch {
+      show(`Impossible de copier automatiquement — chemin : ${link}`)
+    }
   }
 
   const handleSaveFolderPath = async (path: string) => {
@@ -738,7 +764,7 @@ export default function TenderDetailPage() {
     try {
       const res = await authFetch(`/api/tenders/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ local_folder_path: path.trim() || null }),
+        body: JSON.stringify({ dossier_url: path.trim() || null }),
       })
       const data = await res.json()
       if (data.success) {
@@ -956,11 +982,12 @@ export default function TenderDetailPage() {
   const documents = tenderDocuments
   const receivedDocs = documents.received ?? []
   const sentDocs = documents.sent ?? []
+  const importedDocs = documents.imported ?? []
   const optionalPngDocs = documents.optional_png ?? []
   const documentGroups = documents.document_groups ?? []
   const tenderMeta = tender.meta as { document_count?: number; linked_email_count?: number } | undefined
   const documentsTabCount = documentsLoaded
-    ? receivedDocs.length + sentDocs.length
+    ? receivedDocs.length + sentDocs.length + importedDocs.length
     : (tenderMeta?.document_count ?? 0)
   const mailsTabCount = mailsLoaded
     ? linkedEmails.length
@@ -1093,16 +1120,26 @@ export default function TenderDetailPage() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
-            {isElectronDesktop() && (
-              <span style={{ display: 'inline-flex', gap: 2 }}>
-                <span title={tender.local_folder_path ? `Ouvrir : ${tender.local_folder_path}` : 'Aucun dossier configuré — cliquez pour le renseigner'}>
-                  <Button variant="ghost" onClick={handleOpenFolder}>📂 Ouvrir le dossier</Button>
-                </span>
-                <span title="Modifier le chemin du dossier">
-                  <Button variant="ghost" onClick={() => setShowFolderPathModal(true)}>✏️</Button>
-                </span>
+            <span style={{ display: 'inline-flex', gap: 2 }}>
+              <span title={
+                !tender.dossier_url
+                  ? 'Aucun lien configuré — cliquez pour le renseigner'
+                  : isHttpsDossierUrl(tender.dossier_url)
+                    ? `Ouvrir dans un nouvel onglet : ${tender.dossier_url}`
+                    : isElectronDesktop()
+                      ? `Ouvrir : ${tender.dossier_url}`
+                      : `Copier le chemin : ${tender.dossier_url}`
+              }>
+                <Button variant="ghost" onClick={handleOpenFolder}>
+                  {tender.dossier_url ? '📂 Lien dossier' : '📂 Créer le lien'}
+                </Button>
               </span>
-            )}
+              {tender.dossier_url && (
+                <span title="Modifier le lien du dossier">
+                  <Button variant="ghost" onClick={() => setShowFolderPathModal(true)}>⚙️</Button>
+                </span>
+              )}
+            </span>
             <Button variant="ghost" onClick={handleExportPdf} loading={exportingPdf}>Exporter PDF</Button>
             <Button variant="ghost" onClick={() => refreshTender()} disabled={refreshing}>Actualiser</Button>
             <Button variant="ghost" onClick={() => setShowEdit(true)}>Modifier</Button>
@@ -1571,6 +1608,7 @@ export default function TenderDetailPage() {
         <TenderDocumentsTab
           receivedDocs={receivedDocs}
           sentDocs={sentDocs}
+          importedDocs={importedDocs}
           optionalPngDocs={optionalPngDocs}
           documentGroups={documentGroups}
           uploadingDoc={uploadingDoc}
@@ -1904,22 +1942,25 @@ export default function TenderDetailPage() {
         onSend={handleSendConsult}
       />
 
-      {/* === MODAL CHEMIN DOSSIER LOCAL (desktop) === */}
+      {/* === MODAL LIEN DOSSIER (local/UNC ou cloud) === */}
       <Modal
         open={showFolderPathModal}
         onClose={() => setShowFolderPathModal(false)}
-        title="Dossier local du chantier"
+        title="Lien dossier du chantier"
       >
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
-            Chemin du dossier (local ou réseau) à ouvrir dans l&apos;Explorateur Windows.
-            Ex: <code>C:\Chantiers\{tender?.title}</code> ou <code>\\NAS\Chantiers\...</code>
+            Chemin local/réseau (ex: <code>C:\Chantiers\{tender?.title}</code> ou{' '}
+            <code>\\NAS\Chantiers\...</code>) ou lien cloud (<code>https://...</code>).
+            Un lien https s&apos;ouvre dans un nouvel onglet ; un chemin local/réseau est copié
+            dans le presse-papier pour être collé dans l&apos;Explorateur (sauf sur l&apos;app
+            desktop, qui l&apos;ouvre directement).
           </div>
           <Field
-            label="Chemin du dossier"
-            value={folderPathInput || tender?.local_folder_path || ''}
+            label="Lien ou chemin du dossier"
+            value={folderPathInput || tender?.dossier_url || ''}
             onChange={setFolderPathInput}
-            placeholder="C:\Chantiers\Nom du chantier"
+            placeholder="C:\Chantiers\Nom du chantier ou https://..."
           />
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -1927,7 +1968,7 @@ export default function TenderDetailPage() {
           <Button
             variant="primary"
             loading={savingFolderPath}
-            onClick={() => handleSaveFolderPath(folderPathInput || tender?.local_folder_path || '')}
+            onClick={() => handleSaveFolderPath(folderPathInput || tender?.dossier_url || '')}
           >
             Enregistrer
           </Button>

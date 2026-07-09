@@ -1,16 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/components/AuthProvider'
 import { authFetch } from '@/lib/auth-client'
 import { Button, Spinner } from '@/components/ui'
 
-const POLL_INTERVAL_MS = 3000
-const MAX_ATTEMPTS = 10 // ~30 s
+const POLL_INTERVAL_MS = 2000
+const MAX_ATTEMPTS = 30 // ~60 s — filet de sécurité si Stripe/le webhook est anormalement lent
 
-export default function BillingActivatingPage() {
+function BillingActivatingContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const sessionId = searchParams.get('session_id')
   const { refreshBillingAccess } = useAuth()
   const [timedOut, setTimedOut] = useState(false)
 
@@ -25,6 +27,12 @@ export default function BillingActivatingPage() {
       attempts += 1
 
       try {
+        // Vérification directe de la session Stripe payée — ne dépend pas du délai du
+        // webhook, qui reste un filet de sécurité en arrière-plan pour les renouvellements.
+        if (sessionId) {
+          await authFetch(`/api/billing/confirm-session?session_id=${encodeURIComponent(sessionId)}`).catch(() => null)
+        }
+
         const res = await authFetch('/api/billing/status')
         const json = await res.json()
         const active = json.success && json.data?.has_access && json.data?.status === 'active'
@@ -51,7 +59,7 @@ export default function BillingActivatingPage() {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [router, refreshBillingAccess])
+  }, [router, refreshBillingAccess, sessionId])
 
   return (
     <div style={{
@@ -90,17 +98,36 @@ export default function BillingActivatingPage() {
               fontSize: 22, fontWeight: 700, color: 'var(--text-primary)',
               margin: '0 0 8px',
             }}>
-              Activation en cours
+              Activation plus longue que prévu
             </h1>
             <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 24 }}>
-              L&apos;activation prend plus de temps que prévu, rechargez la page.
+              Votre paiement a bien été reçu par Stripe, mais l&apos;activation prend plus de temps que
+              prévu côté serveur. Réessayez, ou rendez-vous directement sur votre espace — l&apos;accès
+              se débloquera automatiquement dès que l&apos;activation sera terminée.
             </p>
-            <Button onClick={() => window.location.reload()}>
-              Recharger
-            </Button>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Button variant="ghost" onClick={() => window.location.reload()}>
+                Réessayer
+              </Button>
+              <Button onClick={() => router.replace('/dashboard')}>
+                Aller à mon espace →
+              </Button>
+            </div>
           </>
         )}
       </div>
     </div>
+  )
+}
+
+export default function BillingActivatingPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
+        <Spinner size={28} />
+      </div>
+    }>
+      <BillingActivatingContent />
+    </Suspense>
   )
 }

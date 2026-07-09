@@ -20,12 +20,15 @@ function documentCategoryStyle(category?: string) {
       return { background: 'rgba(248,113,113,0.14)', color: '#f87171', border: '1px solid rgba(248,113,113,0.25)' }
     case 'document_sent':
       return { background: 'rgba(251,191,36,0.14)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.25)' }
+    case 'manual_import':
+      return { background: 'rgba(168,85,247,0.14)', color: '#c084fc', border: '1px solid rgba(168,85,247,0.25)' }
     default:
       return { background: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px solid var(--border)' }
   }
 }
 
 function versionAccentColor(doc: TenderDocumentItem): string {
+  if (doc.kind === 'imported') return '#c084fc'
   if (doc.kind === 'sent') return '#fbbf24'
   if (doc.category === 'supplier_response') return '#4ade80'
   return '#60a5fa'
@@ -111,6 +114,9 @@ export function DocumentFileActions({
 }
 
 function versionDirectionLabel(doc: TenderDocumentItem) {
+  if (doc.kind === 'imported') {
+    return `Importé · ${doc.imported_by_name?.trim() || 'un membre'}`
+  }
   if (doc.kind === 'sent') {
     const who = doc.supplier_name?.trim() || 'contact'
     return `Envoyé · ${who}`
@@ -131,6 +137,7 @@ type DocRow = TenderDocumentItem & {
   is_png?: boolean
   is_optional?: boolean
   contentType?: string
+  imported_by_name?: string | null
 }
 
 function DocumentVersionTimeline({
@@ -417,6 +424,7 @@ function TenderDocumentRow({
 export default function TenderDocumentsTab({
   receivedDocs,
   sentDocs,
+  importedDocs,
   optionalPngDocs,
   documentGroups,
   uploadingDoc,
@@ -432,6 +440,7 @@ export default function TenderDocumentsTab({
 }: {
   receivedDocs: DocRow[]
   sentDocs: DocRow[]
+  importedDocs: DocRow[]
   optionalPngDocs: DocRow[]
   documentGroups: TenderDocumentGroup[]
   uploadingDoc: boolean
@@ -481,7 +490,7 @@ export default function TenderDocumentsTab({
     onOpen(doc.id, doc.filename, doc.contentType)
   }
 
-  const hasDocs = receivedDocs.length > 0 || sentDocs.length > 0 || optionalPngDocs.length > 0
+  const hasDocs = receivedDocs.length > 0 || sentDocs.length > 0 || importedDocs.length > 0 || optionalPngDocs.length > 0
 
   return (
     <>
@@ -544,6 +553,32 @@ export default function TenderDocumentsTab({
                 {sentDocs.length === 0 ? (
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucune PJ envoyée</span>
                 ) : sentDocs.map(doc => (
+                  <TenderDocumentRow
+                    key={doc.id}
+                    doc={doc}
+                    versionCount={groupByDocId.get(doc.id)?.version_count}
+                    onOpenDetail={() => openDetail(doc)}
+                    onOpen={() => onOpen(doc.id, doc.filename, doc.contentType)}
+                    onDownload={() => onDownload(doc.id, doc.filename, doc.contentType)}
+                    onOpenMail={onOpenMail}
+                  />
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{
+                fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)',
+                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10,
+              }}>
+                Importés ({importedDocs.length})
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                Ajoutés manuellement depuis l&apos;ordinateur
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {importedDocs.length === 0 ? (
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Aucun document importé</span>
+                ) : importedDocs.map(doc => (
                   <TenderDocumentRow
                     key={doc.id}
                     doc={doc}

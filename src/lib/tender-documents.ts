@@ -14,12 +14,13 @@ export type TenderDocumentCategory =
   | 'consultation_sent'
   | 'relance_sent'
   | 'document_sent'
+  | 'manual_import'
 
 export type TenderDocumentMailSource = 'manual' | 'mail_sent' | 'mail_received' | null
 
 export interface TenderDocumentItem {
   id: string
-  kind: 'received' | 'sent'
+  kind: 'received' | 'sent' | 'imported'
   filename: string
   contentType?: string
   size?: number
@@ -35,6 +36,8 @@ export interface TenderDocumentItem {
   mail_source?: TenderDocumentMailSource
   is_png?: boolean
   is_optional?: boolean
+  /** Traçabilité des documents importés manuellement (kind: 'imported'). */
+  imported_by_name?: string | null
 }
 
 export interface TenderDocumentVersion extends TenderDocumentItem {
@@ -155,6 +158,9 @@ export type QuoteRow = {
 
 const OUTBOUND_DOC_SOURCES = new Set(['outbound', 'consultation', 'mail_sent'])
 const INBOUND_DOC_SOURCES = new Set(['ao_request', 'inbound', 'mail_received'])
+/** Import manuel (bouton "+ Ajouter un document") — ni reçu du client, ni envoyé au
+ *  fournisseur : sa propre catégorie, avec traçabilité de l'importateur. */
+const MANUAL_IMPORT_SOURCES = new Set(['manual_import'])
 function titleMailDocument(
   direction: 'sent' | 'received',
   partyLabel: string,
@@ -1130,9 +1136,10 @@ export async function collectTenderDocuments(
   tenderId: string,
   consultations: ConsultationRow[],
   quotes: QuoteRow[],
-): Promise<{ received: TenderDocumentItem[]; sent: TenderDocumentItem[]; optional_png: TenderDocumentItem[]; document_groups: TenderDocumentGroup[] }> {
+): Promise<{ received: TenderDocumentItem[]; sent: TenderDocumentItem[]; imported: TenderDocumentItem[]; optional_png: TenderDocumentItem[]; document_groups: TenderDocumentGroup[] }> {
   const received: TenderDocumentItem[] = []
   const sent: TenderDocumentItem[] = []
+  const imported: TenderDocumentItem[] = []
   const allVersions: TenderDocumentItem[] = []
   const seenFiles = new Set<string>()
   const seenSent = new Set<string>()
@@ -1229,7 +1236,7 @@ export async function collectTenderDocuments(
 
   const { data: tenderDocs } = await db
     .from('tender_documents')
-    .select('id, filename, content_type, size, source, created_at, email_id, supplier:suppliers(name)')
+    .select('id, filename, content_type, size, source, created_at, email_id, imported_by, supplier:suppliers(name), importer:profiles!tender_documents_imported_by_fkey(full_name)')
     .eq('tender_id', tenderId)
     .eq('user_id', userId)
     .is('deleted_at', null)
@@ -1237,9 +1244,11 @@ export async function collectTenderDocuments(
 
   for (const doc of tenderDocs ?? []) {
     const fp = fileFingerprint(doc.filename, doc.size)
-    const inbound = isInboundTenderDocSource(doc.source, doc.filename, sourceInboundKeys)
+    const isManualImport = MANUAL_IMPORT_SOURCES.has(doc.source ?? '')
+    const inbound = !isManualImport && isInboundTenderDocSource(doc.source, doc.filename, sourceInboundKeys)
 
     const supplierName = (doc.supplier as { name?: string } | null)?.name
+    const importerName = (doc.importer as { full_name?: string } | null)?.full_name
     const inboundTitles = titleAoInbound(inboundClientLabel)
     const outboundTitles = doc.source === 'consultation'
       ? titleSentToSupplier(supplierName, 'consultation')
@@ -1252,22 +1261,32 @@ export async function collectTenderDocuments(
 
     const item: TenderDocumentItem = {
       id: doc.id,
-      kind: inbound ? 'received' : 'sent',
+      kind: isManualImport ? 'imported' : (inbound ? 'received' : 'sent'),
       filename: doc.filename,
       contentType: doc.content_type,
       size: doc.size,
       date: doc.created_at,
-      label: inbound ? 'Demande AO' : 'Document envoyé',
+      label: isManualImport ? 'Document importé' : (inbound ? 'Demande AO' : 'Document envoyé'),
       supplier_name: inbound ? inboundClientLabel : supplierName,
-      category: mailTitles?.category ?? (inbound ? inboundTitles.category : outboundTitles.category),
-      display_title: mailTitles?.display_title ?? (inbound ? inboundTitles.display_title : outboundTitles.display_title),
+      category: isManualImport ? 'manual_import' : (mailTitles?.category ?? (inbound ? inboundTitles.category : outboundTitles.category)),
+      display_title: isManualImport
+        ? `Importé par ${importerName?.trim() || 'un membre'}`
+        : (mailTitles?.display_title ?? (inbound ? inboundTitles.display_title : outboundTitles.display_title)),
       download_type: 'tender_doc',
       document_id: doc.id,
       email_id: doc.email_id ?? undefined,
       mail_source: mailDocSourceLabel(doc.source),
+      imported_by_name: isManualImport ? (importerName?.trim() || 'un membre') : undefined,
     }
 
-    if (inbound) {
+    if (isManualImport) {
+      trackDocumentVersion(allVersions, item)
+      const key = `imported:doc:${doc.id}`
+      if (!seenSent.has(key)) {
+        seenSent.add(key)
+        imported.push(item)
+      }
+    } else if (inbound) {
       pushReceived(received, seenFiles, item, allVersions)
     } else {
       trackDocumentVersion(allVersions, item)
@@ -1340,5 +1359,14 @@ export async function collectTenderDocuments(
       return db - da
     })
 
-  return { received: displayReceived, sent: displaySent, optional_png, document_groups }
+  const displayImported = document_groups
+    .filter(g => g.latest.kind === 'imported')
+    .map(g => g.latest)
+    .sort((a, b) => {
+      const da = a.date ? new Date(a.date).getTime() : 0
+      const db = b.date ? new Date(b.date).getTime() : 0
+      return db - da
+    })
+
+  return { received: displayReceived, sent: displaySent, imported: displayImported, optional_png, document_groups }
 }

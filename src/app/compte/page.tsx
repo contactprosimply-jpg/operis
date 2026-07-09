@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { clearAuthSessionStore } from '@/lib/auth-session-store'
 import WebsiteLayout from '@/components/website/WebsiteLayout'
 import SimplyGreenTab from '@/components/compte/SimplyGreenTab'
+import { passwordStrength } from '@/lib/password-strength'
 import { Spinner, useToast } from '@/components/ui'
 import type { OrganizationPayload } from '@/lib/organization'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
@@ -60,6 +61,13 @@ function statusLabel(status: string | null): string {
     trialing: 'Essai',
   }
   return map[status] ?? status
+}
+
+function statusColor(status: string | null): string {
+  if (status === 'active' || status === 'trialing') return '#16a34a'
+  if (status === 'past_due') return '#f59e0b'
+  if (status === 'canceled' || status === 'inactive') return '#ef4444'
+  return 'var(--text-muted)'
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -132,6 +140,15 @@ function ComptePageContent() {
     const b = lastName.trim()[0] ?? account?.email?.[0] ?? '?'
     return (a + b).toUpperCase() || '?'
   }, [firstName, lastName, account?.email])
+
+  const profileDirty = useMemo(() => {
+    if (!account) return false
+    const { first, last } = splitName(account.profile.full_name)
+    return firstName.trim() !== first
+      || lastName.trim() !== last
+      || companyName.trim() !== (account.profile.company ?? '')
+      || (account.organization?.is_owner === true && orgName.trim() !== (account.organization?.name ?? ''))
+  }, [account, firstName, lastName, companyName, orgName])
 
   const saveProfile = async () => {
     if (!account) return
@@ -339,13 +356,20 @@ function ComptePageContent() {
           <label style={labelStyle}>Entreprise (profil)</label>
           <input value={companyName} onChange={e => setCompanyName(e.target.value)} style={inputStyle} />
         </div>
-        <button type="button" onClick={() => void saveProfile()} disabled={saving} style={{
-          background: '#021246', color: '#fff', border: 'none', borderRadius: 8,
-          padding: '10px 18px', fontSize: 13, fontWeight: 600, cursor: saving ? 'wait' : 'pointer',
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-        }}>
+        <button
+          type="button"
+          onClick={() => void saveProfile()}
+          disabled={saving || !profileDirty}
+          style={{
+            background: '#021246', color: '#fff', border: 'none', borderRadius: 8,
+            padding: '10px 18px', fontSize: 13, fontWeight: 600,
+            cursor: saving ? 'wait' : !profileDirty ? 'default' : 'pointer',
+            opacity: !profileDirty && !saving ? 0.5 : 1,
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+          }}
+        >
           {saving && <Spinner size={14} />}
-          Enregistrer
+          {profileDirty ? 'Enregistrer' : 'Aucune modification'}
         </button>
       </Section>
 
@@ -406,7 +430,16 @@ function ComptePageContent() {
           </div>
           <div>
             <div style={labelStyle}>Statut</div>
-            <div style={{ fontSize: 14, fontWeight: 600 }}>{statusLabel(account.billing.status)}</div>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 12, fontWeight: 600, color: statusColor(account.billing.status),
+              background: `${statusColor(account.billing.status)}18`,
+              border: `1px solid ${statusColor(account.billing.status)}40`,
+              borderRadius: 6, padding: '4px 10px',
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor(account.billing.status) }} />
+              {statusLabel(account.billing.status)}
+            </div>
           </div>
           <div>
             <div style={labelStyle}>Prochaine échéance</div>
@@ -460,6 +493,19 @@ function ComptePageContent() {
           <div style={{ marginBottom: 16 }}>
             <label style={labelStyle}>Nouveau mot de passe</label>
             <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required minLength={8} style={inputStyle} />
+            {newPassword && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%', width: `${passwordStrength(newPassword).score}%`,
+                    background: passwordStrength(newPassword).color, transition: 'width 0.3s',
+                  }} />
+                </div>
+                <div style={{ fontSize: 10, color: passwordStrength(newPassword).color, marginTop: 4, fontFamily: 'DM Mono, monospace' }}>
+                  {passwordStrength(newPassword).label}
+                </div>
+              </div>
+            )}
           </div>
           <button type="submit" disabled={changingPassword} style={{
             background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border)',

@@ -79,7 +79,10 @@ export async function POST(
     size: buffer.length,
     storage_path: storagePath,
     bucket: DEVIS_BUCKET,
-    source: source || 'outbound',
+    source: source || 'manual_import',
+    // Traçabilité : userId = l'auteur réel de l'upload (peut différer du propriétaire de
+    // l'AO dans un contexte multi-membres), pas ownerId.
+    imported_by: userId,
   }).select('id, filename, content_type, size, created_at').single()
 
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })

@@ -1,5 +1,5 @@
 ﻿-- ============================================================
--- OPERIS — Schéma complet (49 migrations consolidées, encodage corrigé)
+-- OPERIS — Schéma complet (52 migrations consolidées, encodage corrigé)
 -- À exécuter UNE fois dans le SQL Editor du NOUVEAU projet EU.
 -- ============================================================
 
@@ -1207,3 +1207,14 @@ CREATE POLICY pending_mail_verifications_own ON pending_mail_verifications
 -- Indicateur "je suis le client de ce dossier" (pas d'intermédiaire) — coché à la création,
 -- affiché en badge sur la fiche AO. Purement informatif, ne change aucun comportement.
 ALTER TABLE tenders ADD COLUMN IF NOT EXISTS is_own_client boolean NOT NULL DEFAULT false;
+-- Un utilisateur ne doit posséder qu'un seul groupe de facturation (évite une course
+-- double-clic qui créerait deux organisations pour le même owner_id).
+ALTER TABLE organizations ADD CONSTRAINT organizations_owner_id_unique UNIQUE (owner_id);
+-- Généralise le "chemin de dossier local" (Electron uniquement) en "lien dossier"
+-- utilisable depuis n'importe quel navigateur : URL https (cloud) ou chemin local/UNC
+-- (copié dans le presse-papier depuis un navigateur, ouvert directement depuis Electron).
+ALTER TABLE tenders RENAME COLUMN local_folder_path TO dossier_url;
+-- Les documents importés manuellement (bouton "+ Ajouter un document") ne doivent plus
+-- être classés dans "Envoyés" (bug : source par défaut = 'outbound'). On leur donne leur
+-- propre classification 'manual_import' et on trace qui les a importés.
+ALTER TABLE tender_documents ADD COLUMN IF NOT EXISTS imported_by uuid REFERENCES profiles(id);
