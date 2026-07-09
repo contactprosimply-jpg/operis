@@ -778,6 +778,13 @@ export default function TenderDetailPage() {
     setSavingFolderPath(false)
   }
 
+  const handleBrowseFolder = async () => {
+    const result = await window.operisDesktop?.selectFolder()
+    if (result && !result.canceled && result.path) {
+      setFolderPathInput(result.path)
+    }
+  }
+
   const handleExportPdf = async () => {
     if (!tender) return
     setExportingPdf(true)
@@ -1962,6 +1969,11 @@ export default function TenderDetailPage() {
             onChange={setFolderPathInput}
             placeholder="C:\Chantiers\Nom du chantier ou https://..."
           />
+          {isElectronDesktop() && (
+            <Button variant="ghost" onClick={() => void handleBrowseFolder()} style={{ marginTop: 8 }}>
+              📁 Parcourir…
+            </Button>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Button variant="ghost" onClick={() => setShowFolderPathModal(false)}>Annuler</Button>

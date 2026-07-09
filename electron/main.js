@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, nativeImage, ipcMain } = require('electron')
+const { app, BrowserWindow, shell, nativeImage, ipcMain, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { autoUpdater } = require('electron-updater')
@@ -95,6 +95,15 @@ ipcMain.handle('open-folder', async (_event, folderPath) => {
   const result = await shell.openPath(normalized)
   if (result) return { success: false, error: result }
   return { success: true }
+})
+
+/** Sélecteur de dossier natif Windows — évite les erreurs de saisie manuelle (typos,
+ *  lettre de lecteur réseau invalide, etc.) en garantissant un chemin réellement existant. */
+ipcMain.handle('select-folder', async event => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
+  if (result.canceled || !result.filePaths.length) return { canceled: true }
+  return { canceled: false, path: result.filePaths[0] }
 })
 
 app.whenReady().then(() => {
