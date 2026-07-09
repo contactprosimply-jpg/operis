@@ -1,5 +1,5 @@
 ﻿-- ============================================================
--- OPERIS — Schéma complet (52 migrations consolidées, encodage corrigé)
+-- OPERIS — Schéma complet (53 migrations consolidées, encodage corrigé)
 -- À exécuter UNE fois dans le SQL Editor du NOUVEAU projet EU.
 -- ============================================================
 
@@ -1218,3 +1218,7 @@ ALTER TABLE tenders RENAME COLUMN local_folder_path TO dossier_url;
 -- être classés dans "Envoyés" (bug : source par défaut = 'outbound'). On leur donne leur
 -- propre classification 'manual_import' et on trace qui les a importés.
 ALTER TABLE tender_documents ADD COLUMN IF NOT EXISTS imported_by uuid REFERENCES profiles(id);
+-- Traçabilité de l'assignation d'un AO à un membre de la famille : qui a assigné,
+-- et quand. Purement additif, ne change aucun comportement existant.
+ALTER TABLE tenders ADD COLUMN IF NOT EXISTS assigned_by uuid REFERENCES profiles(id);
+ALTER TABLE tenders ADD COLUMN IF NOT EXISTS assigned_at timestamptz;

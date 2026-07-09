@@ -70,6 +70,7 @@ export default function TendersPage() {
   const filtered = filter === 'actifs'
     ? tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status))
     : filter === 'tous' ? tenders
+    : filter === 'mes_assignes' ? tenders.filter(t => t.assigned_to === currentUserId)
     : tenders.filter(t => t.status === filter)
 
   const handleCreate = async () => {
@@ -114,7 +115,13 @@ export default function TendersPage() {
     total: tenders.length,
   }
 
-  const filters = [{ key: 'actifs', label: 'Actifs' }, { key: 'tous', label: 'Tous' }, { key: 'gagne', label: 'Gagnes' }, { key: 'perdu', label: 'Perdus' }]
+  const filters = [
+    { key: 'actifs', label: 'Actifs' },
+    { key: 'tous', label: 'Tous' },
+    { key: 'mes_assignes', label: 'Mes AO assignés' },
+    { key: 'gagne', label: 'Gagnes' },
+    { key: 'perdu', label: 'Perdus' },
+  ]
 
   return (
     <div className="animate-fade">

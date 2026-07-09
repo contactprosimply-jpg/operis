@@ -140,7 +140,11 @@ export async function PUT(req: NextRequest) {
       return Response.json({ success: false, error: 'Membre invalide' }, { status: 400 })
     }
 
-    await db.from('tenders').update({ assigned_to: assignee }).eq('id', tender_id)
+    await db.from('tenders').update({
+      assigned_to: assignee,
+      assigned_by: assignee ? userId : null,
+      assigned_at: assignee ? new Date().toISOString() : null,
+    }).eq('id', tender_id)
 
     if (assignee && assignee !== userId) {
       await db.from('notifications').insert({

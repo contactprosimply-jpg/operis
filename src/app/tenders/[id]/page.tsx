@@ -156,6 +156,7 @@ export default function TenderDetailPage() {
   const [linkingEmail, setLinkingEmail] = useState(false)
   const [org, setOrg] = useState<OrganizationPayload | null>(null)
   const [assigningMember, setAssigningMember] = useState(false)
+  const [showAssignModal, setShowAssignModal] = useState(false)
 
   // Form édition AO
   const [editForm, setEditForm] = useState({
@@ -941,6 +942,7 @@ export default function TenderDetailPage() {
       const data = await res.json()
       if (data.success) {
         show(memberId ? 'Membre assigne sur cet AO' : 'Assignation retiree')
+        setShowAssignModal(false)
         await refreshTender()
       } else show(`Erreur : ${data.error}`)
     } catch (e: unknown) {
@@ -1066,30 +1068,10 @@ export default function TenderDetailPage() {
               )
             })()}
             {tender.access?.can_assign && org?.members && org.members.length > 1 && (
-              <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Assigne a
-                </span>
-                <select
-                  value={tender.assigned_to ?? ''}
-                  onChange={e => handleAssignMember(e.target.value)}
-                  disabled={assigningMember}
-                  style={{
-                    fontSize: 12, padding: '6px 10px', borderRadius: 8,
-                    border: '1px solid var(--border-hi)', background: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
-                    minWidth: 180,
-                  }}
-                >
-                  <option value="">Non assigne</option>
-                  {org.members
-                    .filter(m => m.user_id !== org.owner_id)
-                    .map(m => (
-                      <option key={m.user_id} value={m.user_id}>
-                        {memberDisplayName(m)}
-                      </option>
-                    ))}
-                </select>
+              <div style={{ marginTop: 12 }}>
+                <Button variant="ghost" onClick={() => setShowAssignModal(true)}>
+                  👤 {tender.assigned_to ? 'Réassigner' : 'Assigner'}
+                </Button>
               </div>
             )}
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
@@ -1946,6 +1928,64 @@ export default function TenderDetailPage() {
         sending={sendingConsult}
         onSend={handleSendConsult}
       />
+
+      {/* === MODAL ASSIGNER À UN MEMBRE DE LA FAMILLE === */}
+      <Modal open={showAssignModal} onClose={() => setShowAssignModal(false)} title="Assigner cet AO">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {(org?.members ?? [])
+            .filter(m => m.user_id !== org?.owner_id)
+            .map(m => {
+              const initials = (memberDisplayName(m) || '?').slice(0, 2).toUpperCase()
+              const isCurrent = tender?.assigned_to === m.user_id
+              return (
+                <button
+                  key={m.user_id}
+                  type="button"
+                  disabled={assigningMember}
+                  onClick={() => handleAssignMember(m.user_id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+                    padding: '10px 14px', borderRadius: 10, textAlign: 'left',
+                    border: isCurrent ? '1px solid var(--accent)' : '1px solid var(--border)',
+                    background: isCurrent ? 'var(--accent-soft)' : 'var(--bg-secondary)',
+                    cursor: assigningMember ? 'wait' : 'pointer',
+                  }}
+                >
+                  <span style={{
+                    width: 36, height: 36, borderRadius: 10, background: m.color ?? '#021246',
+                    color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 13, fontWeight: 700, flexShrink: 0,
+                  }}>
+                    {initials}
+                  </span>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {memberDisplayName(m)}
+                  </span>
+                  {isCurrent && (
+                    <span style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'DM Mono, monospace' }}>
+                      Assigné
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          {tender?.assigned_to && (
+            <button
+              type="button"
+              disabled={assigningMember}
+              onClick={() => handleAssignMember('')}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%',
+                padding: '10px 14px', borderRadius: 10, textAlign: 'center', marginTop: 4,
+                border: '1px dashed var(--border-hi)', background: 'transparent',
+                color: 'var(--text-muted)', cursor: assigningMember ? 'wait' : 'pointer', fontSize: 12,
+              }}
+            >
+              Retirer l&apos;assignation
+            </button>
+          )}
+        </div>
+      </Modal>
 
       {/* === MODAL LIEN DOSSIER (local/UNC ou cloud) === */}
       <Modal
