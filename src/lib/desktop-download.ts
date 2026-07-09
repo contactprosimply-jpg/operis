@@ -1,5 +1,9 @@
+import packageJson from '../../package.json'
+
 export const DESKTOP_RELEASE_BUCKET = 'desktop-releases'
-export const DESKTOP_VERSION = '0.1.0'
+/** Toujours synchronisée avec package.json — c'est aussi la version que compare
+ *  electron-updater (autoUpdater) pour décider si une mise à jour est disponible. */
+export const DESKTOP_VERSION = packageJson.version
 
 export const DESKTOP_ARTIFACTS = {
   setup: `Operis-Setup-${DESKTOP_VERSION}.exe`,

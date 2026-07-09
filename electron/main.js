@@ -1,6 +1,27 @@
 const { app, BrowserWindow, shell, nativeImage, ipcMain } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { autoUpdater } = require('electron-updater')
+
+const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000 // 4h
+
+/** Mise à jour automatique du shell desktop — silencieuse, installée au prochain
+ *  redémarrage naturel de l'app (jamais d'interruption forcée en pleine session). */
+function initAutoUpdate() {
+  if (!app.isPackaged) return // pas de check en dev (electron .)
+
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('error', err => console.error('[autoUpdater]', err?.message ?? err))
+  autoUpdater.on('update-downloaded', info => {
+    console.info('[autoUpdater] mise à jour téléchargée, installation au prochain redémarrage:', info?.version)
+  })
+
+  const check = () => autoUpdater.checkForUpdates().catch(err => console.error('[autoUpdater] check failed', err))
+  check()
+  setInterval(check, UPDATE_CHECK_INTERVAL_MS)
+}
 
 const APP_BASE = (process.env.OPERIS_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://operis-pro.com').replace(/\/$/, '')
 /** Application métier (dashboard) — le site vitrine reste sur operis-pro.com sans sidebar app. */
@@ -78,6 +99,7 @@ ipcMain.handle('open-folder', async (_event, folderPath) => {
 
 app.whenReady().then(() => {
   createWindow()
+  initAutoUpdate()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

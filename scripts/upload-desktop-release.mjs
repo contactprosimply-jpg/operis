@@ -26,11 +26,15 @@ if (!fs.existsSync(downloadsDir)) {
   process.exit(1)
 }
 
-const files = fs.readdirSync(downloadsDir).filter(f => f.endsWith('.exe'))
+const files = fs.readdirSync(downloadsDir).filter(f => f.endsWith('.exe') || f.endsWith('.blockmap') || f === 'latest.yml')
 if (!files.length) {
-  console.error('Aucun .exe dans public/downloads/')
+  console.error('Aucun .exe/.yml/.blockmap dans public/downloads/')
   process.exit(1)
 }
+
+// latest.yml en dernier : sinon un client qui checke une mise à jour pendant l'upload
+// pourrait le voir avant que le .exe correspondant ne soit disponible.
+files.sort((a, b) => (a === 'latest.yml' ? 1 : 0) - (b === 'latest.yml' ? 1 : 0))
 
 const db = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 
@@ -38,7 +42,7 @@ for (const name of files) {
   const buffer = fs.readFileSync(path.join(downloadsDir, name))
   console.log(`→ Upload ${name} (${(buffer.length / (1024 * 1024)).toFixed(1)} Mo)…`)
   const { error } = await db.storage.from('desktop-releases').upload(name, buffer, {
-    contentType: 'application/octet-stream',
+    contentType: name.endsWith('.yml') ? 'text/yaml' : 'application/octet-stream',
     upsert: true,
   })
   if (error) {
@@ -48,4 +52,4 @@ for (const name of files) {
   console.log(`✓ ${name}`)
 }
 
-console.log('\nUpload terminé. Les liens /api/desktop/download fonctionneront en production.')
+console.log('\nUpload terminé. Les liens /api/desktop/download et la mise à jour automatique fonctionneront en production.')

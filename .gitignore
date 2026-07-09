@@ -21,8 +21,11 @@
 /build
 /dist-desktop
 
-# Installateurs Windows (trop volumineux pour git — hébergés sur Supabase Storage)
+# Installateurs Windows + manifeste de mise à jour (trop volumineux pour git —
+# hébergés sur Supabase Storage, voir scripts/upload-desktop-release.mjs)
 /public/downloads/*.exe
+/public/downloads/*.blockmap
+/public/downloads/latest.yml
 !/public/downloads/.gitkeep
 
 # misc
