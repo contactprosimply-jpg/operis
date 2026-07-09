@@ -80,7 +80,7 @@ function createWindow() {
 }
 
 if (process.platform === 'win32') {
-  app.setAppUserModelId('fr.nikodex.operis')
+  app.setAppUserModelId('com.operis.app')
 }
 
 /** Ouvre un chemin local/réseau dans l'Explorateur — saisi manuellement par l'utilisateur sur une fiche AO. */

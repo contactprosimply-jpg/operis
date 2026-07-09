@@ -2,7 +2,7 @@
   "name": "operis",
   "version": "0.1.2",
   "description": "Operis — Gestion des appels d'offres BTP",
-  "author": "Nikodex",
+  "author": "Operis",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
@@ -20,9 +20,9 @@
     "test:watch": "vitest"
   },
   "build": {
-    "appId": "fr.nikodex.operis",
+    "appId": "com.operis.app",
     "productName": "Operis",
-    "copyright": "Nikodex",
+    "copyright": "Operis",
     "directories": {
       "output": "dist-desktop",
       "buildResources": "electron"

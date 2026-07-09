@@ -8,7 +8,7 @@ import { sendHtmlEmail } from '@/lib/mailer'
 import { getTenderAccessScope } from '@/lib/tender-access'
 import { sitePath } from '@/lib/site-url'
 
-const ADMIN_EMAIL = 'contact@nikodex.fr'
+const ADMIN_EMAIL = 'operiscontact@gmail.com'
 
 export async function checkAlertsForUser(userId: string): Promise<number> {
   const db = createAdminClient()

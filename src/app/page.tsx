@@ -1,6 +1,7 @@
 'use client'
 
 import WebsiteNav from '@/components/website/WebsiteNav'
+import { OperisLogoMark } from '@/components/OperisLogoMark'
 
 const FEATURES = [
   {
@@ -77,16 +78,7 @@ const PLANS = [
 ]
 
 function Logo({ size = 40 }: { size?: number }) {
-  return (
-    <div style={{
-      width: size, height: size, background: 'var(--gradient-primary)', borderRadius: size * 0.27,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: 'DM Mono, monospace', fontSize: size * 0.33, fontWeight: 700, color: '#fff',
-      boxShadow: 'var(--shadow-glow)', flexShrink: 0,
-    }}>
-      OP
-    </div>
-  )
+  return <OperisLogoMark size={size} glow />
 }
 
 function BtnPrimary({ href, children }: { href: string; children: React.ReactNode }) {
@@ -356,7 +348,14 @@ export default function LandingPage() {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 28, boxShadow: '0 0 24px rgba(16,185,129,0.3)',
             }}>S</div>
-            <BtnGhost href="https://simply.nikodex.fr">Découvrir Simply →</BtnGhost>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              background: 'transparent', color: 'var(--text-muted)', border: '1px dashed var(--border-hi)',
+              borderRadius: 9, padding: '11px 20px', fontSize: 14, fontWeight: 500,
+              fontFamily: 'DM Sans, system-ui',
+            }}>
+              Bientôt disponible
+            </span>
           </div>
         </div>
       </section>

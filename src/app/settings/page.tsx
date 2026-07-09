@@ -408,7 +408,7 @@ function SettingsPageContent() {
             }}>
               Mon compte, abonnement et téléchargement →
             </Link>
-            <Field label="Nom de la societe" value={general.companyName} onChange={v => setGeneral(g => ({ ...g, companyName: v }))} placeholder="Ex: Nikodex" />
+            <Field label="Nom de la societe" value={general.companyName} onChange={v => setGeneral(g => ({ ...g, companyName: v }))} placeholder="Ex: Mon entreprise BTP" />
             <Field label="Votre nom" value={general.userName} onChange={v => setGeneral(g => ({ ...g, userName: v }))} placeholder="Ex: Uros Baralic" />
             <Button variant="primary" onClick={handleSaveGeneral}>Sauvegarder</Button>
             <div style={{ marginTop: 20 }}>
@@ -588,10 +588,10 @@ function SettingsPageContent() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <Field label="Nom complet" value={sig.name} onChange={v => setSig(s => ({ ...s, name: v }))} placeholder="Uros Baralic" />
                   <Field label="Titre / Poste" value={sig.title} onChange={v => setSig(s => ({ ...s, title: v }))} placeholder="Responsable BTP" />
-                  <Field label="Societe" value={sig.company} onChange={v => setSig(s => ({ ...s, company: v }))} placeholder="Nikodex" />
+                  <Field label="Societe" value={sig.company} onChange={v => setSig(s => ({ ...s, company: v }))} placeholder="Mon entreprise BTP" />
                   <Field label="Telephone" value={sig.phone} onChange={v => setSig(s => ({ ...s, phone: v }))} placeholder="+33 6 XX XX XX XX" />
-                  <Field label="Email" value={sig.email} onChange={v => setSig(s => ({ ...s, email: v }))} placeholder="b.uros@nikodex.fr" />
-                  <Field label="Site web" value={sig.website} onChange={v => setSig(s => ({ ...s, website: v }))} placeholder="www.nikodex.fr" />
+                  <Field label="Email" value={sig.email} onChange={v => setSig(s => ({ ...s, email: v }))} placeholder="contact@monentreprise.fr" />
+                  <Field label="Site web" value={sig.website} onChange={v => setSig(s => ({ ...s, website: v }))} placeholder="www.monentreprise.fr" />
                 </div>
                 {sig.name && (
                   <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: 16, marginTop: 4, marginBottom: 14 }}>
@@ -639,7 +639,7 @@ function SettingsPageContent() {
                 <div style={sSub}>
                   Regroupez vos comptes Operis pour les appels d&apos;offres. Chaque compte garde sa messagerie personnelle.
                 </div>
-                <Field label="Nom du groupe" value={orgName} onChange={setOrgName} placeholder="Ex: Nikodex Group" />
+                <Field label="Nom du groupe" value={orgName} onChange={setOrgName} placeholder="Ex: Mon groupe BTP" />
                 <Button variant="primary" loading={creatingOrg} onClick={handleCreateOrg}>Creer le groupe</Button>
               </div>
             ) : (

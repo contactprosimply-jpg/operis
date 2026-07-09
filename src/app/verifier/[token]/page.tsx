@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Spinner } from '@/components/ui'
+import { OperisLogoMark } from '@/components/OperisLogoMark'
 
 export default function VerifyMailPage() {
   const params = useParams()
@@ -36,11 +37,7 @@ export default function VerifyMailPage() {
     }}>
       <div style={{ width: '100%', maxWidth: 420, textAlign: 'center' }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
-          <div style={{
-            width: 48, height: 48, background: 'var(--gradient-primary)', borderRadius: 13,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'DM Mono, monospace', fontSize: 16, fontWeight: 700, color: '#fff',
-          }}>OP</div>
+          <OperisLogoMark size={48} />
         </div>
         <div style={{
           background: 'var(--bg-card)', border: '1px solid var(--border-hi)',

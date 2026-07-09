@@ -8,6 +8,7 @@ import { markAuthBootstrapped, syncAuthSessionSilent } from '@/lib/auth-session-
 import { POST_AUTH_ROUTE } from '@/lib/public-routes'
 import { passwordStrength } from '@/lib/password-strength'
 import { Spinner } from '@/components/ui'
+import { OperisLogoMark } from '@/components/OperisLogoMark'
 
 const TERMS_VERSION = '1.0'
 
@@ -157,11 +158,7 @@ function SignupForm() {
     <div className="animate-fade-in" style={pageBg}>
       <div style={{ width: '100%', maxWidth: 460 }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 28 }}>
-          <div style={{
-            width: 52, height: 52, background: '#021246', borderRadius: 14,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'DM Mono, monospace', fontSize: 17, fontWeight: 700, color: '#fff',
-          }}>OP</div>
+          <OperisLogoMark size={52} />
         </div>
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: '#021246', margin: '0 0 8px' }}>Créer un compte</h1>

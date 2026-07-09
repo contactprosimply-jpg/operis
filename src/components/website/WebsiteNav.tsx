@@ -5,16 +5,10 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { clearAuthSessionStore } from '@/lib/auth-session-store'
+import { OperisLogoMark } from '@/components/OperisLogoMark'
 
 function Logo({ size = 36 }: { size?: number }) {
-  return (
-    <div style={{
-      width: size, height: size, background: '#021246', borderRadius: size * 0.27,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: 'DM Mono, monospace', fontSize: size * 0.33, fontWeight: 700, color: '#fff',
-      flexShrink: 0,
-    }}>OP</div>
-  )
+  return <OperisLogoMark size={size} />
 }
 
 function NavLink({ href, children, active }: { href: string; children: React.ReactNode; active?: boolean }) {

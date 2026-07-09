@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest } from 'next/server'
 
-const ADMIN_EMAIL = 'contact@nikodex.fr'
+const ADMIN_EMAIL = 'operiscontact@gmail.com'
 
 export async function GET(req: NextRequest) {
   const { getUserFromRequest, unauthorized } = await import('@/lib/auth')

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useAuth } from '@/components/AuthProvider'
 import { authFetch } from '@/lib/auth-client'
 import { Button, Spinner } from '@/components/ui'
+import { OperisLogoMark } from '@/components/OperisLogoMark'
 
 type InvitePreview = {
   organization_name: string
@@ -80,12 +81,7 @@ export default function JoinGroupPage() {
     }}>
       <div style={{ width: '100%', maxWidth: 440 }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
-          <div style={{
-            width: 52, height: 52, background: 'var(--gradient-primary)', borderRadius: 14,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'DM Mono, monospace', fontSize: 17, fontWeight: 700, color: '#fff',
-            boxShadow: 'var(--shadow-glow)',
-          }}>OP</div>
+          <OperisLogoMark size={52} glow />
         </div>
 
         <div style={{

@@ -13,6 +13,7 @@ import NotificationPanelContent, {
   type AppNotification,
   formatBadgeCount,
 } from '@/components/NotificationPanelContent'
+import { OperisLogoMark } from '@/components/OperisLogoMark'
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: (a: boolean) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={a ? 2 : 1.6} width="20" height="20"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> },
@@ -451,12 +452,9 @@ export default function Sidebar() {
         borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column',
         alignItems: 'center', padding: '16px 0', flexShrink: 0, gap: 4, position: 'relative',
       }}>
-        <div style={{
-          width: 38, height: 38, background: 'var(--gradient-logo)', borderRadius: 11,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 12, fontWeight: 700, color: 'white', fontFamily: 'DM Mono, monospace',
-          marginBottom: 16, flexShrink: 0, boxShadow: 'var(--shadow-glow)',
-        }}>OP</div>
+        <div style={{ marginBottom: 16, flexShrink: 0 }}>
+          <OperisLogoMark size={38} glow />
+        </div>
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, width: '100%', alignItems: 'center' }}>
           {nav.map(item => {

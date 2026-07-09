@@ -6,6 +6,7 @@ import PricingPlans from '@/components/billing/PricingPlans'
 import { authFetch } from '@/lib/auth-client'
 import { supabase } from '@/lib/supabase'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
+import { OperisLogoMark } from '@/components/OperisLogoMark'
 
 export default function PricingPage() {
   const [loadingPlan, setLoadingPlan] = useState<BillingPlan | null>(null)
@@ -51,11 +52,7 @@ export default function PricingPage() {
         gap: 16,
       }}>
         <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'var(--text-primary)' }}>
-          <div style={{
-            width: 36, height: 36, background: 'var(--gradient-primary)', borderRadius: 10,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'DM Mono, monospace', fontSize: 12, fontWeight: 700, color: '#fff',
-          }}>OP</div>
+          <OperisLogoMark size={36} />
           <span style={{ fontWeight: 700, fontSize: 16 }}>Operis</span>
         </Link>
         <div style={{ display: 'flex', gap: 10 }}>

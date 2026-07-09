@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import PricingPlans from '@/components/billing/PricingPlans'
 import { authFetch } from '@/lib/auth-client'
 import { Spinner } from '@/components/ui'
+import { OperisLogoMark } from '@/components/OperisLogoMark'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
 
 function ChoosePlanContent() {
@@ -66,12 +67,9 @@ function ChoosePlanContent() {
     }}>
       <div style={{ maxWidth: 960, margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
-          <div style={{
-            width: 52, height: 52, background: 'var(--gradient-primary)', borderRadius: 14,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'DM Mono, monospace', fontSize: 17, fontWeight: 700, color: '#fff',
-            margin: '0 auto 20px', boxShadow: 'var(--shadow-glow)',
-          }}>OP</div>
+          <div style={{ margin: '0 auto 20px', width: 52 }}>
+            <OperisLogoMark size={52} glow />
+          </div>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 8 }}>
             Choisissez une offre
           </h1>

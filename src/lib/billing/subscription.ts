@@ -5,7 +5,7 @@ import { getOrgStorageBytes } from '@/lib/billing/storage-usage'
 import { listOwnedOrganizations, userBelongsToOrganization } from '@/lib/organization'
 import { isStripeConfigured } from '@/lib/billing/stripe'
 
-export const BILLING_ADMIN_EMAIL = 'contact@nikodex.fr'
+export const BILLING_ADMIN_EMAIL = 'operiscontact@gmail.com'
 
 export type SubscriptionRow = {
   id: string

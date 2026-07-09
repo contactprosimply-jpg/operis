@@ -847,13 +847,6 @@ export default function TenderDetailPage() {
     setExportingPdf(false)
   }
 
-  const openSimply = () => {
-    const url = tender?.simply_chantier_id
-      ? `https://simply.nikodex.fr/chantiers/${tender.simply_chantier_id}`
-      : 'https://simply.nikodex.fr'
-    window.open(url, '_blank', 'noopener,noreferrer')
-  }
-
   const fetchDocumentAccess = async (docId: string, inline: boolean) => {
     const token = await getAccessToken()
     if (!token) throw new Error('Non authentifié')
@@ -1166,7 +1159,12 @@ export default function TenderDetailPage() {
           <div style={{ fontSize: 14, color: '#34d399', fontWeight: 600 }}>
             🎉 AO gagné ! Continuez avec Simply pour gérer le chantier.
           </div>
-          <Button variant="success" onClick={openSimply}>Ouvrir dans Simply</Button>
+          <span style={{
+            fontSize: 12, fontWeight: 600, color: 'var(--text-muted)',
+            border: '1px dashed var(--border-hi)', borderRadius: 8, padding: '8px 14px',
+          }}>
+            Bientôt disponible
+          </span>
         </div>
       )}
 

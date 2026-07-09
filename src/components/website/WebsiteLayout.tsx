@@ -1,4 +1,5 @@
 import WebsiteNav from '@/components/website/WebsiteNav'
+import { APP_NAME } from '@/lib/brand'
 
 export default function WebsiteLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,7 +15,7 @@ export default function WebsiteLayout({ children }: { children: React.ReactNode 
         borderTop: '1px solid var(--border)', padding: '24px',
         textAlign: 'center', fontSize: 12, color: 'var(--text-muted)',
       }}>
-        © {new Date().getFullYear()} Operis — Nikodex
+        © {new Date().getFullYear()} {APP_NAME}
         {' · '}
         <a href="/legal" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Mentions légales</a>
       </footer>

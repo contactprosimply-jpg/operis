@@ -7,7 +7,7 @@ import { checkAlertsForUser } from '@/lib/alerts'
 import { sendHtmlEmail } from '@/lib/mailer'
 import { sitePath } from '@/lib/site-url'
 
-const ADMIN_EMAIL = 'contact@nikodex.fr'
+const ADMIN_EMAIL = 'operiscontact@gmail.com'
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
@@ -87,7 +87,15 @@ async function sendDigest(db: ReturnType<typeof createAdminClient>) {
 <body style="font-family:Arial,sans-serif;color:#1f2937;background:#f9fafb;padding:0;margin:0;">
 <div style="max-width:660px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
   <div style="background:#0f1117;padding:20px 28px;display:flex;align-items:center;gap:12px;">
-    <div style="width:36px;height:36px;background:#3b7ef6;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0;">OP</div>
+    <div style="width:36px;height:36px;flex-shrink:0;">
+      <svg width="36" height="36" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <clipPath id="operisLogoCut"><polygon points="38,0 100,0 100,62 58,20"/></clipPath>
+        </defs>
+        <circle cx="50" cy="50" r="32" fill="none" stroke="#021246" stroke-width="20"/>
+        <circle cx="50" cy="50" r="32" fill="none" stroke="#4f8ef7" stroke-width="20" clip-path="url(#operisLogoCut)"/>
+      </svg>
+    </div>
     <div>
       <div style="font-size:17px;font-weight:700;color:#f1f3f9;">Rapport quotidien Operis</div>
       <div style="font-size:12px;color:#8b92a5;">${dateStr}</div>

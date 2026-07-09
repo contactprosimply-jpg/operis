@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
   return Response.json(
     {
       success: false,
-      error: 'Installateur indisponible — contactez contact@nikodex.fr',
+      error: 'Installateur indisponible — contactez operiscontact@gmail.com',
     },
     { status: 404 },
   )

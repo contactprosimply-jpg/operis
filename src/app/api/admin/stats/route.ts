@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 
-const ADMIN_EMAIL = 'contact@nikodex.fr'
+const ADMIN_EMAIL = 'operiscontact@gmail.com'
 
 export async function GET(req: NextRequest) {
   try {

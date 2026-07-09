@@ -43,7 +43,7 @@ export const CRON_SYNC_MAX_DURATION_SECONDS = 300
 /** Verrou anti-chevauchement : doit couvrir CRON_SYNC_MAX_DURATION_SECONDS + marge. */
 export const SYNC_LOCK_MINUTES = Math.max(10, Math.ceil(CRON_SYNC_MAX_DURATION_SECONDS / 60) + 1)
 
-const ADMIN_ALERT_EMAIL = 'contact@nikodex.fr'
+const ADMIN_ALERT_EMAIL = 'operiscontact@gmail.com'
 
 export async function isSyncRunInProgress(
   db: SupabaseClient,

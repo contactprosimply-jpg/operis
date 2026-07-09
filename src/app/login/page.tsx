@@ -7,6 +7,7 @@ import { setAccessToken } from '@/lib/auth-client'
 import { markAuthBootstrapped, syncAuthSessionSilent } from '@/lib/auth-session-store'
 import { POST_AUTH_ROUTE } from '@/lib/public-routes'
 import { Spinner } from '@/components/ui'
+import { OperisLogoMark } from '@/components/OperisLogoMark'
 
 function LoginForm() {
   const router = useRouter()
@@ -53,12 +54,7 @@ function LoginForm() {
     }}>
       <div style={{ width: '100%', maxWidth: 420 }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 28 }}>
-          <div style={{
-            width: 52, height: 52, background: 'var(--gradient-primary)', borderRadius: 14,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'DM Mono, monospace', fontSize: 17, fontWeight: 700, color: '#fff',
-            boxShadow: 'var(--shadow-glow)',
-          }}>OP</div>
+          <OperisLogoMark size={52} glow />
         </div>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 8px' }}>

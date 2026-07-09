@@ -6,7 +6,7 @@ import { getAccessToken } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
 import { Spinner } from '@/components/ui'
 
-const ADMIN_EMAIL = 'contact@nikodex.fr'
+const ADMIN_EMAIL = 'operiscontact@gmail.com'
 
 function timeSince(dateStr: string | null) {
   if (!dateStr) return 'Jamais'

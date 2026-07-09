@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/components/AuthProvider'
 import { authFetch } from '@/lib/auth-client'
 import { Button, Spinner } from '@/components/ui'
+import { OperisLogoMark } from '@/components/OperisLogoMark'
 
 const POLL_INTERVAL_MS = 2000
 const MAX_ATTEMPTS = 30 // ~60 s — filet de sécurité si Stripe/le webhook est anormalement lent
@@ -72,12 +73,9 @@ function BillingActivatingContent() {
       padding: '48px 24px',
     }}>
       <div style={{ textAlign: 'center', maxWidth: 420 }}>
-        <div style={{
-          width: 52, height: 52, background: 'var(--gradient-primary)', borderRadius: 14,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: 'DM Mono, monospace', fontSize: 17, fontWeight: 700, color: '#fff',
-          margin: '0 auto 24px', boxShadow: 'var(--shadow-glow)',
-        }}>OP</div>
+        <div style={{ margin: '0 auto 24px', width: 52 }}>
+          <OperisLogoMark size={52} glow />
+        </div>
 
         {!timedOut ? (
           <>
