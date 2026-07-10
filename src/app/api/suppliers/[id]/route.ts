@@ -10,13 +10,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { id } = await params
   const body = await req.json()
-  const { name, email, phone, specialty, country, language, notes } = body
+  const { name, email, additional_emails, phone, specialty, country, language, notes } = body
 
   const db = createAdminClient()
 
   const { data, error } = await db
     .from('suppliers')
-    .update({ name, email, phone, specialty, country, language, notes })
+    .update({ name, email, additional_emails, phone, specialty, country, language, notes })
     .eq('id', id)
     .eq('user_id', userId)
     .select()

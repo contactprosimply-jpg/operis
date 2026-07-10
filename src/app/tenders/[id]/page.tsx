@@ -1928,6 +1928,7 @@ export default function TenderDetailPage() {
           name: c.supplier?.name ?? '—',
           email: c.supplier?.email ?? '',
           status: c.status,
+          language: c.supplier?.language ?? null,
         }))}
         preselectIds={consultPreselect}
         sending={sendingConsult}

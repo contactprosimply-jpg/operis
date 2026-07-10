@@ -11,8 +11,15 @@ import { sendUserEmail } from '@/lib/user-mailer'
 import { createAdminClient } from '@/lib/supabase'
 import { downloadDevisFile } from '@/lib/devis-storage'
 import { attachmentMetaOnly } from '@/lib/mail-storage'
-import { personalizeConsultationBody, buildConsultationDefaultBodyWithExtra, buildEmailWithSignature } from '@/lib/email-compose'
+import { personalizeConsultationBody, buildEmailWithSignature, supplierRecipients } from '@/lib/email-compose'
 import { isFirstTimeContact, queueVerificationChallenge } from '@/lib/mail-human-verification'
+import {
+  normalizeSupplierLanguage,
+  buildConsultationSubjectForLocale,
+  buildConsultationBodyForLocale,
+  buildRelaunchSubjectForLocale,
+  buildRelaunchBodyForLocale,
+} from '@/lib/mail-i18n'
 import {
   CreateTenderPayload,
   UpdateTenderPayload,
@@ -187,7 +194,7 @@ export const tenderService = {
         }
       }
 
-      const subject = options?.subject?.trim() || `Consultation — ${tender.title}`
+      const explicitSubject = options?.subject?.trim() || undefined
       const signature = options?.signature?.trim() ?? ''
       const cc = options?.cc?.trim() || undefined
       let sent = 0
@@ -198,16 +205,21 @@ export const tenderService = {
         const supplier = await supplierRepository.findById(supplierId, userId)
         if (!supplier) continue
 
+        // Langue du fournisseur → email généré (objet + corps) dans cette langue,
+        // sauf si l'utilisateur a explicitement personnalisé le message.
+        const locale = normalizeSupplierLanguage(supplier.language)
+        const subject = explicitSubject ?? buildConsultationSubjectForLocale(tender.title, locale)
         const bodyPlain = options?.body
           ? personalizeConsultationBody(options.body, supplier.name)
-          : buildConsultationDefaultBodyWithExtra(tender, supplier.name, options?.message)
+          : buildConsultationBodyForLocale(tender, supplier.name, locale, options?.message)
+        const toAddress = supplierRecipients(supplier)
 
         // Anti-bot : premier contact jamais échangé avec ce fournisseur → mail-défi au lieu
         // d'un envoi direct, la consultation restera "en_attente" jusqu'à confirmation.
         if (await isFirstTimeContact(db, userId, supplier.email)) {
           const { html, text } = buildEmailWithSignature(bodyPlain, signature)
           const challenge = await queueVerificationChallenge(db, userId, {
-            toAddress: supplier.email,
+            toAddress,
             cc,
             subject,
             bodyText: text,
@@ -228,7 +240,7 @@ export const tenderService = {
               tender_id: tenderId,
               supplier_id: supplierId,
               type: 'consultation',
-              to_address: supplier.email,
+              to_address: toAddress,
               subject,
               body: null,
               sent_at: new Date().toISOString(),
@@ -243,7 +255,7 @@ export const tenderService = {
 
         try {
           const { text: sentText } = await sendUserEmail(db, userId, {
-            to: supplier.email,
+            to: toAddress,
             subject,
             body: bodyPlain,
             signature,
@@ -260,7 +272,7 @@ export const tenderService = {
             tender_id: tenderId,
             supplier_id: supplierId,
             type: 'consultation',
-            to_address: supplier.email,
+            to_address: toAddress,
             subject,
             body: sentText,
             sent_at: new Date().toISOString(),
@@ -277,7 +289,7 @@ export const tenderService = {
             tender_id: tenderId,
             supplier_id: supplierId,
             type: 'consultation',
-            to_address: supplier.email,
+            to_address: toAddress,
             subject,
             body: null,
             sent_at: new Date().toISOString(),
@@ -323,12 +335,15 @@ export const tenderService = {
       }
 
       const newStatus = newCount >= 2 ? 'relance_2' : 'relance'
-      const bodyPlain = buildRelaunchEmail(tender, supplier.name, newCount)
+      const locale = normalizeSupplierLanguage(supplier.language)
+      const bodyPlain = buildRelaunchBodyForLocale(tender, supplier.name, newCount, locale)
+      const relaunchSubject = buildRelaunchSubjectForLocale(tender.title, locale)
+      const toAddress = supplierRecipients(supplier)
 
       // 1. Envoyer l'email depuis la messagerie du propriétaire de l'AO
       const { text: sentText } = await sendUserEmail(db, userId, {
-        to: supplier.email,
-        subject: `Relance — ${tender.title}`,
+        to: toAddress,
+        subject: relaunchSubject,
         body: bodyPlain,
       })
 
@@ -344,8 +359,8 @@ export const tenderService = {
         tender_id: tenderId,
         supplier_id: supplierId,
         type: newCount >= 2 ? 'relance_2' : 'relance',
-        to_address: supplier.email,
-        subject: `Relance ${newCount} — ${tender.title}`,
+        to_address: toAddress,
+        subject: relaunchSubject,
         body: sentText,
         sent_at: new Date().toISOString(),
         success: true,
@@ -387,23 +402,4 @@ export const tenderService = {
       return { success: false, error: e.message }
     }
   },
-}
-
-// ============================================================
-// Templates emails
-// ============================================================
-
-function buildRelaunchEmail(tender: any, supplierName: string, relaunchCount: number): string {
-  return `Bonjour ${supplierName},
-
-Sauf erreur de notre part, nous n'avons pas encore reçu votre devis concernant le projet suivant :
-
-Projet : ${tender.title}
-Client : ${tender.client}
-${tender.deadline ? `Date limite : ${new Date(tender.deadline).toLocaleDateString('fr-FR')}\n` : ''}
-Pourriez-vous nous faire parvenir votre offre dans les meilleurs délais ?
-${relaunchCount >= 2 ? '\nSans réponse de votre part, nous serons contraints de poursuivre notre consultation avec d\'autres prestataires.' : ''}
-
-Cordialement,
-L'équipe Operis`
 }

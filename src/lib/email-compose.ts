@@ -69,6 +69,14 @@ export function buildConsultationDefaultBodyWithExtra(
   return base
 }
 
+/** Combine l'email principal et les emails secondaires d'un fournisseur pour le champ "À". */
+export function supplierRecipients(supplier: { email: string; additional_emails?: string[] | null }): string {
+  return [supplier.email, ...(supplier.additional_emails ?? [])]
+    .map(e => e?.trim())
+    .filter(Boolean)
+    .join(', ')
+}
+
 /** Remplace la salutation pour chaque fournisseur. */
 export function personalizeConsultationBody(body: string, supplierName: string): string {
   const trimmed = body.trim()

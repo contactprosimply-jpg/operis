@@ -14,7 +14,7 @@ export default function SuppliersPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<any>({})
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', phone: '', specialty: '', country: '', language: '', notes: '' })
+  const [form, setForm] = useState({ name: '', email: '', additionalEmails: '', phone: '', specialty: '', country: '', language: '', notes: '' })
 
   const filtered = suppliers.filter((s: any) =>
     s.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -22,29 +22,36 @@ export default function SuppliersPage() {
     (s.specialty ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
+  const parseEmailList = (raw: string): string[] => raw.split(',').map(e => e.trim()).filter(Boolean)
+
   const handleCreate = async () => {
     if (!form.name || !form.email) return
     setCreating(true)
-    const res = await create(form)
+    const { additionalEmails, ...rest } = form
+    const res = await create({ ...rest, additional_emails: parseEmailList(additionalEmails) })
     setCreating(false)
     if (res.success) {
       setShowModal(false)
-      setForm({ name: '', email: '', phone: '', specialty: '', country: '', language: '', notes: '' })
+      setForm({ name: '', email: '', additionalEmails: '', phone: '', specialty: '', country: '', language: '', notes: '' })
       show('Fournisseur ajoute')
     } else show(`Erreur : ${res.error}`)
   }
 
   const startEdit = (s: any) => {
     setEditingId(s.id)
-    setEditForm({ name: s.name, email: s.email, phone: s.phone ?? '', specialty: s.specialty ?? '', country: s.country ?? '', language: s.language ?? '', notes: s.notes ?? '' })
+    setEditForm({
+      name: s.name, email: s.email, additionalEmails: (s.additional_emails ?? []).join(', '),
+      phone: s.phone ?? '', specialty: s.specialty ?? '', country: s.country ?? '', language: s.language ?? '', notes: s.notes ?? '',
+    })
   }
 
   const saveEdit = async (id: string) => {
     setSaving(true)
     try {
+      const { additionalEmails, ...rest } = editForm
       const res = await authFetch(`/api/suppliers/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(editForm),
+        body: JSON.stringify({ ...rest, additional_emails: parseEmailList(additionalEmails ?? '') }),
       })
       const data = await res.json()
       if (data.success) {
@@ -90,7 +97,7 @@ export default function SuppliersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Nom', 'Email', 'Tel', 'Specialite', 'Pays', 'Langue', 'Notes', ''].map(h => (
+              {['Nom', 'Email', 'Emails secondaires', 'Tel', 'Specialite', 'Pays', 'Langue', 'Notes', ''].map(h => (
                 <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -100,11 +107,16 @@ export default function SuppliersPage() {
               const isEditing = editingId === s.id
               return (
                 <tr key={s.id} style={{ borderBottom: '1px solid var(--border)', background: isEditing ? 'var(--bg-hover)' : 'transparent' }}>
-                  {['name', 'email', 'phone', 'specialty', 'country', 'language', 'notes'].map(field => (
+                  {['name', 'email', 'additionalEmails', 'phone', 'specialty', 'country', 'language', 'notes'].map(field => (
                     <td key={field} style={{ padding: '8px 12px' }}>
                       {isEditing ? (
                         <input value={editForm[field] ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, [field]: e.target.value }))}
+                          placeholder={field === 'additionalEmails' ? 'email1@x.com, email2@x.com' : undefined}
                           style={inputStyle(true)} />
+                      ) : field === 'additionalEmails' ? (
+                        <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'DM Mono, monospace' }}>
+                          {(s.additional_emails ?? []).join(', ') || '—'}
+                        </span>
                       ) : (
                         <span style={{ fontSize: 12, color: field === 'name' ? 'var(--text-primary)' : 'var(--text-secondary)', fontFamily: ['email', 'phone'].includes(field) ? 'DM Mono, monospace' : 'DM Sans, system-ui', fontWeight: field === 'name' ? 500 : 400 }}>
                           {s[field] ?? '—'}
@@ -134,7 +146,7 @@ export default function SuppliersPage() {
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+              <tr><td colSpan={9} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
                 {search ? 'Aucun resultat' : 'Aucun fournisseur — clique sur "+ Ajouter"'}
               </td></tr>
             )}
@@ -147,6 +159,7 @@ export default function SuppliersPage() {
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouveau fournisseur">
         <Field label="Nom *" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} placeholder="Ex: Tehnomarket d.o.o." />
         <Field label="Email *" value={form.email} onChange={v => setForm(f => ({ ...f, email: v }))} placeholder="contact@fournisseur.com" type="email" />
+        <Field label="Emails secondaires" value={form.additionalEmails} onChange={v => setForm(f => ({ ...f, additionalEmails: v }))} placeholder="email2@x.com, email3@x.com" />
         <Field label="Telephone" value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="+381 13 30 77 71" />
         <Field label="Specialite" value={form.specialty} onChange={v => setForm(f => ({ ...f, specialty: v }))} placeholder="Ex: Menuiseries aluminium" />
         <Field label="Pays" value={form.country} onChange={v => setForm(f => ({ ...f, country: v }))} placeholder="Ex: Serbie" />

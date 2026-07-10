@@ -75,6 +75,7 @@ export interface Supplier {
   user_id: string
   name: string
   email: string
+  additional_emails: string[]
   phone: string | null
   specialty: string | null
   country: string | null
@@ -253,6 +254,7 @@ export interface UpdateTenderPayload {
 export interface CreateSupplierPayload {
   name: string
   email: string
+  additional_emails?: string[]
   phone?: string
   specialty?: string
   country?: string

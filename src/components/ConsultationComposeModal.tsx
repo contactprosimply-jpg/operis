@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
-import { buildConsultationDefaultBody } from '@/lib/email-compose'
+import { normalizeSupplierLanguage, buildConsultationSubjectForLocale, buildConsultationBodyForLocale } from '@/lib/mail-i18n'
 import { Spinner, useModalBodyLock } from '@/components/ui'
 
 const inputStyle: React.CSSProperties = {
@@ -53,12 +53,13 @@ export interface ConsultationRecipient {
   name: string
   email: string
   status?: string
+  language?: string | null
 }
 
 export interface ConsultationComposePayload {
   supplier_ids: string[]
-  subject: string
-  body: string
+  subject?: string
+  body?: string
   signature: string
   cc?: string
   files: File[]
@@ -84,8 +85,10 @@ export default function ConsultationComposeModal({
   onSend,
 }: Props) {
   const [subject, setSubject] = useState('')
+  const [subjectTouched, setSubjectTouched] = useState(false)
   const [cc, setCc] = useState('')
   const [body, setBody] = useState('')
+  const [bodyTouched, setBodyTouched] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
   const [files, setFiles] = useState<File[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -99,9 +102,12 @@ export default function ConsultationComposeModal({
   useEffect(() => {
     if (!open) return
     const previewName = recipients[0]?.name
-    setSubject(`Consultation — ${tender.title}`)
+    const previewLocale = normalizeSupplierLanguage(recipients[0]?.language)
+    setSubject(buildConsultationSubjectForLocale(tender.title, previewLocale))
+    setSubjectTouched(false)
     setCc('')
-    setBody(buildConsultationDefaultBody(tender, previewName))
+    setBody(buildConsultationBodyForLocale(tender, previewName, previewLocale))
+    setBodyTouched(false)
     if (preselectIds?.length) {
       setSelected(preselectIds.filter(id => recipients.some(r => r.supplier_id === id)))
     } else {
@@ -130,8 +136,9 @@ export default function ConsultationComposeModal({
     if (!subject.trim() || !bodyWithoutSig.trim() && !signature.html) return
     onSend({
       supplier_ids: selected,
-      subject: subject.trim(),
-      body: bodyWithoutSig,
+      // Non modifiés → laisser le serveur générer objet/corps dans la langue de chaque fournisseur.
+      subject: subjectTouched ? subject.trim() : undefined,
+      body: bodyTouched ? bodyWithoutSig : undefined,
       signature: signature.html,
       cc: cc.trim() || undefined,
       files,
@@ -226,11 +233,11 @@ export default function ConsultationComposeModal({
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
               <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', width: 36 }}>Objet</span>
-              <input value={subject} onChange={e => setSubject(e.target.value)} style={inputStyle} />
+              <input value={subject} onChange={e => { setSubject(e.target.value); setSubjectTouched(true) }} style={inputStyle} />
             </div>
             <textarea
               value={body}
-              onChange={e => setBody(e.target.value)}
+              onChange={e => { setBody(e.target.value); setBodyTouched(true) }}
               rows={10}
               placeholder="Votre message…"
               style={{
@@ -239,6 +246,11 @@ export default function ConsultationComposeModal({
                 resize: 'vertical', padding: '14px 16px', boxSizing: 'border-box',
               }}
             />
+            {!bodyTouched && !subjectTouched && (
+              <div style={{ padding: '0 16px 10px', fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Sans, system-ui' }}>
+                Message non modifié : il sera envoyé automatiquement dans la langue de chaque fournisseur (champ « Langue » de sa fiche).
+              </div>
+            )}
             {signature.html && (
               <div style={{ padding: '0 12px 12px', borderTop: '1px solid var(--border)', background: '#fff' }}>
                 <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', padding: '8px 4px', textTransform: 'uppercase' }}>Signature</div>
