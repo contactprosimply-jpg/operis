@@ -25,9 +25,44 @@ type BillingData = {
 const EMPTY_LIMITS = { seats: 0, storageGb: 0 }
 const EMPTY_USAGE = { seats: 1, storage_gb: 0 }
 
+const STATUS_STYLE: Record<string, { bg: string; fg: string; label: string }> = {
+  active: { bg: 'rgba(34,197,94,0.14)', fg: '#22c55e', label: 'Actif' },
+  trialing: { bg: 'rgba(59,130,246,0.14)', fg: '#3b82f6', label: 'Essai' },
+  past_due: { bg: 'rgba(245,158,11,0.16)', fg: '#f59e0b', label: 'Paiement en retard' },
+  canceled: { bg: 'rgba(248,113,113,0.14)', fg: '#f87171', label: 'Annulé' },
+  inactive: { bg: 'var(--bg-secondary)', fg: 'var(--text-muted)', label: 'Inactif' },
+}
+
 function formatDate(iso: string | null) {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+function usageColor(ratio: number): string {
+  if (ratio >= 0.95) return '#f87171'
+  if (ratio >= 0.75) return '#f59e0b'
+  return 'var(--accent)'
+}
+
+function UsageBar({ label, used, limit, unit }: { label: string; used: number; limit: number; unit: string }) {
+  const ratio = limit > 0 ? Math.min(1, used / limit) : 0
+  const color = usageColor(ratio)
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{label}</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+          {used} <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>/ {limit || '—'} {unit}</span>
+        </span>
+      </div>
+      <div style={{ height: 8, borderRadius: 999, background: 'var(--bg-secondary)', overflow: 'hidden' }}>
+        <div style={{
+          height: '100%', width: `${ratio * 100}%`, borderRadius: 999,
+          background: color, transition: 'width 0.3s ease, background 0.3s ease',
+        }} />
+      </div>
+    </div>
+  )
 }
 
 function BillingSettingsContent() {
@@ -130,8 +165,11 @@ function BillingSettingsContent() {
 
   const limits = data?.limits ?? EMPTY_LIMITS
   const usage = data?.usage ?? EMPTY_USAGE
-  const planLabel = data?.plan === 'business' ? 'Business' : data?.plan === 'pro' ? 'Pro' : 'Aucun'
+  const planLabel = data?.plan === 'business' ? 'Business' : data?.plan === 'pro' ? 'Pro' : 'Aucune offre'
   const canSubscribe = data?.is_owner || !data?.org_id
+  const statusInfo = STATUS_STYLE[data?.status ?? ''] ?? STATUS_STYLE.inactive
+  const addonUnits = data?.storage_addon_units ?? 0
+  const isBusinessPlan = data?.plan === 'business'
 
   return (
     <div style={{ padding: '24px 0', maxWidth: 960 }}>
@@ -167,62 +205,100 @@ function BillingSettingsContent() {
         </div>
       )}
 
-      <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 20 }}>
-          <div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Offre</div>
-            <div style={{ fontSize: 20, fontWeight: 700 }}>{planLabel}</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
-              {data?.status ?? '—'}
-            </div>
+      <div style={{
+        borderRadius: 18, marginBottom: 24, overflow: 'hidden',
+        border: isBusinessPlan ? '2px solid var(--accent)' : '1px solid var(--border)',
+        boxShadow: isBusinessPlan ? 'var(--shadow-glow)' : 'var(--shadow-sm)',
+        background: 'var(--bg-card)',
+      }}>
+        <div style={{
+          padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          flexWrap: 'wrap', gap: 12, borderBottom: '1px solid var(--border)',
+          background: isBusinessPlan ? 'var(--gradient-primary)' : 'transparent',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{
+              fontSize: 20, fontWeight: 800,
+              color: isBusinessPlan ? '#fff' : 'var(--text-primary)',
+            }}>
+              {planLabel}
+            </span>
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999,
+              background: isBusinessPlan ? 'rgba(255,255,255,0.2)' : statusInfo.bg,
+              color: isBusinessPlan ? '#fff' : statusInfo.fg,
+            }}>
+              {statusInfo.label}
+            </span>
           </div>
-          <div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Utilisateurs</div>
-            <div style={{ fontSize: 20, fontWeight: 700 }}>
-              {usage.seats} / {limits.seats}
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Stockage</div>
-            <div style={{ fontSize: 20, fontWeight: 700 }}>
-              {usage.storage_gb} Go / {limits.storageGb} Go
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Fin de période</div>
-            <div style={{ fontSize: 15, fontWeight: 600 }}>
-              {formatDate(data?.current_period_end ?? null)}
-            </div>
+          <div style={{
+            fontSize: 13,
+            color: isBusinessPlan ? 'rgba(255,255,255,0.85)' : 'var(--text-secondary)',
+          }}>
+            Prochaine échéance : <strong>{formatDate(data?.current_period_end ?? null)}</strong>
           </div>
         </div>
 
-        {data?.stripe_subscription_id && canSubscribe && (
-          <div style={{ marginTop: 24, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-            <Button variant="ghost" onClick={handlePortal} disabled={portalLoading}>
-              {portalLoading ? 'Ouverture…' : 'Portail Stripe'}
-            </Button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--text-secondary)' }}>
-              <span>Option stockage (+{STORAGE_ADDON_GB_PER_UNIT} Go / unité) :</span>
-              <Button
-                variant="ghost"
-                disabled={addonLoading || (data.storage_addon_units ?? 0) === 0}
-                onClick={() => handleAddonChange((data.storage_addon_units ?? 0) - 1)}
-              >
-                −
-              </Button>
-              <span style={{ fontWeight: 700, minWidth: 16, textAlign: 'center' }}>
-                {data.storage_addon_units ?? 0}
-              </span>
-              <Button
-                variant="ghost"
-                disabled={addonLoading}
-                onClick={() => handleAddonChange((data.storage_addon_units ?? 0) + 1)}
-              >
-                +
+        <div style={{ padding: 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 24 }}>
+            <UsageBar label="Utilisateurs" used={usage.seats} limit={limits.seats} unit="" />
+            <UsageBar label="Stockage" used={usage.storage_gb} limit={limits.storageGb} unit="Go" />
+          </div>
+
+          {data?.stripe_subscription_id && canSubscribe && (
+            <div style={{
+              marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)',
+              display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  Option stockage <span style={{ color: 'var(--text-muted)' }}>(+{STORAGE_ADDON_GB_PER_UNIT} Go / unité)</span>
+                </span>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 2, background: 'var(--bg-secondary)',
+                  borderRadius: 999, border: '1px solid var(--border-hi)', padding: 3,
+                }}>
+                  <button
+                    type="button"
+                    disabled={addonLoading || addonUnits === 0}
+                    onClick={() => handleAddonChange(addonUnits - 1)}
+                    style={{
+                      width: 26, height: 26, borderRadius: '50%', border: 'none', cursor: addonUnits === 0 ? 'default' : 'pointer',
+                      background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 15, fontWeight: 700,
+                      opacity: addonUnits === 0 ? 0.4 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    −
+                  </button>
+                  <span style={{ fontSize: 13, fontWeight: 700, minWidth: 22, textAlign: 'center', color: 'var(--text-primary)' }}>
+                    {addonUnits}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={addonLoading}
+                    onClick={() => handleAddonChange(addonUnits + 1)}
+                    style={{
+                      width: 26, height: 26, borderRadius: '50%', border: 'none', cursor: 'pointer',
+                      background: 'var(--gradient-primary)', color: '#fff', fontSize: 15, fontWeight: 700,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    +
+                  </button>
+                </div>
+                {addonUnits > 0 && (
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    +{addonUnits * STORAGE_ADDON_GB_PER_UNIT} Go inclus dans la limite ci-dessus
+                  </span>
+                )}
+              </div>
+
+              <Button variant="ghost" onClick={handlePortal} disabled={portalLoading}>
+                {portalLoading ? 'Ouverture…' : 'Portail Stripe →'}
               </Button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {canSubscribe ? (
