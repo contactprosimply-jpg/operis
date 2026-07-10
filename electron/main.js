@@ -2,8 +2,13 @@ const { app, BrowserWindow, shell, nativeImage, ipcMain, dialog } = require('ele
 const path = require('path')
 const fs = require('fs')
 const { autoUpdater } = require('electron-updater')
+const { createClient } = require('@supabase/supabase-js')
 
-const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000 // 4h
+// Clé publique (anon) — protégée par RLS, pas un secret, embarquée dans tous les clients
+// Supabase (web comme desktop) de la même façon que dans le bundle web.
+const SUPABASE_URL = 'https://tbrxojcsahthzeowbzdi.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRicnhvamNzYWh0aHplb3diemRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0ODI0MTcsImV4cCI6MjA5ODA1ODQxN30.wVWGJr3RnEosE-uDibd8ZdBehHLh9XJPbLD8Pn5Xiu4'
+const UPDATE_CHECK_FALLBACK_INTERVAL_MS = 6 * 60 * 60 * 1000 // filet de secours si le push realtime est manqué (offline, etc.)
 
 // Version téléchargée et prête à installer — jamais appliquée de force en pleine
 // session (perte de brouillon de mail, page AO en cours, etc.) : on prévient le
@@ -13,6 +18,30 @@ let updateReadyVersion = null
 
 function broadcastUpdateReady() {
   BrowserWindow.getAllWindows().forEach(win => win.webContents.send('operis:update-ready', updateReadyVersion))
+}
+
+/** Écoute le canal Realtime "desktop-updates" — dès qu'une nouvelle version est publiée
+ *  (scripts/upload-desktop-release.mjs y envoie un broadcast juste après l'upload), on
+ *  relance immédiatement un check au lieu d'attendre le prochain cycle de polling. */
+function subscribeToReleaseAnnouncements(check) {
+  try {
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    supabase
+      .channel('desktop-updates')
+      .on('broadcast', { event: 'new-version' }, payload => {
+        console.info('[autoUpdater] version publiée annoncée en direct:', payload?.payload?.version)
+        check()
+      })
+      .subscribe(status => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.error('[autoUpdater] canal realtime indisponible, repli sur le filet de secours', status)
+        }
+      })
+  } catch (err) {
+    console.error('[autoUpdater] abonnement realtime échoué', err?.message ?? err)
+  }
 }
 
 /** Mise à jour automatique du shell desktop — téléchargée en tâche de fond, jamais
@@ -32,7 +61,8 @@ function initAutoUpdate() {
 
   const check = () => autoUpdater.checkForUpdates().catch(err => console.error('[autoUpdater] check failed', err))
   check()
-  setInterval(check, UPDATE_CHECK_INTERVAL_MS)
+  subscribeToReleaseAnnouncements(check)
+  setInterval(check, UPDATE_CHECK_FALLBACK_INTERVAL_MS)
 }
 
 const APP_BASE = (process.env.OPERIS_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://operis-pro.com').replace(/\/$/, '')
