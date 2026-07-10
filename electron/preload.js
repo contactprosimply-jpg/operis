@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron')
+const packageJson = require('../package.json')
 
 contextBridge.exposeInMainWorld('operisDesktop', {
+  appVersion: packageJson.version,
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   getUpdateStatus: () => ipcRenderer.invoke('operis:get-update-status'),

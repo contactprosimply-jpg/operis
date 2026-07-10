@@ -58,6 +58,12 @@ function SettingsPageContent() {
   const [deletingMailId, setDeletingMailId] = useState<string | null>(null)
   const [imapPassEdited, setImapPassEdited] = useState(false)
 
+  const [desktopVersion, setDesktopVersion] = useState<string | null>(null)
+
+  useEffect(() => {
+    setDesktopVersion(window.operisDesktop?.appVersion ?? null)
+  }, [])
+
   const [org, setOrg] = useState<OrganizationPayload | null>(null)
   const [orgName, setOrgName] = useState('')
   const [creatingOrg, setCreatingOrg] = useState(false)
@@ -431,6 +437,14 @@ function SettingsPageContent() {
                 Revoir le guide interactif Operis
               </button>
             </div>
+            {desktopVersion && (
+              <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+                <div style={sTitle}>Application desktop</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  Version installée : <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--text-primary)', fontWeight: 600 }}>{desktopVersion}</span>
+                </div>
+              </div>
+            )}
             <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
               <div style={sTitle}>Réinitialiser les appels d&apos;offres</div>
               <div style={sSub}>

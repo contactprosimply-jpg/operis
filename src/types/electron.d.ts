@@ -1,5 +1,6 @@
 /** Pont exposé par electron/preload.js — présent uniquement dans l'app desktop. */
 export interface OperisDesktopBridge {
+  appVersion: string
   openFolder: (path: string) => Promise<{ success: boolean; error?: string }>
   selectFolder: () => Promise<{ canceled: boolean; path?: string }>
   getUpdateStatus: () => Promise<string | boolean | null>
