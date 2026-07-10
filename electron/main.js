@@ -5,8 +5,18 @@ const { autoUpdater } = require('electron-updater')
 
 const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000 // 4h
 
-/** Mise à jour automatique du shell desktop — silencieuse, installée au prochain
- *  redémarrage naturel de l'app (jamais d'interruption forcée en pleine session). */
+// Version téléchargée et prête à installer — jamais appliquée de force en pleine
+// session (perte de brouillon de mail, page AO en cours, etc.) : on prévient le
+// renderer qui affiche un petit bandeau non fermable tant que l'utilisateur n'a
+// pas cliqué "Redémarrer" lui-même.
+let updateReadyVersion = null
+
+function broadcastUpdateReady() {
+  BrowserWindow.getAllWindows().forEach(win => win.webContents.send('operis:update-ready', updateReadyVersion))
+}
+
+/** Mise à jour automatique du shell desktop — téléchargée en tâche de fond, jamais
+ *  installée de force : le renderer est prévenu et laisse l'utilisateur choisir le moment. */
 function initAutoUpdate() {
   if (!app.isPackaged) return // pas de check en dev (electron .)
 
@@ -15,7 +25,9 @@ function initAutoUpdate() {
 
   autoUpdater.on('error', err => console.error('[autoUpdater]', err?.message ?? err))
   autoUpdater.on('update-downloaded', info => {
-    console.info('[autoUpdater] mise à jour téléchargée, installation au prochain redémarrage:', info?.version)
+    console.info('[autoUpdater] mise à jour téléchargée, en attente de redémarrage:', info?.version)
+    updateReadyVersion = info?.version ?? true
+    broadcastUpdateReady()
   })
 
   const check = () => autoUpdater.checkForUpdates().catch(err => console.error('[autoUpdater] check failed', err))
@@ -104,6 +116,15 @@ ipcMain.handle('select-folder', async event => {
   const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
   if (result.canceled || !result.filePaths.length) return { canceled: true }
   return { canceled: false, path: result.filePaths[0] }
+})
+
+/** État courant de la mise à jour — interrogé par le renderer au montage (l'événement
+ *  'update-downloaded' a pu arriver avant que le bandeau ne soit monté). */
+ipcMain.handle('operis:get-update-status', () => updateReadyVersion)
+
+/** Déclenché uniquement par un clic explicite de l'utilisateur sur "Redémarrer". */
+ipcMain.handle('operis:install-update', () => {
+  autoUpdater.quitAndInstall()
 })
 
 app.whenReady().then(() => {

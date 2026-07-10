@@ -2,6 +2,9 @@
 export interface OperisDesktopBridge {
   openFolder: (path: string) => Promise<{ success: boolean; error?: string }>
   selectFolder: () => Promise<{ canceled: boolean; path?: string }>
+  getUpdateStatus: () => Promise<string | boolean | null>
+  onUpdateReady: (callback: (version: string | boolean) => void) => () => void
+  installUpdate: () => Promise<void>
 }
 
 declare global {

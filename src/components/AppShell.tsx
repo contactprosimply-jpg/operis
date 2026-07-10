@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { AuthProvider } from '@/components/AuthProvider'
 import Sidebar from '@/components/Sidebar'
 import PwaInstaller from '@/components/PwaInstaller'
+import DesktopUpdateBanner from '@/components/DesktopUpdateBanner'
 import ProductTour from '@/components/ProductTour'
 import UserJourney from '@/components/UserJourney'
 import { isBillingExemptRoute, isWebsiteShellRoute } from '@/lib/public-routes'
@@ -23,6 +24,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
       {!minimalShell && <PwaInstaller />}
+      <DesktopUpdateBanner />
       {minimalShell ? (
         children
       ) : (
