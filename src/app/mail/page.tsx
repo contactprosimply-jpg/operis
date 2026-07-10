@@ -937,14 +937,16 @@ export default function MailPage() {
       try {
         const localProgress = loadLocalSyncProcessed()
         if (localProgress > 0) {
-          void runSync(true, true)
+          // Rattrapage automatique en arrière-plan — jamais de popup bloquant l'interface
+          // à chaque visite de la messagerie (seul le clic manuel "Synchroniser" bloque).
+          void runSync(true, true, false)
           return
         }
         const accRes = await authFetch('/api/mail/accounts')
         const accJson = await accRes.json()
         if (!accJson.success || !accJson.data) return
         if (accJson.data.initial_sync_complete === true && accJson.data.sent_initial_sync_complete === true) return
-        void runSync(true, true)
+        void runSync(true, true, false)
       } catch { /* ignore */ }
     })()
   }, [ready, userId, runSync])
@@ -1415,7 +1417,7 @@ export default function MailPage() {
         if (userId && activeDraftId) removeDraft(userId, activeDraftId)
         setActiveDraftId(null)
         closeCompose()
-        void runSync(true, true)
+        void runSync(true, true, false)
         showToast(
           data.data?.pendingVerification
             ? 'Premier contact — email de vérification envoyé, le message sera transmis après confirmation du destinataire'

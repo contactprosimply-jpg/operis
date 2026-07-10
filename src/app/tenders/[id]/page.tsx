@@ -780,9 +780,17 @@ export default function TenderDetailPage() {
   }
 
   const handleBrowseFolder = async () => {
-    const result = await window.operisDesktop?.selectFolder()
-    if (result && !result.canceled && result.path) {
-      setFolderPathInput(result.path)
+    if (!window.operisDesktop?.selectFolder) {
+      show('Fonction indisponible — mettez à jour l\'application desktop Operis')
+      return
+    }
+    try {
+      const result = await window.operisDesktop.selectFolder()
+      if (result && !result.canceled && result.path) {
+        setFolderPathInput(result.path)
+      }
+    } catch {
+      show('Erreur lors de l\'ouverture du sélecteur de dossier')
     }
   }
 
