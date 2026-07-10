@@ -88,6 +88,23 @@ function createWindow() {
     return { action: 'allow' }
   })
 
+  // Sans ça, un hoquet réseau (fréquent juste après un redémarrage post-maj, ou un
+  // Wi-Fi qui reconnecte) laisse l'utilisateur bloqué sur l'écran d'erreur générique
+  // de Chromium ("This page couldn't load") sans retenter automatiquement.
+  let retryTimer = null
+  let retryDelayMs = 1500
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return // -3 = ERR_ABORTED, navigation annulée volontairement
+    console.error('[did-fail-load]', errorCode, errorDescription, validatedURL)
+    if (retryTimer) return
+    retryTimer = setTimeout(() => {
+      retryTimer = null
+      retryDelayMs = Math.min(retryDelayMs * 2, 15000)
+      win.loadURL(APP_URL)
+    }, retryDelayMs)
+  })
+  win.webContents.on('did-finish-load', () => { retryDelayMs = 1500 })
+
   win.loadURL(APP_URL)
 }
 
