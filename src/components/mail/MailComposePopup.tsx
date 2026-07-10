@@ -4,16 +4,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Spinner } from '@/components/ui'
 import { getSignatureData } from '@/lib/email-signature'
+import { useExternalWindowPortal } from '@/lib/use-external-window'
 import ContactRecipientField from '@/components/mail/ContactRecipientField'
 import type { OperisContact } from '@/lib/contacts'
 
-const POPUP_WIDTH = 720
-const POPUP_HEIGHT = 640
-const POPUP_WIDTH_LARGE = 920
-const POPUP_HEIGHT_LARGE = 780
-const POPUP_MIN_WIDTH = 420
-const POPUP_MIN_HEIGHT = 360
-const POPUP_Z_INDEX = 10050
+const WINDOW_WIDTH = 760
+const WINDOW_HEIGHT = 680
 
 const inputStyle: React.CSSProperties = {
   flex: 1,
@@ -42,9 +38,8 @@ export default function MailComposePopup({
   onChange,
   onSend,
   onRequestClose,
+  onClosedByUser,
   closeConfirm,
-  onMinimize,
-  onRestore,
   onDelete,
   attachments,
   onRemoveAttachment,
@@ -54,7 +49,6 @@ export default function MailComposePopup({
   draftSavedLabel,
   isListening,
   onToggleSpeech,
-  minimized,
   signaturePreview,
   contactsRef,
   tenderId,
@@ -64,14 +58,15 @@ export default function MailComposePopup({
   onChange: (patch: Partial<{ to: string; cc: string; bcc: string; subject: string; body: string }>) => void
   onSend: () => void
   onRequestClose: () => void
+  /** Fenêtre fermée directement par l'utilisateur (bouton natif du système) — pas de
+   *  confirmation possible à ce stade, on sauvegarde silencieusement si besoin. */
+  onClosedByUser: () => void
   closeConfirm?: {
     open: boolean
     onSave: () => void
     onDiscard: () => void
     onCancel: () => void
   }
-  onMinimize: () => void
-  onRestore: () => void
   onDelete: () => void
   attachments: File[]
   onRemoveAttachment: (index: number) => void
@@ -81,7 +76,6 @@ export default function MailComposePopup({
   draftSavedLabel: string | null
   isListening: boolean
   onToggleSpeech: () => void
-  minimized: boolean
   signaturePreview: { html: string }
   contactsRef?: React.RefObject<OperisContact[] | null>
   tenderId?: string | null
@@ -91,27 +85,21 @@ export default function MailComposePopup({
   const [showBcc, setShowBcc] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [fileChoice, setFileChoice] = useState<FileChoiceState>(null)
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
-  const [expanded, setExpanded] = useState(false)
   const [signatureExpanded, setSignatureExpanded] = useState(true)
-  const [customSize, setCustomSize] = useState<{ w: number; h: number } | null>(null)
-  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
-  const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null)
-  const dragDepthRef = useRef(0)
-
-  const popupWidth = customSize?.w ?? (expanded ? POPUP_WIDTH_LARGE : POPUP_WIDTH)
-  const popupHeight = customSize?.h ?? (expanded ? POPUP_HEIGHT_LARGE : POPUP_HEIGHT)
   const bodyRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const bodyInitRef = useRef<string | null>(null)
-  const [portalReady, setPortalReady] = useState(false)
+  const dragDepthRef = useRef(0)
+
+  // Vraie fenêtre séparée (comme Thunderbird) — pas une popup superposée à la page.
+  const mount = useExternalWindowPortal(true, {
+    title: compose.subject.trim() || 'Nouveau message — Operis',
+    width: WINDOW_WIDTH,
+    height: WINDOW_HEIGHT,
+    onClosedByUser,
+  })
 
   useEffect(() => {
-    setPortalReady(true)
-  }, [])
-
-  useEffect(() => {
-    if (minimized) return
     const preventDefault = (e: DragEvent) => e.preventDefault()
     window.addEventListener('dragover', preventDefault)
     window.addEventListener('drop', preventDefault)
@@ -119,7 +107,7 @@ export default function MailComposePopup({
       window.removeEventListener('dragover', preventDefault)
       window.removeEventListener('drop', preventDefault)
     }
-  }, [minimized])
+  }, [])
 
   useEffect(() => {
     if (compose.cc.trim()) setShowCc(true)
@@ -227,116 +215,12 @@ export default function MailComposePopup({
       reader.readAsDataURL(file)
     })
 
-  const onHeaderMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('button')) return
-    dragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      originX: dragOffset.x,
-      originY: dragOffset.y,
-    }
-    const onMove = (ev: MouseEvent) => {
-      if (!dragRef.current) return
-      setDragOffset({
-        x: dragRef.current.originX + ev.clientX - dragRef.current.startX,
-        y: dragRef.current.originY + ev.clientY - dragRef.current.startY,
-      })
-    }
-    const onUp = () => {
-      dragRef.current = null
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }
-
-  const onResizeMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    resizeRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      startW: popupWidth,
-      startH: popupHeight,
-    }
-    const onMove = (ev: MouseEvent) => {
-      if (!resizeRef.current) return
-      const dw = resizeRef.current.startX - ev.clientX
-      const dh = resizeRef.current.startY - ev.clientY
-      const maxW = window.innerWidth - 48
-      const maxH = window.innerHeight - 24
-      setCustomSize({
-        w: Math.min(maxW, Math.max(POPUP_MIN_WIDTH, resizeRef.current.startW + dw)),
-        h: Math.min(maxH, Math.max(POPUP_MIN_HEIGHT, resizeRef.current.startH + dh)),
-      })
-    }
-    const onUp = () => {
-      resizeRef.current = null
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }
-
-  const toggleExpanded = () => {
-    setCustomSize(null)
-    setExpanded(prev => !prev)
-  }
-
-  const subjectLabel = compose.subject.trim() || compose.to.trim() || 'Nouveau message'
-
-  const minimizedBar = (
-    <div
-      style={{
-        position: 'fixed',
-        bottom: 0,
-        right: 24,
-        width: `min(${POPUP_WIDTH}px, calc(100vw - 48px))`,
-        height: 44,
-        zIndex: POPUP_Z_INDEX,
-        background: '#021246',
-        borderRadius: '10px 10px 0 0',
-        boxShadow: '0 -4px 24px rgba(0,0,0,0.35)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '0 12px',
-        border: '1px solid rgba(255,255,255,0.1)',
-        fontFamily: 'DM Sans, system-ui',
-      }}
-    >
-      <button
-        type="button"
-        onClick={onRestore}
-        style={{
-          flex: 1,
-          background: 'none',
-          border: 'none',
-          color: '#e8eaef',
-          fontSize: 13,
-          fontWeight: 600,
-          cursor: 'pointer',
-          textAlign: 'left',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {subjectLabel}
-      </button>
-      <button type="button" onClick={onRestore} title="Restaurer" style={iconBtnStyle}>▢</button>
-      <button type="button" onClick={onRequestClose} title="Fermer" style={iconBtnStyle}>×</button>
-    </div>
-  )
-
   const closeConfirmDialog = closeConfirm?.open ? (
     <div
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: POPUP_Z_INDEX + 10,
+        zIndex: 100,
         background: 'rgba(0,0,0,0.55)',
         display: 'flex',
         alignItems: 'center',
@@ -379,26 +263,16 @@ export default function MailComposePopup({
     </div>
   ) : null
 
-  const expandedPopup = (
+  const content = (
     <div
       style={{
-        position: 'fixed',
-        bottom: 0,
-        right: 24,
-        width: `min(${popupWidth}px, calc(100vw - 48px))`,
-        height: popupHeight,
-        maxHeight: 'calc(100vh - 24px)',
-        zIndex: POPUP_Z_INDEX,
-        borderRadius: '12px 12px 0 0',
+        position: 'absolute',
+        inset: 0,
         background: '#021246',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
         fontFamily: 'DM Sans, system-ui',
-        border: '1px solid rgba(255,255,255,0.08)',
-        animation: 'mailComposeSlideUp 0.22s ease-out',
       }}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -412,7 +286,7 @@ export default function MailComposePopup({
             inset: 0,
             background: 'rgba(59, 127, 232, 0.12)',
             border: '2px dashed #3B7FE8',
-            borderRadius: 12,
+            borderRadius: 0,
             zIndex: 50,
             display: 'flex',
             alignItems: 'center',
@@ -470,36 +344,8 @@ export default function MailComposePopup({
           </div>
         </div>
       )}
+
       <div
-        onMouseDown={onResizeMouseDown}
-        title="Glisser pour redimensionner"
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: 18,
-          height: 18,
-          cursor: 'nwse-resize',
-          zIndex: 30,
-          borderTopLeftRadius: 12,
-        }}
-      />
-      <div
-        onMouseDown={onResizeMouseDown}
-        title="Glisser pour redimensionner"
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 18,
-          right: 18,
-          height: 6,
-          cursor: 'ns-resize',
-          zIndex: 25,
-        }}
-      />
-      {/* Header draggable */}
-      <div
-        onMouseDown={onHeaderMouseDown}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -507,24 +353,11 @@ export default function MailComposePopup({
           padding: '12px 14px',
           background: 'linear-gradient(135deg, #021246 0%, #0a2d6b 100%)',
           borderBottom: '1px solid rgba(255,255,255,0.1)',
-          cursor: 'grab',
           flexShrink: 0,
-          userSelect: 'none',
         }}
       >
         <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>Nouveau message</span>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button
-            type="button"
-            onClick={toggleExpanded}
-            title={expanded || customSize ? 'Taille normale' : 'Agrandir'}
-            style={iconBtnStyle}
-          >
-            {expanded || customSize ? '⤡' : '⤢'}
-          </button>
-          <button type="button" onClick={onMinimize} title="Réduire" style={iconBtnStyle}>—</button>
-          <button type="button" onClick={onRequestClose} title="Fermer" style={iconBtnStyle}>×</button>
-        </div>
+        <button type="button" onClick={onRequestClose} title="Fermer" style={iconBtnStyle}>×</button>
       </div>
 
       <div style={{ padding: '0 14px', flexShrink: 0 }}>
@@ -785,17 +618,12 @@ export default function MailComposePopup({
             </span>
           )}
         </div>
+      {closeConfirmDialog}
     </div>
   )
 
-  if (!portalReady) return null
-  return createPortal(
-    <>
-      {minimized ? minimizedBar : expandedPopup}
-      {closeConfirmDialog}
-    </>,
-    document.body,
-  )
+  if (!mount) return null
+  return createPortal(content, mount)
 }
 
 function ComposeSignaturePreview({ html, expanded }: { html: string; expanded: boolean }) {

@@ -194,7 +194,6 @@ export default function MailPage() {
   const autoSyncBootRef = useRef(false)
   const [selected, setSelected] = useState<Email | null>(null)
   const [composing, setComposing] = useState(false)
-  const [composeMinimized, setComposeMinimized] = useState(false)
   const [draftSavedLabel, setDraftSavedLabel] = useState<string | null>(null)
   const [compose, setCompose] = useState({ to: '', cc: '', bcc: '', subject: '', body: '' })
   const [attachments, setAttachments] = useState<File[]>([])
@@ -1128,7 +1127,6 @@ export default function MailPage() {
     setComposeSource(null)
     setComposeTenderId(null)
     setComposing(false)
-    setComposeMinimized(false)
     setSendError(null)
     setDraftSavedLabel(null)
   }
@@ -1152,6 +1150,18 @@ export default function MailPage() {
     closeCompose()
   }
 
+  /** Fenêtre de composition fermée directement par l'utilisateur (bouton natif du
+   *  système) — impossible d'afficher une confirmation à ce stade, on sauvegarde donc
+   *  silencieusement le brouillon plutôt que de perdre le message. */
+  const handleComposeWindowClosedByUser = () => {
+    if (isComposeContentEmpty()) {
+      cleanupDraft()
+      closeCompose()
+      return
+    }
+    void saveDraftNow().then(closeCompose)
+  }
+
   const openCompose = (
     prefill: Partial<typeof compose> = {},
     draftId?: string,
@@ -1168,7 +1178,6 @@ export default function MailPage() {
     setComposeSource(source ?? null)
     setComposeTenderId(inheritedTenderId ?? null)
     setComposing(true)
-    setComposeMinimized(false)
     setSendError(null)
     setDraftSavedLabel(null)
   }
@@ -2824,14 +2833,13 @@ export default function MailPage() {
           onChange={patch => setCompose(c => ({ ...c, ...patch }))}
           onSend={handleSend}
           onRequestClose={handleRequestCloseCompose}
+          onClosedByUser={handleComposeWindowClosedByUser}
           closeConfirm={{
             open: closeConfirmOpen,
             onSave: () => void handleCloseWithSaving(),
             onDiscard: handleCloseWithoutSaving,
             onCancel: () => setCloseConfirmOpen(false),
           }}
-          onMinimize={() => setComposeMinimized(true)}
-          onRestore={() => setComposeMinimized(false)}
           onDelete={handleDeleteDraft}
           attachments={attachments}
           onRemoveAttachment={i => setAttachments(a => a.filter((_, j) => j !== i))}
@@ -2841,7 +2849,6 @@ export default function MailPage() {
           draftSavedLabel={draftSavedLabel}
           isListening={isListening}
           onToggleSpeech={toggleSpeech}
-          minimized={composeMinimized}
           signaturePreview={signaturePreview}
           contactsRef={contactsRef}
           tenderId={composeTenderId}

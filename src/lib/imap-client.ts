@@ -692,25 +692,48 @@ export async function fetchMessageSourceByMessageId(
 
   const client = createImapClient(config)
   await client.connect()
-  const lock = await client.getMailboxLock(mailboxPath)
+
+  const searchInMailbox = async (path: string): Promise<number | undefined> => {
+    const lock = await client.getMailboxLock(path)
+    try {
+      for (const mid of candidates) {
+        const uids = await client.search({ header: { 'message-id': mid } }, { uid: true })
+        if (Array.isArray(uids) && uids.length) return uids[uids.length - 1]
+      }
+      return undefined
+    } finally {
+      lock.release()
+    }
+  }
 
   try {
-    let uid: number | undefined
-    for (const mid of candidates) {
-      const uids = await client.search({ header: { 'message-id': mid } }, { uid: true })
-      if (Array.isArray(uids) && uids.length) {
-        uid = uids[uids.length - 1]
-        break
+    let foundMailbox = mailboxPath
+    let uid = await searchInMailbox(mailboxPath)
+
+    // Le message a pu être déplacé/classé dans un autre dossier depuis le dernier sync —
+    // sans ce filet, la ré-enrichissement (corps + PJ) abandonnait silencieusement et
+    // l'email restait marqué sans pièce jointe pour toujours, même si elle existe côté serveur.
+    if (!uid) {
+      const mailboxes = await client.list()
+      for (const mbox of mailboxes) {
+        if (mbox.path === mailboxPath) continue
+        uid = await searchInMailbox(mbox.path)
+        if (uid) { foundMailbox = mbox.path; break }
       }
     }
+
     if (!uid) return null
 
-    for await (const message of client.fetch([uid], { source: true }, { uid: true })) {
-      if (message.source) return message.source
+    const lock = await client.getMailboxLock(foundMailbox)
+    try {
+      for await (const message of client.fetch([uid], { source: true }, { uid: true })) {
+        if (message.source) return message.source
+      }
+      return null
+    } finally {
+      lock.release()
     }
-    return null
   } finally {
-    lock.release()
     try {
       await client.logout()
     } catch {}

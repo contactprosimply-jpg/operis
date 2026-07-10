@@ -126,7 +126,6 @@ export default function TenderDetailPage() {
   const [mailViewerLoading, setMailViewerLoading] = useState(false)
   const [mailViewerEmail, setMailViewerEmail] = useState<Email | null>(null)
   const [mailComposing, setMailComposing] = useState(false)
-  const [mailComposeMinimized, setMailComposeMinimized] = useState(false)
   const [mailCompose, setMailCompose] = useState({ to: '', cc: '', bcc: '', subject: '', body: '' })
   const [mailAttachments, setMailAttachments] = useState<File[]>([])
   const [mailSending, setMailSending] = useState(false)
@@ -376,7 +375,6 @@ export default function TenderDetailPage() {
     setMailAttachments([])
     setMailSendError(null)
     setMailComposing(true)
-    setMailComposeMinimized(false)
   }
 
   const handleTenderMailSend = async () => {
@@ -423,7 +421,6 @@ export default function TenderDetailPage() {
       const data = await res.json()
       if (data.success) {
         setMailComposing(false)
-        setMailComposeMinimized(false)
         await loadLinkedEmails()
         await refreshTender()
         showRef.current('Email envoyé')
@@ -2133,10 +2130,9 @@ export default function TenderDetailPage() {
           compose={mailCompose}
           onChange={patch => setMailCompose(c => ({ ...c, ...patch }))}
           onSend={() => void handleTenderMailSend()}
-          onRequestClose={() => { setMailComposing(false); setMailComposeMinimized(false) }}
-          onMinimize={() => setMailComposeMinimized(true)}
-          onRestore={() => setMailComposeMinimized(false)}
-          onDelete={() => { setMailComposing(false); setMailComposeMinimized(false) }}
+          onRequestClose={() => setMailComposing(false)}
+          onClosedByUser={() => setMailComposing(false)}
+          onDelete={() => setMailComposing(false)}
           attachments={mailAttachments}
           onRemoveAttachment={i => setMailAttachments(prev => prev.filter((_, j) => j !== i))}
           onAddAttachments={files => setMailAttachments(prev => [...prev, ...files])}
@@ -2145,7 +2141,6 @@ export default function TenderDetailPage() {
           draftSavedLabel={null}
           isListening={false}
           onToggleSpeech={() => {}}
-          minimized={mailComposeMinimized}
           signaturePreview={getSignatureData()}
           contactsRef={contactsRef}
           tenderId={id}
