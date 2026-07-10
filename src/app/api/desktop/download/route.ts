@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic'
 
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
@@ -11,6 +12,16 @@ import {
 } from '@/lib/desktop-download'
 
 const SIGNED_URL_TTL_SEC = 60 * 15
+
+/** La version "vraie" est celle publiée dans latest.yml (mis à jour à chaque upload de
+ *  release), pas celle figée dans le package.json au moment du dernier déploiement web —
+ *  ces deux-là dérivent dès qu'on publie une nouvelle version desktop sans redéployer le site. */
+async function getLatestDesktopVersion(db: SupabaseClient): Promise<string | null> {
+  const { data, error } = await db.storage.from(DESKTOP_RELEASE_BUCKET).download('latest.yml')
+  if (error || !data) return null
+  const text = await data.text()
+  return text.match(/^version:\s*(.+)$/m)?.[1]?.trim() ?? null
+}
 
 export async function GET(req: NextRequest) {
   const userId = await getUserFromRequest(req)
@@ -30,7 +41,10 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const filename = DESKTOP_ARTIFACTS[variant]
+  const latestVersion = await getLatestDesktopVersion(db)
+  const filename = latestVersion
+    ? (variant === 'setup' ? `Operis-Setup-${latestVersion}.exe` : `Operis-Portable-${latestVersion}.exe`)
+    : DESKTOP_ARTIFACTS[variant]
 
   const { data: signed, error } = await db.storage
     .from(DESKTOP_RELEASE_BUCKET)

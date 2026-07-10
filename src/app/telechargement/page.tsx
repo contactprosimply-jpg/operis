@@ -8,6 +8,27 @@ import { authFetch } from '@/lib/auth-client'
 import { DESKTOP_VERSION } from '@/lib/desktop-download'
 import { Spinner } from '@/components/ui'
 
+/** Lu directement depuis le bucket public (toujours à jour, contrairement à DESKTOP_VERSION
+ *  qui est figée au build du site) — évite d'afficher un numéro périmé si le site n'a pas
+ *  été redéployé juste après la publication d'une nouvelle version desktop. */
+function useLatestDesktopVersion(): string {
+  const [version, setVersion] = useState(DESKTOP_VERSION)
+
+  useEffect(() => {
+    const base = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '')
+    if (!base) return
+    fetch(`${base}/storage/v1/object/public/desktop-releases/latest.yml`, { cache: 'no-store' })
+      .then(r => r.text())
+      .then(text => {
+        const match = text.match(/^version:\s*(.+)$/m)?.[1]?.trim()
+        if (match) setVersion(match)
+      })
+      .catch(() => {})
+  }, [])
+
+  return version
+}
+
 function DownloadButton({
   variant,
   title,
@@ -71,6 +92,7 @@ function DownloadButton({
 export default function TelechargementPage() {
   const { session } = useAuth()
   const [hasAccess, setHasAccess] = useState<boolean | null>(null)
+  const latestVersion = useLatestDesktopVersion()
 
   useEffect(() => {
     if (!session) return
@@ -152,7 +174,7 @@ export default function TelechargementPage() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <p style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>
-              Version {DESKTOP_VERSION} · Windows 64 bits
+              Version {latestVersion} · Windows 64 bits
             </p>
             <DownloadButton
               variant="setup"
