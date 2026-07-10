@@ -1678,6 +1678,16 @@ export default function MailPage() {
       if (isTypingTarget(e.target)) return
       if (composing || linkModalOpen || closeConfirmOpen) return
 
+      if (e.key === 'Delete') {
+        const emailId = selectedIdRef.current
+        if (!emailId) return
+        const email = emailsRef.current.find(item => item.id === emailId)
+        if (!email || email.mail_folder === 'trash') return
+        e.preventDefault()
+        void handleMoveToFolderRef.current(email, 'trash')
+        return
+      }
+
       const label = emailLabelForShortcutKey(e.key)
       if (!label) return
 
@@ -1737,6 +1747,8 @@ export default function MailPage() {
       showToast('Erreur déplacement')
     }
   }
+  const handleMoveToFolderRef = useRef(handleMoveToFolder)
+  handleMoveToFolderRef.current = handleMoveToFolder
 
   const handleRestore = async (email: Email) => {
     try {
@@ -3017,6 +3029,25 @@ export default function MailPage() {
               </button>
             )
           })}
+          {contextMenuEmail.mail_folder !== 'trash' && (
+            <>
+              <div style={{ borderTop: '1px solid var(--border)', marginTop: 4 }} />
+              <button
+                type="button"
+                onClick={() => { void handleMoveToFolder(contextMenuEmail, 'trash'); closeContextMenu() }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                  width: '100%', textAlign: 'left', marginTop: 4,
+                  padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+                  background: 'transparent', color: '#f87171',
+                  fontSize: 11, fontFamily: 'DM Sans, system-ui',
+                }}
+              >
+                <span>🗑️ Supprimer</span>
+                <span style={{ fontSize: 9, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>Suppr</span>
+              </button>
+            </>
+          )}
         </div>,
         document.body,
       )}
