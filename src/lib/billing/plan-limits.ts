@@ -14,3 +14,14 @@ export function planLimits(plan: BillingPlan | null): PlanLimits {
 export function storageLimitBytes(plan: BillingPlan | null): number {
   return planLimits(plan).storageGb * 1024 * 1024 * 1024
 }
+
+/** Chaque unité d'option achetée ajoute ce volume, en plus du quota de base du plan. */
+export const STORAGE_ADDON_GB_PER_UNIT = 10
+
+export function effectiveStorageGb(plan: BillingPlan | null, addonUnits: number): number {
+  return planLimits(plan).storageGb + Math.max(0, addonUnits) * STORAGE_ADDON_GB_PER_UNIT
+}
+
+export function effectiveStorageLimitBytes(plan: BillingPlan | null, addonUnits: number): number {
+  return effectiveStorageGb(plan, addonUnits) * 1024 * 1024 * 1024
+}

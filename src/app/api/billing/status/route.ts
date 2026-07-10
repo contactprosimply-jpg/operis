@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
       status: ctx.subscription?.status ?? null,
       current_period_end: ctx.subscription?.current_period_end ?? null,
       stripe_subscription_id: ctx.subscription?.stripe_subscription_id ?? null,
+      storage_addon_units: ctx.subscription?.storage_addon_units ?? 0,
       limits: ctx.limits,
       usage: {
         seats: ctx.seatCount,

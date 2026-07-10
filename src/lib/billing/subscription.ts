@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
-import { planLimits, storageLimitBytes } from '@/lib/billing/plan-limits'
-import { getOrgStorageBytes } from '@/lib/billing/storage-usage'
+import { planLimits, effectiveStorageGb, effectiveStorageLimitBytes } from '@/lib/billing/plan-limits'
+import { getOrgStorageBytes, sumStorageBytesForUserIds } from '@/lib/billing/storage-usage'
 import { listOwnedOrganizations, userBelongsToOrganization } from '@/lib/organization'
 import { isStripeConfigured } from '@/lib/billing/stripe'
 
@@ -17,6 +17,7 @@ export type SubscriptionRow = {
   current_period_end: string | null
   trial_ends_at: string | null
   created_at: string
+  storage_addon_units: number
 }
 
 export type BillingContext = {
@@ -132,8 +133,7 @@ export async function getBillingContext(db: SupabaseClient, userId: string): Pro
     seatCount = count ?? 1
     storageBytes = await getOrgStorageBytes(db, orgId)
   } else {
-    const { data: docs } = await db.from('tender_documents').select('size').eq('user_id', userId)
-    storageBytes = (docs ?? []).reduce((sum, row) => sum + Number(row.size ?? 0), 0)
+    storageBytes = await sumStorageBytesForUserIds(db, [userId])
     seatCount = 1
   }
 
@@ -143,6 +143,7 @@ export async function getBillingContext(db: SupabaseClient, userId: string): Pro
   const effectivePlan = hasAccess
     ? ((isBillingAdmin || stripeBypass) && !subscription?.plan ? 'business' : (subscription?.plan ?? null))
     : null
+  const addonUnits = subscription?.storage_addon_units ?? 0
 
   return {
     userId,
@@ -150,7 +151,7 @@ export async function getBillingContext(db: SupabaseClient, userId: string): Pro
     isOwner,
     subscription,
     effectivePlan,
-    limits: planLimits(effectivePlan),
+    limits: { ...planLimits(effectivePlan), storageGb: effectiveStorageGb(effectivePlan, addonUnits) },
     seatCount,
     storageBytes,
     hasAccess,
@@ -186,7 +187,7 @@ export async function assertStorageQuota(
     return { ok: false, error: 'Abonnement actif requis pour uploader des documents' }
   }
 
-  const limit = storageLimitBytes(ctx.effectivePlan)
+  const limit = effectiveStorageLimitBytes(ctx.effectivePlan, ctx.subscription?.storage_addon_units ?? 0)
   if (ctx.storageBytes + additionalBytes > limit) {
     const usedGb = (ctx.storageBytes / (1024 ** 3)).toFixed(1)
     return {

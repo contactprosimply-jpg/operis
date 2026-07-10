@@ -13,8 +13,7 @@ export async function getOrgMemberUserIds(db: SupabaseClient, orgId: string): Pr
   return [...ids]
 }
 
-export async function sumStorageBytesForUserIds(db: SupabaseClient, userIds: string[]): Promise<number> {
-  if (!userIds.length) return 0
+async function sumTenderDocumentBytes(db: SupabaseClient, userIds: string[]): Promise<number> {
   const { data, error } = await db
     .from('tender_documents')
     .select('size')
@@ -26,6 +25,26 @@ export async function sumStorageBytesForUserIds(db: SupabaseClient, userIds: str
     return (fallback ?? []).reduce((sum, row) => sum + Number(row.size ?? 0), 0)
   }
   return (data ?? []).reduce((sum, row) => sum + Number(row.size ?? 0), 0)
+}
+
+/** Pièces jointes reçues/envoyées par mail (IMAP) — consomment aussi le quota Supabase réel,
+ *  pas seulement les documents uploadés manuellement sur un AO. */
+async function sumMailAttachmentBytes(db: SupabaseClient, userIds: string[]): Promise<number> {
+  const { data, error } = await db.rpc('sum_email_attachment_bytes', { target_user_ids: userIds })
+  if (error) {
+    console.error('[storage-usage] sum_email_attachment_bytes:', error.message)
+    return 0
+  }
+  return Number(data ?? 0)
+}
+
+export async function sumStorageBytesForUserIds(db: SupabaseClient, userIds: string[]): Promise<number> {
+  if (!userIds.length) return 0
+  const [docBytes, mailBytes] = await Promise.all([
+    sumTenderDocumentBytes(db, userIds),
+    sumMailAttachmentBytes(db, userIds),
+  ])
+  return docBytes + mailBytes
 }
 
 export async function getOrgStorageBytes(db: SupabaseClient, orgId: string): Promise<number> {

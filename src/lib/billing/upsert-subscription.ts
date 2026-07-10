@@ -1,7 +1,7 @@
 import type Stripe from 'stripe'
 import { createAdminClient } from '@/lib/supabase'
 import { ensureBillingOrg } from '@/lib/billing/subscription'
-import { planFromStripePriceId } from '@/lib/billing/stripe'
+import { planFromStripePriceId, getStripeStorageAddonPriceId } from '@/lib/billing/stripe'
 import { stripeSubscriptionPeriodEnd } from '@/lib/billing/stripe-subscription'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
 
@@ -69,10 +69,17 @@ export async function upsertFromStripeSubscription(
     return
   }
 
-  const priceId = stripeSub.items.data[0]?.price?.id
+  // items.data[0] n'est pas fiable dès qu'un 2e item (l'option stockage) existe sur le
+  // même abonnement — on cherche explicitement l'item dont le prix correspond à un plan connu.
+  const planItem = stripeSub.items.data.find(item => planFromStripePriceId(item.price?.id ?? '') !== null)
+  const priceId = planItem?.price?.id ?? stripeSub.items.data[0]?.price?.id
   const plan = (stripeSub.metadata?.plan as BillingPlan | undefined)
     ?? options.fallbackPlan
     ?? (priceId ? planFromStripePriceId(priceId) : null)
+
+  const addonPriceId = getStripeStorageAddonPriceId()
+  const addonItem = addonPriceId ? stripeSub.items.data.find(item => item.price?.id === addonPriceId) : undefined
+  const storageAddonUnits = addonItem?.quantity ?? 0
 
   const customerId = typeof stripeSub.customer === 'string'
     ? stripeSub.customer
@@ -88,6 +95,7 @@ export async function upsertFromStripeSubscription(
     status,
     plan,
     current_period_end: currentPeriodEnd,
+    storage_addon_units: storageAddonUnits,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'org_id' })
 
@@ -104,5 +112,6 @@ export async function upsertFromStripeSubscription(
     plan,
     status,
     currentPeriodEnd,
+    storageAddonUnits,
   })
 }

@@ -7,6 +7,7 @@ import PricingPlans from '@/components/billing/PricingPlans'
 import { authFetch } from '@/lib/auth-client'
 import { Button, Spinner } from '@/components/ui'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
+import { STORAGE_ADDON_GB_PER_UNIT } from '@/lib/billing/plan-limits'
 
 type BillingData = {
   has_access: boolean
@@ -18,6 +19,7 @@ type BillingData = {
   is_owner: boolean
   org_id: string | null
   stripe_subscription_id: string | null
+  storage_addon_units: number
 }
 
 const EMPTY_LIMITS = { seats: 0, storageGb: 0 }
@@ -38,6 +40,7 @@ function BillingSettingsContent() {
   const [portalLoading, setPortalLoading] = useState(false)
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [addonLoading, setAddonLoading] = useState(false)
 
   const load = async () => {
     try {
@@ -92,6 +95,28 @@ function BillingSettingsContent() {
       setCheckoutError(e instanceof Error ? e.message : 'Erreur réseau')
     } finally {
       setPortalLoading(false)
+    }
+  }
+
+  const handleAddonChange = async (units: number) => {
+    if (units < 0) return
+    setAddonLoading(true)
+    setCheckoutError(null)
+    try {
+      const res = await authFetch('/api/billing/storage-addon', {
+        method: 'POST',
+        body: JSON.stringify({ units }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        await load()
+      } else {
+        setCheckoutError(json.error ?? 'Impossible de mettre à jour l\'option stockage')
+      }
+    } catch (e) {
+      setCheckoutError(e instanceof Error ? e.message : 'Erreur réseau')
+    } finally {
+      setAddonLoading(false)
     }
   }
 
@@ -172,10 +197,30 @@ function BillingSettingsContent() {
         </div>
 
         {data?.stripe_subscription_id && canSubscribe && (
-          <div style={{ marginTop: 24, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 24, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <Button variant="ghost" onClick={handlePortal} disabled={portalLoading}>
               {portalLoading ? 'Ouverture…' : 'Portail Stripe'}
             </Button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--text-secondary)' }}>
+              <span>Option stockage (+{STORAGE_ADDON_GB_PER_UNIT} Go / unité) :</span>
+              <Button
+                variant="ghost"
+                disabled={addonLoading || (data.storage_addon_units ?? 0) === 0}
+                onClick={() => handleAddonChange((data.storage_addon_units ?? 0) - 1)}
+              >
+                −
+              </Button>
+              <span style={{ fontWeight: 700, minWidth: 16, textAlign: 'center' }}>
+                {data.storage_addon_units ?? 0}
+              </span>
+              <Button
+                variant="ghost"
+                disabled={addonLoading}
+                onClick={() => handleAddonChange((data.storage_addon_units ?? 0) + 1)}
+              >
+                +
+              </Button>
+            </div>
           </div>
         )}
       </div>

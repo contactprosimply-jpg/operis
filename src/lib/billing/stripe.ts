@@ -24,3 +24,10 @@ export function planFromStripePriceId(priceId: string): BillingPlan | null {
   if (priceId === process.env.STRIPE_PRICE_BUSINESS) return 'business'
   return null
 }
+
+/** Prix Stripe de l'option "+10 Go" (récurrent, quantité = nombre d'unités achetées).
+ *  Retourne null tant que le produit n'a pas été créé dans le dashboard Stripe / configuré
+ *  en variable d'env — l'add-on reste alors simplement indisponible (pas d'erreur bloquante). */
+export function getStripeStorageAddonPriceId(): string | null {
+  return process.env.STRIPE_PRICE_STORAGE_ADDON?.trim() || null
+}
