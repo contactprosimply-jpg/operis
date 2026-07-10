@@ -67,6 +67,7 @@ import { mailApiFetch } from '@/lib/mail-request-guard'
 import {
   isLocalFirstFolder,
   folderKeyFromSelection,
+  folderKeyFromRow,
   setLocalFlag,
   cachedToEmail,
   emailRowToCached,
@@ -74,6 +75,7 @@ import {
   storeCachedBody,
   getCachedBody,
   queryCachedMailListPage,
+  patchCachedEmail,
   type MailListQueryOpts,
 } from '@/lib/mailCache'
 
@@ -245,6 +247,8 @@ export default function MailPage() {
   const [mailLayout, setMailLayout] = useState<'vertical' | 'horizontal'>('vertical')
   const [mailDensity, setMailDensity] = useState<'compact' | 'cozy' | 'comfortable'>('cozy')
   const [folderSidebarCollapsed, setFolderSidebarCollapsed] = useState(false)
+  const [folderSidebarWidth, setFolderSidebarWidth] = useState(220)
+  const [resizingFolderSidebar, setResizingFolderSidebar] = useState(false)
   const [listSizeVertical, setListSizeVertical] = useState(320)
   const [listSizeHorizontal, setListSizeHorizontal] = useState(42)
   const [resizingList, setResizingList] = useState(false)
@@ -374,6 +378,8 @@ export default function MailPage() {
     if (stored === 'horizontal' || stored === 'vertical') setMailLayout(stored)
     const storedCollapsed = localStorage.getItem('operis_mail_folder_sidebar_collapsed')
     if (storedCollapsed === '1') setFolderSidebarCollapsed(true)
+    const storedSidebarWidth = Number(localStorage.getItem('operis_mail_folder_sidebar_width'))
+    if (storedSidebarWidth >= 160 && storedSidebarWidth <= 480) setFolderSidebarWidth(storedSidebarWidth)
     const storedSizeV = Number(localStorage.getItem('operis_mail_list_size_vertical'))
     if (storedSizeV >= 240 && storedSizeV <= 800) setListSizeVertical(storedSizeV)
     const storedSizeH = Number(localStorage.getItem('operis_mail_list_size_horizontal'))
@@ -400,6 +406,27 @@ export default function MailPage() {
       localStorage.setItem('operis_mail_folder_sidebar_collapsed', next ? '1' : '0')
       return next
     })
+  }
+
+  const startFolderSidebarResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setResizingFolderSidebar(true)
+    const startX = e.clientX
+    const startWidth = folderSidebarWidth
+    const liveWidth = { current: startWidth }
+    const onMove = (moveEvent: MouseEvent) => {
+      const next = Math.min(480, Math.max(160, startWidth + (moveEvent.clientX - startX)))
+      liveWidth.current = next
+      setFolderSidebarWidth(next)
+    }
+    const onUp = () => {
+      setResizingFolderSidebar(false)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      localStorage.setItem('operis_mail_folder_sidebar_width', String(liveWidth.current))
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
   }
 
   const startListResize = (e: React.MouseEvent) => {
@@ -1741,6 +1768,10 @@ export default function MailPage() {
       await mailAction('move', { emailId: email.id, target })
       setEmails(prev => prev.filter(e => e.id !== email.id))
       setSelected(null)
+      // Le cache local (IndexedDB) doit refléter le nouveau dossier immédiatement — sinon
+      // un rechargement depuis le cache (sync arrière-plan, delta...) fait réapparaître le
+      // mail dans l'ancien dossier quelques secondes après la suppression.
+      void patchCachedEmail(email.id, { mail_folder: target, folder: folderKeyFromRow(target) })
       showToast(target === 'spam' ? 'Déplacé vers indésirables' : 'Déplacé vers corbeille')
     } catch {
       applyEmailPatch(email.id, { labels: labelsBefore })
@@ -1755,6 +1786,7 @@ export default function MailPage() {
       await mailAction('restore', { emailId: email.id })
       setEmails(prev => prev.filter(e => e.id !== email.id))
       setSelected(null)
+      void patchCachedEmail(email.id, { mail_folder: 'inbox', folder: folderKeyFromRow('inbox') })
       showToast('Mail restauré')
     } catch {
       showToast('Erreur restauration')
@@ -1766,6 +1798,7 @@ export default function MailPage() {
       await mailAction('not_spam', { emailId: email.id })
       setEmails(prev => prev.filter(e => e.id !== email.id))
       setSelected(null)
+      void patchCachedEmail(email.id, { mail_folder: 'inbox', folder: folderKeyFromRow('inbox') })
       showToast('Déplacé vers courrier entrant')
     } catch {
       showToast('Erreur')
@@ -1906,7 +1939,32 @@ export default function MailPage() {
           onDeleteFolder={handleDeleteFolder}
           folderActionLoading={folderActionLoading}
           collapsed={folderSidebarCollapsed}
+          width={folderSidebarWidth}
         />
+      )}
+
+      {!isMobile && !folderSidebarCollapsed && (
+        <div
+          onMouseDown={startFolderSidebarResize}
+          title="Glisser pour redimensionner (largeur)"
+          style={{
+            flexShrink: 0,
+            cursor: 'col-resize',
+            background: resizingFolderSidebar ? 'var(--accent)' : 'var(--border-hi)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 7, height: 'auto',
+            zIndex: 5,
+            transition: resizingFolderSidebar ? 'none' : 'background 0.15s ease',
+          }}
+          onMouseEnter={e => { if (!resizingFolderSidebar) (e.currentTarget as HTMLDivElement).style.background = 'var(--accent)' }}
+          onMouseLeave={e => { if (!resizingFolderSidebar) (e.currentTarget as HTMLDivElement).style.background = 'var(--border-hi)' }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, pointerEvents: 'none' }}>
+            {[0, 1, 2].map(i => (
+              <span key={i} style={{ width: 3, height: 4, borderRadius: 1, background: 'rgba(255,255,255,0.6)' }} />
+            ))}
+          </div>
+        </div>
       )}
 
       {isMobile && mobileFolderSidebarOpen && (

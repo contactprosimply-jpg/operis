@@ -100,6 +100,7 @@ export default function MailFolderSidebar({
   badges,
   customFolders,
   collapsed,
+  width,
   onCreateFolder,
   onDeleteFolder,
   folderActionLoading = false,
@@ -114,6 +115,7 @@ export default function MailFolderSidebar({
   badges: Partial<Record<string, number>>
   customFolders: CachedImapFolder[]
   collapsed?: boolean
+  width?: number
   onCreateFolder?: (name: string, parentPath?: string) => Promise<boolean>
   onDeleteFolder?: (path: string) => Promise<boolean>
   folderActionLoading?: boolean
@@ -332,7 +334,7 @@ export default function MailFolderSidebar({
   return (
     <aside
       style={{
-        width: collapsed ? 56 : 220,
+        width: collapsed ? 56 : (width ?? 220),
         flexShrink: 0,
         alignSelf: 'stretch',
         minHeight: 0,
