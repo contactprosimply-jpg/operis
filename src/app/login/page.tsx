@@ -22,6 +22,26 @@ function LoginForm() {
     if (emailParam) setEmail(decodeURIComponent(emailParam))
   }, [searchParams])
 
+  // Lien de confirmation d'email (ou de récupération de mot de passe) : Supabase redirige
+  // ici avec les tokens de session dans le hash de l'URL (#access_token=...&type=signup).
+  // Le client Supabase n'est créé que paresseusement (voir src/lib/supabase.ts) — sans ce
+  // getSession(), rien ne déclenche jamais le traitement de ce hash et le lien "ne fait rien".
+  useEffect(() => {
+    let mounted = true
+    supabase.auth.getSession().then(({ data: { session: hashSession } }) => {
+      if (!mounted || !hashSession) return
+      setAccessToken(hashSession.access_token)
+      markAuthBootstrapped(hashSession)
+      syncAuthSessionSilent(hashSession)
+      const redirect = searchParams.get('redirect')
+      const safeRedirect = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : POST_AUTH_ROUTE
+      router.push(safeRedirect)
+      router.refresh()
+    })
+    return () => { mounted = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
