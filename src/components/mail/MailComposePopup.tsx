@@ -17,7 +17,7 @@ const inputStyle: React.CSSProperties = {
   border: 'none',
   outline: 'none',
   fontSize: 13,
-  color: '#e8eaef',
+  color: 'var(--text-primary)',
   fontFamily: 'DM Sans, system-ui',
 }
 
@@ -231,8 +231,8 @@ export default function MailComposePopup({
     >
       <div
         style={{
-          background: '#0d1f4a',
-          border: '1px solid rgba(255,255,255,0.15)',
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-hi)',
           borderRadius: 12,
           padding: 20,
           maxWidth: 400,
@@ -242,10 +242,10 @@ export default function MailComposePopup({
         }}
         onClick={e => e.stopPropagation()}
       >
-        <div style={{ fontSize: 15, fontWeight: 600, color: '#fff', marginBottom: 8 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
           Fermer le message ?
         </div>
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5, margin: '0 0 18px' }}>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 18px' }}>
           Votre message n&apos;est pas sauvegardé dans les brouillons. Voulez-vous le sauvegarder avant de fermer ?
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -268,7 +268,7 @@ export default function MailComposePopup({
       style={{
         position: 'absolute',
         inset: 0,
-        background: '#021246',
+        background: 'var(--bg-primary)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -294,7 +294,7 @@ export default function MailComposePopup({
             pointerEvents: 'none',
           }}
         >
-          <span style={{ color: '#7dd3fc', fontSize: 15, fontWeight: 600 }}>Déposez vos fichiers ici</span>
+          <span style={{ color: 'var(--accent)', fontSize: 15, fontWeight: 600 }}>Déposez vos fichiers ici</span>
         </div>
       )}
 
@@ -314,8 +314,8 @@ export default function MailComposePopup({
         >
           <div
             style={{
-              background: '#0d1f4a',
-              border: '1px solid rgba(255,255,255,0.15)',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-hi)',
               borderRadius: 12,
               padding: 16,
               minWidth: 280,
@@ -323,7 +323,7 @@ export default function MailComposePopup({
             }}
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
               {fileChoice.files.length} fichier(s) sélectionné(s)
             </div>
             <button type="button" onClick={() => applyFileChoice('attach')} style={choiceBtnStyle}>
@@ -351,12 +351,12 @@ export default function MailComposePopup({
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '12px 14px',
-          background: 'linear-gradient(135deg, #021246 0%, #0a2d6b 100%)',
-          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          background: 'var(--bg-secondary)',
+          borderBottom: '1px solid var(--border)',
           flexShrink: 0,
         }}
       >
-        <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>Nouveau message</span>
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Nouveau message</span>
         <button type="button" onClick={onRequestClose} title="Fermer" style={iconBtnStyle}>×</button>
       </div>
 
@@ -449,8 +449,8 @@ export default function MailComposePopup({
             flex: 1,
             minHeight: 0,
             margin: '8px 14px 0',
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.1)',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border)',
             borderRadius: 10,
             overflow: 'hidden',
             display: 'flex',
@@ -467,7 +467,7 @@ export default function MailComposePopup({
               minHeight: 0,
               padding: '14px 16px',
               fontSize: 14,
-              color: '#e8eaef',
+              color: 'var(--text-primary)',
               lineHeight: 1.6,
               outline: 'none',
               overflowY: 'auto',
@@ -484,10 +484,10 @@ export default function MailComposePopup({
               height: 34,
               borderRadius: '50%',
               flexShrink: 0,
-              border: isListening ? '2px solid #ef4444' : '1px solid rgba(255,255,255,0.2)',
-              background: isListening ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.06)',
+              border: isListening ? '2px solid #ef4444' : '1px solid var(--border-hi)',
+              background: isListening ? 'rgba(239,68,68,0.2)' : 'var(--bg-hover)',
               cursor: 'pointer',
-              color: '#e8eaef',
+              color: 'var(--text-primary)',
             }}
           >
             🎤
@@ -499,8 +499,8 @@ export default function MailComposePopup({
             style={{
               flexShrink: 0,
               margin: '0 14px',
-              borderTop: '1px solid rgba(255,255,255,0.12)',
-              background: 'rgba(0,0,0,0.18)',
+              borderTop: '1px solid var(--border)',
+              background: 'var(--bg-secondary)',
             }}
           >
             <button
@@ -515,7 +515,7 @@ export default function MailComposePopup({
                 padding: '8px 12px',
                 border: 'none',
                 background: 'transparent',
-                color: 'rgba(255,255,255,0.65)',
+                color: 'var(--text-secondary)',
                 fontSize: 12,
                 cursor: 'pointer',
                 fontFamily: 'DM Mono, monospace',
@@ -525,7 +525,7 @@ export default function MailComposePopup({
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {signatureCollapsedLabel}
               </span>
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', flexShrink: 0 }}>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
                 {signatureExpanded ? '▲' : '▼'}
               </span>
             </button>
@@ -541,7 +541,7 @@ export default function MailComposePopup({
             {attachments.map((f, i) => (
               <div key={`${f.name}-${i}`} style={chipStyle}>
                 <span>📄 {f.name}</span>
-                <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10 }}>{formatFileSize(f.size)}</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>{formatFileSize(f.size)}</span>
                 <button
                   type="button"
                   onClick={() => onRemoveAttachment(i)}
@@ -566,8 +566,8 @@ export default function MailComposePopup({
             alignItems: 'center',
             gap: 10,
             padding: '12px 14px',
-            borderTop: '1px solid rgba(255,255,255,0.1)',
-            background: 'rgba(0,0,0,0.2)',
+            borderTop: '1px solid var(--border)',
+            background: 'var(--bg-secondary)',
             flexShrink: 0,
             flexWrap: 'wrap',
           }}
@@ -577,7 +577,7 @@ export default function MailComposePopup({
             onClick={onSend}
             disabled={sending}
             style={{
-              background: 'linear-gradient(135deg, #3b7ef6 0%, #6366f1 100%)',
+              background: 'var(--gradient-primary)',
               color: '#fff',
               border: 'none',
               borderRadius: 8,
@@ -613,7 +613,7 @@ export default function MailComposePopup({
             onChange={e => handleFileInput(e.target.files)}
           />
           {draftSavedLabel && (
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginLeft: 'auto', fontFamily: 'DM Mono, monospace' }}>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto', fontFamily: 'DM Mono, monospace' }}>
               {draftSavedLabel}
             </span>
           )}
@@ -632,7 +632,7 @@ function ComposeSignaturePreview({ html, expanded }: { html: string; expanded: b
       style={{
         background: '#ffffff',
         borderRadius: 8,
-        border: '1px solid rgba(255,255,255,0.12)',
+        border: '1px solid var(--border)',
         padding: '8px 12px',
         maxHeight: expanded ? 140 : 60,
         overflow: expanded ? 'auto' : 'hidden',
@@ -647,8 +647,8 @@ function ComposeSignaturePreview({ html, expanded }: { html: string; expanded: b
 
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '8px 0' }}>
-      <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'rgba(255,255,255,0.45)', width: 36, textTransform: 'uppercase' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--border)', padding: '8px 0' }}>
+      <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', width: 36, textTransform: 'uppercase' }}>
         {label}
       </span>
       {children}
@@ -657,9 +657,9 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 }
 
 const iconBtnStyle: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.08)',
+  background: 'var(--bg-hover)',
   border: 'none',
-  color: '#e8eaef',
+  color: 'var(--text-primary)',
   width: 28,
   height: 28,
   borderRadius: 6,
@@ -674,7 +674,7 @@ const iconBtnStyle: React.CSSProperties = {
 const linkBtnStyle: React.CSSProperties = {
   background: 'none',
   border: 'none',
-  color: '#7dd3fc',
+  color: 'var(--accent)',
   fontSize: 11,
   cursor: 'pointer',
   padding: 0,
@@ -688,18 +688,18 @@ const choiceBtnStyle: React.CSSProperties = {
   padding: '12px 14px',
   marginBottom: 8,
   borderRadius: 8,
-  border: '1px solid rgba(255,255,255,0.12)',
-  background: 'rgba(255,255,255,0.06)',
-  color: '#e8eaef',
+  border: '1px solid var(--border-hi)',
+  background: 'var(--bg-hover)',
+  color: 'var(--text-primary)',
   fontSize: 13,
   cursor: 'pointer',
   fontFamily: 'DM Sans, system-ui',
 }
 
 const secondaryBtnStyle: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.08)',
-  border: '1px solid rgba(255,255,255,0.15)',
-  color: '#e8eaef',
+  background: 'var(--bg-hover)',
+  border: '1px solid var(--border-hi)',
+  color: 'var(--text-primary)',
   borderRadius: 8,
   padding: '8px 12px',
   fontSize: 12,
@@ -710,12 +710,12 @@ const chipStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 8,
-  background: 'rgba(255,255,255,0.08)',
-  border: '1px solid rgba(255,255,255,0.12)',
+  background: 'var(--bg-hover)',
+  border: '1px solid var(--border-hi)',
   borderRadius: 8,
   padding: '4px 10px',
   fontSize: 11,
-  color: '#e8eaef',
+  color: 'var(--text-primary)',
 }
 
 const confirmPrimaryBtnStyle: React.CSSProperties = {
@@ -723,7 +723,7 @@ const confirmPrimaryBtnStyle: React.CSSProperties = {
   padding: '10px 14px',
   borderRadius: 8,
   border: 'none',
-  background: 'linear-gradient(135deg, #3b7ef6 0%, #6366f1 100%)',
+  background: 'var(--gradient-primary)',
   color: '#fff',
   fontSize: 13,
   fontWeight: 600,
@@ -748,9 +748,9 @@ const confirmSecondaryBtnStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 14px',
   borderRadius: 8,
-  border: '1px solid rgba(255,255,255,0.15)',
-  background: 'rgba(255,255,255,0.06)',
-  color: '#e8eaef',
+  border: '1px solid var(--border-hi)',
+  background: 'var(--bg-hover)',
+  color: 'var(--text-primary)',
   fontSize: 13,
   cursor: 'pointer',
   fontFamily: 'DM Sans, system-ui',

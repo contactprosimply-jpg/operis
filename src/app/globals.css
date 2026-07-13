@@ -241,7 +241,7 @@ body.modal-open {
 
 .mail-compose-body:empty::before {
   content: attr(data-placeholder);
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-muted);
   pointer-events: none;
 }
 

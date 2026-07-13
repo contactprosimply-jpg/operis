@@ -47,9 +47,14 @@ export function useExternalWindowPortal(
       win.document.head.appendChild(node.cloneNode(true))
     })
 
+    // Le thème (clair/sombre/marine) et l'accent sont appliqués en variables CSS inline sur
+    // <html> par applyTheme() — les copier ici, sinon la fenêtre repart sur les valeurs par
+    // défaut du CSS statique au lieu du thème choisi par l'utilisateur.
+    const themeStyle = document.documentElement.getAttribute('style')
+    if (themeStyle) win.document.documentElement.setAttribute('style', themeStyle)
+
     win.document.body.style.margin = '0'
     win.document.body.style.height = '100vh'
-    win.document.body.style.background = '#021246'
     win.document.body.style.overflow = 'hidden'
 
     const el = win.document.createElement('div')

@@ -17,6 +17,7 @@ import {
 import { upsertContactsFromOutboundSend } from '@/lib/contacts'
 import { extractEmailAddress } from '@/lib/mail-attachments'
 import { isFirstTimeContact, queueVerificationChallenge } from '@/lib/mail-human-verification'
+import { operisFooter } from '@/lib/email-compose'
 export const maxDuration = 30
 
 /** Si le destinataire est un fournisseur en attente sur cet AO, marque la consultation "envoyée"
@@ -185,6 +186,10 @@ export async function POST(req: NextRequest) {
     finalHtml = `<div style="font-family: DM Sans, Arial, sans-serif; font-size: 14px; color: #374151; line-height: 1.6;">${bodyHtml}</div>`
     finalText = bodyPlain
   }
+
+  const footer = operisFooter()
+  finalHtml += footer.html
+  finalText += footer.text
 
   const mailAttachments = Array.isArray(rawAttachments)
     ? rawAttachments

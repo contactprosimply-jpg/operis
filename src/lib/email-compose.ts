@@ -1,6 +1,6 @@
 import { siteUrl } from '@/lib/site-url'
 
-function operisFooter(): { html: string; text: string } {
+export function operisFooter(): { html: string; text: string } {
   const url = siteUrl()
   return {
     html: `<p style="margin: 16px 0 0; font-family: DM Sans, Arial, sans-serif; font-size: 11px; color: #9ca3af;">Ce message a été envoyé via <a href="${url}" style="color: #9ca3af;">Operis</a></p>`,
