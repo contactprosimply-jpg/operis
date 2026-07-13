@@ -16,6 +16,8 @@ import {
 } from '@/lib/auth-session-store'
 import { readBillingCache, writeBillingCache, clearBillingCache } from '@/lib/billing/billing-cache'
 import { isAuthEntryRoute, isAppRoute, isBillingExemptRoute, isPublicRoute, isWebsiteMemberRoute, POST_AUTH_ROUTE } from '@/lib/public-routes'
+import { accountChangedOnThisDevice, rememberCurrentAccount, resetLocalCachesForNewAccount } from '@/lib/account-switch-guard'
+import { Spinner } from '@/components/ui'
 
 const LOADING_GUARD_MS = 8000
 
@@ -76,6 +78,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const userId = session?.user?.id ?? initial.userId ?? null
   userIdRef.current = userId
+
+  // Poste partagé entre plusieurs personnes (chacune avec son propre compte Operis) : si le
+  // compte courant diffère du dernier connu sur cette machine, le cache mail local (IndexedDB)
+  // et les préférences UI en cache doivent être purgés AVANT que quoi que ce soit ne les lise —
+  // d'où le blocage du rendu des enfants tant que ce n'est pas fait (uniquement dans ce cas rare,
+  // jamais pour le cas courant "même utilisateur qu'avant").
+  const [cacheGuardReady, setCacheGuardReady] = useState(() => {
+    const initialUserId = initial.userId ?? initial.session?.user?.id ?? null
+    return !initialUserId || !accountChangedOnThisDevice(initialUserId)
+  })
+
+  useEffect(() => {
+    if (!userId) return
+    if (!accountChangedOnThisDevice(userId)) {
+      rememberCurrentAccount(userId)
+      setCacheGuardReady(true)
+      return
+    }
+    let cancelled = false
+    setCacheGuardReady(false)
+    void resetLocalCachesForNewAccount(userId).then(() => {
+      if (!cancelled) setCacheGuardReady(true)
+    })
+    return () => { cancelled = true }
+  }, [userId])
 
   const isPublic = isPublicRoute(pathname)
   const isBillingExempt = isBillingExemptRoute(pathname)
@@ -258,7 +285,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       hasBillingAccess,
       refreshBillingAccess,
     }}>
-      {children}
+      {cacheGuardReady ? children : (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+          <Spinner size={28} />
+        </div>
+      )}
     </AuthContext.Provider>
   )
 }
