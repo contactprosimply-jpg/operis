@@ -47,7 +47,15 @@ export async function sumStorageBytesForUserIds(db: SupabaseClient, userIds: str
   return docBytes + mailBytes
 }
 
+/** Chemin principal (utilisateur avec organisation) — la partie documents/devis est un
+ *  compteur persistant maintenu par trigger (migration 057), plus rapide qu'une agrégation ;
+ *  seules les pièces jointes mail restent calculées à la volée (migration 055). */
 export async function getOrgStorageBytes(db: SupabaseClient, orgId: string): Promise<number> {
-  const userIds = await getOrgMemberUserIds(db, orgId)
-  return sumStorageBytesForUserIds(db, userIds)
+  const [{ data: org }, userIds] = await Promise.all([
+    db.from('organizations').select('storage_used_bytes').eq('id', orgId).maybeSingle(),
+    getOrgMemberUserIds(db, orgId),
+  ])
+  const docBytes = Number(org?.storage_used_bytes ?? 0)
+  const mailBytes = await sumMailAttachmentBytes(db, userIds)
+  return docBytes + mailBytes
 }

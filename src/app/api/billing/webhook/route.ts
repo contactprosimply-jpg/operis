@@ -96,6 +96,7 @@ export async function POST(req: NextRequest) {
           current_period_end: stripeSubscriptionPeriodEnd(stripeSub),
           updated_at: new Date().toISOString(),
         }).eq('org_id', orgId)
+        await db.from('organizations').update({ storage_quota_bytes: 0 }).eq('id', orgId)
         console.info('[billing/webhook] subscription annulée', { orgId, userId, stripeSubscriptionId: stripeSub.id })
         break
       }

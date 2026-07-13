@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase'
 import { ensureBillingOrg } from '@/lib/billing/subscription'
 import { planFromStripePriceId, getStripeStorageAddonPriceId } from '@/lib/billing/stripe'
 import { stripeSubscriptionPeriodEnd } from '@/lib/billing/stripe-subscription'
-import type { BillingPlan } from '@/lib/billing/plan-limits'
+import { effectiveStorageLimitBytes, type BillingPlan } from '@/lib/billing/plan-limits'
 
 export function resolveUserId(
   clientReferenceId?: string | null,
@@ -103,6 +103,9 @@ export async function upsertFromStripeSubscription(
     console.error('[billing] upsert subscriptions échoué', { orgId, userId, error })
     throw error
   }
+
+  const quotaBytes = status === 'active' ? effectiveStorageLimitBytes(plan, storageAddonUnits) : 0
+  await db.from('organizations').update({ storage_quota_bytes: quotaBytes }).eq('id', orgId)
 
   console.info('[billing] subscription mise à jour', {
     orgId,
