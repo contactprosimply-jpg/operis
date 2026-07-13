@@ -2,27 +2,54 @@
 
 import { useEffect, useState } from 'react'
 
-/** Bandeau app desktop uniquement — une mise à jour a été téléchargée et attend le
- *  redémarrage. Jamais fermable sans agir : l'app ne se relance jamais toute seule
- *  (perte possible d'un brouillon de mail ou d'une saisie en cours sur un AO), donc
- *  ce petit rappel reste affiché jusqu'à ce que l'utilisateur clique lui-même. */
+const WEB_BUILD_CHECK_INTERVAL_MS = 60_000
+
+type ReadyKind = 'desktop' | 'web'
+
+/** Bandeau — une mise à jour attend d'être appliquée, jamais fermable sans agir.
+ *  Deux sources possibles :
+ *  - "desktop" : l'exe packagé a téléchargé une nouvelle version (electron-updater).
+ *  - "web" : un nouveau déploiement du site est en ligne — le shell desktop (comme un
+ *    onglet resté ouvert) ne le sait jamais tout seul, donc on vérifie périodiquement
+ *    un identifiant de build public.
+ *  Dans les deux cas, jamais d'action automatique (perte possible d'un brouillon de mail
+ *  ou d'une saisie en cours sur un AO) : l'utilisateur doit cliquer lui-même. */
 export default function DesktopUpdateBanner() {
-  const [ready, setReady] = useState(false)
+  const [ready, setReady] = useState<ReadyKind | null>(null)
   const [installing, setInstalling] = useState(false)
 
   useEffect(() => {
     const bridge = window.operisDesktop
     if (!bridge) return
-
-    bridge.getUpdateStatus().then(status => { if (status) setReady(true) }).catch(() => {})
-    const unsubscribe = bridge.onUpdateReady(() => setReady(true))
+    bridge.getUpdateStatus().then(status => { if (status) setReady('desktop') }).catch(() => {})
+    const unsubscribe = bridge.onUpdateReady(() => setReady('desktop'))
     return unsubscribe
   }, [])
+
+  useEffect(() => {
+    if (ready) return
+    const myBuildId = process.env.NEXT_PUBLIC_BUILD_ID
+    if (!myBuildId) return
+
+    const check = () => {
+      fetch('/api/build-info', { cache: 'no-store' })
+        .then(r => r.json())
+        .then(data => { if (data?.buildId && data.buildId !== myBuildId) setReady('web') })
+        .catch(() => {})
+    }
+    check()
+    const interval = setInterval(check, WEB_BUILD_CHECK_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [ready])
 
   if (!ready) return null
 
   const handleInstall = async () => {
     setInstalling(true)
+    if (ready === 'web') {
+      window.location.reload()
+      return
+    }
     try {
       await window.operisDesktop?.installUpdate()
     } catch {
@@ -44,7 +71,9 @@ export default function DesktopUpdateBanner() {
           Mise à jour disponible
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-          Redémarrez Operis quand vous êtes prêt pour l&apos;installer.
+          {ready === 'web'
+            ? 'Une nouvelle version d\'Operis est en ligne.'
+            : 'Redémarrez Operis quand vous êtes prêt pour l\'installer.'}
         </div>
       </div>
       <button

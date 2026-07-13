@@ -1,12 +1,18 @@
 import type { NextConfig } from 'next'
 
+// Identifiant unique par build — sert à détecter côté client qu'un nouveau déploiement
+// est en ligne (voir /api/build-info + DesktopUpdateBanner) pour proposer un rechargement,
+// que ce soit dans un onglet web ou dans le shell desktop qui ne se recharge jamais tout seul.
+const buildId = `build-${Date.now()}`
+
 const nextConfig: NextConfig = {
   serverExternalPackages: ['pdf-parse', 'pdfjs-dist', 'mammoth'],
   typescript: {
     ignoreBuildErrors: false,
   },
-  generateBuildId: async () => {
-    return `build-${Date.now()}`
+  generateBuildId: async () => buildId,
+  env: {
+    NEXT_PUBLIC_BUILD_ID: buildId,
   },
   async headers() {
     return [
