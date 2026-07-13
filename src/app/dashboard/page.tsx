@@ -187,6 +187,7 @@ export default function DashboardPage() {
           <ResponseBarChart pct={tauxReponse} />
         </div>
         <KpiCard label="Devis recus" value={totalDevis} icon={<IconMail />} color="amber" delay={120}
+          progress={totalDevis > 0 ? Math.min(100, totalDevis * 10) : 0}
           delta={emails.length > 0 ? `${emails.length} emails AO` : 'Tout traite'}
           deltaVariant={emails.length > 0 ? 'warn' : 'success'} />
         <KpiCard label="Taux reussite" value={`${tauxReussite}%`} icon={<IconTrophy />} color="green" delay={180}
