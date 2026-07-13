@@ -142,7 +142,9 @@ export default function DashboardPage() {
   const totalResp = tenders.reduce((a, t) => a + (t.nb_responses ?? 0), 0)
   const totalSupp = tenders.reduce((a, t) => a + (t.nb_suppliers ?? 0), 0)
   const tauxReponse = totalSupp > 0 ? Math.round((totalResp / totalSupp) * 100) : 0
-  const totalDevis = tenders.reduce((a, t) => a + (t.nb_quotes ?? 0), 0)
+  // Même périmètre que "AO actifs" — un devis d'un AO déjà gagné/clôturé ne doit pas
+  // apparaître comme "en attente" à côté du nombre d'AO en cours.
+  const totalDevis = actifs.reduce((a, t) => a + (t.nb_quotes ?? 0), 0)
   const gagnes = tenders.filter(t => t.status === 'gagne').length
   const tauxReussite = tenders.length > 0 ? Math.round((gagnes / tenders.length) * 100) : 0
   const relanceCandidates = actifs.filter(
