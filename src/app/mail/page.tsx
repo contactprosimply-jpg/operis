@@ -1673,16 +1673,6 @@ export default function MailPage() {
     setSelected(prev => prev?.id === emailId ? { ...prev, ...patch } : prev)
   }
 
-  const handleSetPriority = (email: Email, priority: EmailPriority) => {
-    const previous = email.priority
-    applyEmailPatch(email.id, { priority })
-    closeContextMenu()
-    void patchEmail(email.id, { priority }).catch(() => {
-      applyEmailPatch(email.id, { priority: previous })
-      showToast('Erreur priorité')
-    })
-  }
-
   const handleToggleLabel = (email: Email, label: EmailLabel) => {
     const previous = email.labels ?? []
     const has = previous.some(l => l.id === label.id)
@@ -2807,28 +2797,8 @@ export default function MailPage() {
                         </div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-                      <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
-                        {selected.received_at ? new Date(selected.received_at).toLocaleString('fr-FR') : '—'}
-                      </div>
-                      <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                        {(['urgent', 'normal', 'info'] as EmailPriority[]).map(p => (
-                          <button
-                            key={p}
-                            type="button"
-                            title={`Priorité : ${PRIORITY_STYLES[p].label}`}
-                            onClick={() => handleSetPriority(selected, p)}
-                            style={{
-                              padding: '3px 8px', borderRadius: 6, fontSize: 10, cursor: 'pointer',
-                              border: selected.priority === p ? `1px solid ${PRIORITY_STYLES[p].color}` : '1px solid var(--border)',
-                              background: selected.priority === p ? PRIORITY_STYLES[p].bg : 'transparent',
-                              color: PRIORITY_STYLES[p].color, fontFamily: 'DM Sans, system-ui',
-                            }}
-                          >
-                            {PRIORITY_STYLES[p].label}
-                          </button>
-                        ))}
-                      </div>
+                    <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', marginBottom: 12 }}>
+                      {selected.received_at ? new Date(selected.received_at).toLocaleString('fr-FR') : '—'}
                     </div>
                     <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '0 0 16px' }} />
                   </>
@@ -3087,22 +3057,6 @@ export default function MailPage() {
               Marquer comme lu
             </button>
           )}
-          <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '6px 8px 4px', fontFamily: 'DM Mono, monospace', borderTop: '1px solid var(--border)', marginTop: 4 }}>PRIORITÉ</div>
-          {(['urgent', 'normal', 'info'] as EmailPriority[]).map(p => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => handleSetPriority(contextMenuEmail, p)}
-              style={{
-                display: 'block', width: '100%', textAlign: 'left',
-                padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
-                background: contextMenuEmail.priority === p ? PRIORITY_STYLES[p].bg : 'transparent',
-                color: PRIORITY_STYLES[p].color, fontSize: 11, fontFamily: 'DM Sans, system-ui',
-              }}
-            >
-              {PRIORITY_STYLES[p].label}
-            </button>
-          ))}
           <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '6px 8px 4px', fontFamily: 'DM Mono, monospace', borderTop: '1px solid var(--border)', marginTop: 4 }}>
             ÉTIQUETTES <span style={{ opacity: 0.75 }}>(1–9)</span>
           </div>
