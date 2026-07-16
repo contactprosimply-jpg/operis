@@ -265,6 +265,7 @@ export default function MailPage() {
   const loadingMoreRef = useRef(false)
   const contactsRef = useRef<OperisContact[] | null>(null)
   const [senderFavorite, setSenderFavorite] = useState(false)
+  const [attachmentsExpanded, setAttachmentsExpanded] = useState(false)
   selectedIdRef.current = selected?.id ?? null
   emailsRef.current = emails
 
@@ -1245,6 +1246,10 @@ export default function MailPage() {
       })
       .catch(() => {})
   }, [selected, folder])
+
+  useEffect(() => {
+    setAttachmentsExpanded(false)
+  }, [selected?.id])
 
   const toggleSenderFavorite = async () => {
     const isSentView = folder === 'sent' || selected?.mail_folder === 'sent'
@@ -2684,6 +2689,7 @@ export default function MailPage() {
                 }}>← Retour</button>
               )}
 
+              <div style={{ position: 'sticky', top: 0, zIndex: 3, background: 'var(--bg-card)' }}>
               {!selected.tender_id && folder !== 'sent' && selected.mail_folder !== 'sent' && (
                 <div style={{
                   background: selected.is_ao ? 'rgba(59,126,246,0.08)' : 'var(--bg-card)',
@@ -2828,38 +2834,74 @@ export default function MailPage() {
                   </>
                 )
               })()}
+              </div>
 
-              {(selected.attachments?.length ?? 0) > 0 && (
-                <div style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
-                    Pièces jointes ({selected.attachments!.length})
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {(selected.attachments as EmailAttachment[]).map((att, i) => (
-                      <div key={i} style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-                        padding: '10px 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
-                      }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📎 {att.filename}</div>
-                          <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
-                            {formatFileSize(att.size)}{att.hasData || att.data ? '' : ' · fichier volumineux'}
+              {(selected.attachments?.length ?? 0) > 0 && (() => {
+                const atts = selected.attachments as EmailAttachment[]
+                const totalSize = atts.reduce((s, a) => s + (a.size || 0), 0)
+                const summaryLabel = atts.length === 1
+                  ? `1 pièce jointe : ${atts[0].filename}`
+                  : `${atts.length} pièces jointes`
+                const downloadAll = () => {
+                  atts.forEach((att, i) => {
+                    if (att.hasData || att.data) void downloadAttachment(selected.id, i, att.filename)
+                  })
+                }
+                return (
+                  <div style={{ marginBottom: 20, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                    <div
+                      onClick={() => setAttachmentsExpanded(v => !v)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                        background: 'var(--bg-card)', cursor: 'pointer', userSelect: 'none',
+                      }}
+                    >
+                      <span aria-hidden style={{
+                        fontSize: 10, color: 'var(--text-muted)', flexShrink: 0, display: 'inline-block', width: 10,
+                        transform: attachmentsExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s',
+                      }}>▶</span>
+                      <span style={{ fontSize: 14, flexShrink: 0 }}>📎</span>
+                      <span style={{ fontSize: 12.5, color: 'var(--text-primary)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {summaryLabel}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', flexShrink: 0 }}>
+                        {formatFileSize(totalSize)}
+                      </span>
+                      <button type="button" onClick={e => { e.stopPropagation(); downloadAll() }} style={{
+                        background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid rgba(59,126,246,0.2)',
+                        borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
+                        fontFamily: 'DM Sans, system-ui',
+                      }}>Enregistrer</button>
+                    </div>
+                    {attachmentsExpanded && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px 14px', borderTop: '1px solid var(--border)' }}>
+                        {atts.map((att, i) => (
+                          <div key={i} style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                            padding: '10px 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+                          }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📎 {att.filename}</div>
+                              <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
+                                {formatFileSize(att.size)}{att.hasData || att.data ? '' : ' · fichier volumineux'}
+                              </div>
+                            </div>
+                            {(att.hasData || att.data) ? (
+                              <button onClick={() => downloadAttachment(selected.id, i, att.filename)} style={{
+                                background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid rgba(59,126,246,0.2)',
+                                borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
+                                fontFamily: 'DM Sans, system-ui',
+                              }}>Télécharger</button>
+                            ) : (
+                              <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>Sync requis</span>
+                            )}
                           </div>
-                        </div>
-                        {(att.hasData || att.data) ? (
-                          <button onClick={() => downloadAttachment(selected.id, i, att.filename)} style={{
-                            background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid rgba(59,126,246,0.2)',
-                            borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
-                            fontFamily: 'DM Sans, system-ui',
-                          }}>Télécharger</button>
-                        ) : (
-                          <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>Sync requis</span>
-                        )}
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                </div>
-              )}
+                )
+              })()}
               {selected.has_attachments && !(selected.attachments?.length) && !loadingDetailBody && (
                 <div style={{ marginBottom: 20, padding: '12px 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)' }}>
                   Pièces jointes non importées —
