@@ -1,6 +1,10 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 import { isPublicRoute, isWebsiteMemberRoute, POST_AUTH_ROUTE } from '@/lib/public-routes'
+import { isBillingGateExempt } from '@/lib/billing/api-gate'
+import { getUserFromRequest } from '@/lib/auth'
+import { requireBillingAccess } from '@/lib/billing/subscription'
+import { createAdminClient } from '@/lib/supabase'
 
 const AUTH_ENTRY = new Set(['/', '/login', '/signup', '/register'])
 const BILLING_EXEMPT = new Set(['/choose-plan', '/settings/billing', '/billing/activating'])
@@ -8,9 +12,19 @@ const BILLING_EXEMPT = new Set(['/choose-plan', '/settings/billing', '/billing/a
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
+  if (pathname.startsWith('/api')) {
+    if (!isBillingGateExempt(pathname, request.method)) {
+      const userId = await getUserFromRequest(request)
+      if (userId) {
+        const billing = await requireBillingAccess(createAdminClient(), userId)
+        if (!billing.ok) return billing.response
+      }
+    }
+    return NextResponse.next()
+  }
+
   if (
     pathname.startsWith('/_next')
-    || pathname.startsWith('/api')
     || pathname.includes('.')
   ) {
     return NextResponse.next()
