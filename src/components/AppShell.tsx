@@ -8,6 +8,7 @@ import PwaInstaller from '@/components/PwaInstaller'
 import DesktopUpdateBanner from '@/components/DesktopUpdateBanner'
 import ProductTour from '@/components/ProductTour'
 import UserJourney from '@/components/UserJourney'
+import BillingGateBanner from '@/components/billing/BillingGateBanner'
 import { isBillingExemptRoute, isWebsiteShellRoute } from '@/lib/public-routes'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -29,6 +30,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         children
       ) : (
         <div className="app-shell">
+          {!isBillingExemptRoute(pathname) && <BillingGateBanner />}
           <Sidebar />
           <main className={`app-main${isFillPage ? ' app-main--fill' : ''}`}>
             <div className={`page-content${isFillPage ? ' page-content--fill' : ''}`}>

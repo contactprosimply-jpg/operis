@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase'
 import { getStripe } from '@/lib/billing/stripe'
 import { stripeSubscriptionPeriodEnd } from '@/lib/billing/stripe-subscription'
 import { resolveUserId, upsertFromStripeSubscription } from '@/lib/billing/upsert-subscription'
+import { buildPaymentFailedEmail } from '@/lib/billing/payment-failed-email'
 import type { BillingPlan } from '@/lib/billing/plan-limits'
 
 async function resolveOrgId(
@@ -98,6 +99,38 @@ export async function POST(req: NextRequest) {
         }).eq('org_id', orgId)
         await db.from('organizations').update({ storage_quota_bytes: 0 }).eq('id', orgId)
         console.info('[billing/webhook] subscription annulée', { orgId, userId, stripeSubscriptionId: stripeSub.id })
+        break
+      }
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice
+        // Metadata deja disponible sur l'invoice (snapshot pris a la creation de la facture) —
+        // pas besoin d'un aller-retour Stripe supplementaire pour retrouver org_id/user_id.
+        const subMetadata = invoice.parent?.subscription_details?.metadata ?? null
+        const userId = resolveUserId(null, subMetadata)
+        const orgId = subMetadata?.org_id
+
+        console.warn('[billing/webhook] invoice.payment_failed', {
+          userId,
+          orgId,
+          invoiceId: invoice.id,
+          customerEmail: invoice.customer_email,
+          amountDue: invoice.amount_due,
+          currency: invoice.currency,
+          attemptCount: invoice.attempt_count,
+          nextPaymentAttempt: invoice.next_payment_attempt,
+        })
+
+        // Ne doit jamais faire echouer le webhook (Stripe retenterait indefiniment la
+        // livraison) — un souci SMTP reste local a ce bloc.
+        if (invoice.customer_email) {
+          try {
+            const { sendHtmlEmail } = await import('@/lib/mailer')
+            const { subject, html } = buildPaymentFailedEmail(invoice)
+            await sendHtmlEmail({ to: invoice.customer_email, subject, html })
+          } catch (err) {
+            console.error('[billing/webhook] invoice.payment_failed — email non envoye', err)
+          }
+        }
         break
       }
       default:
