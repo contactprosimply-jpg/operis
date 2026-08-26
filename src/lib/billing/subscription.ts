@@ -177,18 +177,30 @@ export async function canAddOrgMember(db: SupabaseClient, orgId: string): Promis
   return { ok: true }
 }
 
+/** Calcul pur du quota (pas de notion de blocage HTTP) — réutilisé par assertStorageQuota
+ *  (chemin bloquant, upload manuel) et par les chemins mail (chemin non bloquant). */
+export async function checkStorageQuota(
+  db: SupabaseClient,
+  userId: string,
+  additionalBytes: number,
+): Promise<{ exceeds: boolean; ctx: BillingContext; limitBytes: number }> {
+  const ctx = await getBillingContext(db, userId)
+  // Pas d'accès (abonnement inactif) : plan effectif null → limite 0, donc `exceeds` vaut
+  // toujours true dès qu'il y a des octets à ajouter — pas besoin de cas particulier.
+  const limitBytes = effectiveStorageLimitBytes(ctx.effectivePlan, ctx.subscription?.storage_addon_units ?? 0)
+  return { exceeds: ctx.storageBytes + additionalBytes > limitBytes, ctx, limitBytes }
+}
+
 export async function assertStorageQuota(
   db: SupabaseClient,
   userId: string,
   additionalBytes: number,
 ): Promise<{ ok: true; ctx: BillingContext } | { ok: false; error: string }> {
-  const ctx = await getBillingContext(db, userId)
+  const { exceeds, ctx } = await checkStorageQuota(db, userId, additionalBytes)
   if (!ctx.hasAccess) {
     return { ok: false, error: 'Abonnement actif requis pour uploader des documents' }
   }
-
-  const limit = effectiveStorageLimitBytes(ctx.effectivePlan, ctx.subscription?.storage_addon_units ?? 0)
-  if (ctx.storageBytes + additionalBytes > limit) {
+  if (exceeds) {
     const usedGb = (ctx.storageBytes / (1024 ** 3)).toFixed(1)
     return {
       ok: false,

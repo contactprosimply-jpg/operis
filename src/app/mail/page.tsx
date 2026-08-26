@@ -2852,8 +2852,8 @@ export default function MailPage() {
                           }}>
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📎 {att.filename}</div>
-                              <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>
-                                {formatFileSize(att.size)}{att.hasData || att.data ? '' : ' · fichier volumineux'}
+                              <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: att.quotaExceeded ? 'var(--danger)' : 'var(--text-muted)' }}>
+                                {formatFileSize(att.size)}{att.quotaExceeded ? ' · quota de stockage dépassé' : (att.hasData || att.data ? '' : ' · fichier volumineux')}
                               </div>
                             </div>
                             {(att.hasData || att.data) ? (
@@ -2862,6 +2862,11 @@ export default function MailPage() {
                                 borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
                                 fontFamily: 'DM Sans, system-ui',
                               }}>Télécharger</button>
+                            ) : att.quotaExceeded ? (
+                              <span
+                                title="Quota de stockage de votre offre dépassé : cette pièce jointe n'a pas été conservée. Libérez de l'espace ou augmentez votre quota pour recevoir les prochaines."
+                                style={{ fontSize: 10, color: 'var(--danger)', fontFamily: 'DM Mono, monospace', cursor: 'help' }}
+                              >Quota dépassé</span>
                             ) : (
                               <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>Sync requis</span>
                             )}

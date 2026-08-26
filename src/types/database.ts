@@ -103,6 +103,7 @@ export interface EmailAttachment {
   path?: string
   data?: string
   hasData?: boolean
+  quotaExceeded?: boolean
   contentDisposition?: string
   contentId?: string
 }

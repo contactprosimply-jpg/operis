@@ -10,6 +10,7 @@ export interface StoredEmailAttachment {
   size: number
   data?: string
   path?: string
+  quotaExceeded?: boolean
   contentDisposition?: string
   contentId?: string
 }
@@ -91,18 +92,20 @@ export function normalizeAttachments(raw: unknown): EmailAttachment[] {
     path: att.path,
     data: att.data,
     hasData: !!(att.path || att.data || att.hasData),
+    quotaExceeded: att.quotaExceeded,
     contentDisposition: att.contentDisposition,
     contentId: att.contentId,
   }))
 }
 
 export function toAttachmentMeta(raw: unknown): EmailAttachment[] {
-  return normalizeAttachments(raw).map(({ filename, contentType, size, path, data, hasData, contentDisposition, contentId }) => ({
+  return normalizeAttachments(raw).map(({ filename, contentType, size, path, data, hasData, quotaExceeded, contentDisposition, contentId }) => ({
     filename,
     contentType,
     size,
     path,
     hasData: hasData ?? !!(path || data),
+    quotaExceeded,
     contentDisposition,
     contentId,
   }))

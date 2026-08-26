@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { StoredEmailAttachment } from '@/lib/mail-attachments'
+import { checkStorageQuota } from '@/lib/billing/subscription'
 
 export const MAIL_ATTACHMENTS_BUCKET = 'mail-attachments'
 
@@ -27,9 +28,45 @@ export async function persistAttachmentsToStorage(
 ): Promise<StoredEmailAttachment[]> {
   const stored: StoredEmailAttachment[] = []
 
+  // Quota lu une seule fois pour tout le batch, puis suivi au fil des pièces jointes (un
+  // mail peut en contenir plusieurs). Ne bloque jamais la synchro : en cas d'échec de lecture
+  // du contexte de facturation, on n'applique aucune limite plutôt que de risquer de perdre
+  // des mails à cause d'un souci billing.
+  let usedBytes = 0
+  let limitBytes = Infinity
+  try {
+    const quota = await checkStorageQuota(db, userId, 0)
+    usedBytes = quota.ctx.storageBytes
+    limitBytes = quota.limitBytes
+  } catch (err) {
+    console.error('[Mail storage] checkStorageQuota:', err instanceof Error ? err.message : err)
+  }
+  let projectedBytes = usedBytes
+
   for (let i = 0; i < attachments.length; i++) {
     const att = attachments[i]
     const path = `${userId}/${emailId}/${i}-${safeFilename(att.filename)}`
+    const size = att.size || 0
+    const wouldExceed = projectedBytes + size > limitBytes
+    projectedBytes += size
+
+    // Quota dépassé : on n'écrit ni dans Storage ni dans le fallback base64 ci-dessous (qui
+    // stockerait quand même les octets en base pour les petits fichiers, contournant le
+    // quota) — seules les métadonnées (nom, taille) sont conservées, pour que le mail lui-même
+    // reste synchronisé et que l'UI puisse afficher pourquoi la pièce jointe est absente.
+    if (wouldExceed && (att.data || att.path)) {
+      console.warn(
+        `[Mail storage] quota dépassé — pièce jointe non stockée: user=${userId} email=${emailId} ` +
+        `filename="${att.filename}" size=${size} used=${usedBytes} limit=${limitBytes}`,
+      )
+      stored.push({
+        filename: att.filename,
+        contentType: att.contentType,
+        size: att.size,
+        quotaExceeded: true,
+      })
+      continue
+    }
 
     if (att.data) {
       const buffer = Buffer.from(att.data, 'base64')
