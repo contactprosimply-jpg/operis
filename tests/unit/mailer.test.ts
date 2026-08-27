@@ -1,6 +1,17 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
-const send = vi.fn(async () => ({ data: { id: 'test' }, error: null }))
+interface SendParams {
+  from: string
+  to: string
+  subject: string
+  replyTo?: string
+  [key: string]: unknown
+}
+
+const send = vi.fn(async (_params: SendParams) => ({
+  data: { id: 'test' } as { id: string } | null,
+  error: null as { message: string } | null,
+}))
 
 vi.mock('resend', () => ({
   Resend: vi.fn().mockImplementation(() => ({

@@ -33,6 +33,8 @@ interface OnboardingProps {
 export default function Onboarding({ onComplete }: OnboardingProps) {
   const router = useRouter()
   const [step, setStep] = useState(1)
+  const [mailChoice, setMailChoice] = useState<'undecided' | 'with' | 'without'>('undecided')
+  const [decliningMail, setDecliningMail] = useState(false)
   const [mailForm, setMailForm] = useState({
     imap_host: PRESETS.gandi.imap_host,
     imap_port: PRESETS.gandi.imap_port,
@@ -58,12 +60,34 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       .then(r => r.json())
       .then(data => {
         if (data.success && data.data) {
+          setMailChoice('with')
           setStep(prev => prev === 1 ? 2 : prev)
           localStorage.setItem(STORAGE_KEY, '2')
         }
       })
       .catch(() => {})
   }, [])
+
+  const chooseMailWith = () => {
+    setMailChoice('with')
+    setError(null)
+  }
+
+  const chooseMailWithout = async () => {
+    setDecliningMail(true)
+    setError(null)
+    try {
+      await authFetch('/api/user-settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ mail_module_enabled: false }),
+      })
+    } catch {
+      // Le réglage pourra être changé plus tard dans Paramètres — ne bloque pas l'onboarding.
+    }
+    setMailChoice('without')
+    goStep(2)
+    setDecliningMail(false)
+  }
 
   const goStep = (n: number) => {
     setStep(n)
@@ -208,7 +232,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           Bienvenue sur Operis
         </h2>
         <p style={{ fontSize: 14, color: 'var(--text-secondary)', margin: 0 }}>
-          Messagerie obligatoire — fournisseurs et premier AO optionnels (vous pouvez passer)
+          Messagerie, fournisseurs et premier AO — tout est optionnel, à votre rythme
         </p>
       </div>
 
@@ -217,7 +241,57 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       </div>
 
       <div style={cardStyle}>
-        {step === 1 && (
+        {step === 1 && mailChoice === 'undecided' && (
+          <>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-primary)' }}>
+              Étape 1 — Messagerie
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18, lineHeight: 1.5 }}>
+              Operis fonctionne très bien sans messagerie connectée : suivi des AO, fournisseurs et
+              devis restent pleinement utilisables. La messagerie ajoute l'envoi et la réception
+              d'emails depuis Operis.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <button
+                type="button"
+                onClick={chooseMailWith}
+                style={{
+                  textAlign: 'left', padding: '18px 16px', borderRadius: 12, cursor: 'pointer',
+                  border: '1px solid var(--border-hi)', background: 'var(--bg-hover)',
+                  fontFamily: 'DM Sans, system-ui', color: 'var(--text-primary)',
+                }}
+              >
+                <div style={{ fontSize: 20, marginBottom: 8 }}>✉</div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Avec messagerie</div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  Connecter une boîte mail — envoi de consultations, détection automatique des AO
+                  reçus par email.
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={chooseMailWithout}
+                disabled={decliningMail}
+                style={{
+                  textAlign: 'left', padding: '18px 16px', borderRadius: 12,
+                  cursor: decliningMail ? 'wait' : 'pointer',
+                  border: '1px solid var(--border-hi)', background: 'var(--bg-hover)',
+                  fontFamily: 'DM Sans, system-ui', color: 'var(--text-primary)',
+                  opacity: decliningMail ? 0.6 : 1,
+                }}
+              >
+                <div style={{ fontSize: 20, marginBottom: 8 }}>📋</div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Sans messagerie</div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  Suivi des AO, fournisseurs et devis en saisie manuelle — activable plus tard dans
+                  Paramètres.
+                </div>
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === 1 && mailChoice === 'with' && (
           <>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, color: 'var(--text-primary)' }}>
               Étape 1 — Configurer la messagerie
@@ -253,9 +327,10 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                 placeholder="Mot de passe du serveur mail (pas Operis)"
               />
             </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
               <Button variant="ghost" onClick={testMail} loading={testing}>Tester la connexion</Button>
               <Button onClick={saveMail} loading={saving}>Enregistrer et continuer</Button>
+              <Button variant="ghost" onClick={() => setMailChoice('undecided')}>← Retour au choix</Button>
             </div>
           </>
         )}

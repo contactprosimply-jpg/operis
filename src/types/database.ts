@@ -53,6 +53,7 @@ export interface UserSettings {
   mail_signature: string
   mail_signature_enabled: boolean
   ao_detection_threshold: number
+  mail_module_enabled: boolean
   updated_at?: string
 }
 
@@ -189,7 +190,7 @@ export interface EmailLog {
   user_id?: string | null
   tender_id: string | null
   supplier_id: string | null
-  type: 'consultation' | 'relance' | 'relance_2'
+  type: 'consultation' | 'relance' | 'relance_2' | 'consultation_manual' | 'relance_manual'
   to_address: string
   subject: string | null
   body: string | null

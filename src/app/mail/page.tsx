@@ -50,7 +50,7 @@ import {
 } from '@/lib/mail-drafts'
 import { extractEmailAddress } from '@/lib/mail-attachments'
 import type { OperisContact } from '@/lib/contacts'
-import { cacheUserSettingsLocally } from '@/lib/user-settings'
+import { cacheUserSettingsLocally, readCachedUserSettings } from '@/lib/user-settings'
 import {
   mailListQueryKey,
   readMailListCache,
@@ -193,6 +193,7 @@ export default function MailPage() {
   const blockingReleasedRef = useRef(false)
   const blockingActiveRef = useRef(false)
   const [showMailWelcome, setShowMailWelcome] = useState(false)
+  const [mailModuleEnabled, setMailModuleEnabled] = useState(() => readCachedUserSettings()?.mail_module_enabled ?? true)
   const autoSyncBootRef = useRef(false)
   const [selected, setSelected] = useState<Email | null>(null)
   const [composing, setComposing] = useState(false)
@@ -1000,7 +1001,12 @@ export default function MailPage() {
     if (!userId) return
     void authFetch('/api/user-settings')
       .then(r => r.json())
-      .then(d => { if (d.success) cacheUserSettingsLocally(d.data) })
+      .then(d => {
+        if (d.success) {
+          cacheUserSettingsLocally(d.data)
+          setMailModuleEnabled(d.data?.mail_module_enabled ?? true)
+        }
+      })
       .catch(() => {})
   }, [userId])
 
@@ -1830,6 +1836,37 @@ export default function MailPage() {
     { key: 'attachments', label: 'PJ' },
     { key: 'ao', label: 'AO' },
   ]
+
+  if (!mailModuleEnabled) {
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24, background: 'var(--bg-primary)',
+      }}>
+        <div style={{ textAlign: 'center', maxWidth: 420 }}>
+          <div style={{ fontSize: 32, marginBottom: 16 }}>✉</div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 10px' }}>
+            Messagerie désactivée
+          </h2>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 20px', lineHeight: 1.6 }}>
+            Vous avez choisi d'utiliser Operis sans messagerie connectée. Vos AO, fournisseurs et devis
+            restent pleinement accessibles. Réactivez la messagerie depuis Paramètres si besoin.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push('/settings?tab=messagerie')}
+            style={{
+              background: 'var(--gradient-primary)', color: '#fff', border: 'none',
+              borderRadius: 9, padding: '10px 20px', fontSize: 13, fontWeight: 600,
+              cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
+            }}
+          >
+            Aller à Paramètres
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="mail-page-root">

@@ -57,6 +57,8 @@ function SettingsPageContent() {
   const [mailAccounts, setMailAccounts] = useState<MailAccountRow[]>([])
   const [deletingMailId, setDeletingMailId] = useState<string | null>(null)
   const [imapPassEdited, setImapPassEdited] = useState(false)
+  const [mailModuleEnabled, setMailModuleEnabled] = useState(true)
+  const [savingMailModule, setSavingMailModule] = useState(false)
 
   const [desktopVersion, setDesktopVersion] = useState<string | null>(null)
 
@@ -125,7 +127,10 @@ function SettingsPageContent() {
         await loadOrganization()
         const settingsRes = await authFetch('/api/user-settings')
         const settingsData = await settingsRes.json()
-        if (settingsData.success) cacheUserSettingsLocally(settingsData.data)
+        if (settingsData.success) {
+          cacheUserSettingsLocally(settingsData.data)
+          setMailModuleEnabled(settingsData.data?.mail_module_enabled ?? true)
+        }
       } catch (e) { console.error(e) }
       setLoading(false)
     }
@@ -139,6 +144,30 @@ function SettingsPageContent() {
   const handleSaveGeneral = () => {
     localStorage.setItem('operis_general', JSON.stringify(general))
     show('Sauvegardes')
+  }
+
+  const handleToggleMailModule = async () => {
+    const next = !mailModuleEnabled
+    setSavingMailModule(true)
+    setMailModuleEnabled(next)
+    try {
+      const res = await authFetch('/api/user-settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ mail_module_enabled: next }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        cacheUserSettingsLocally(data.data)
+        show(next ? '✓ Messagerie activée' : '✓ Messagerie désactivée')
+      } else {
+        setMailModuleEnabled(!next)
+        show(`Erreur : ${data.error}`)
+      }
+    } catch {
+      setMailModuleEnabled(!next)
+      show('Erreur réseau')
+    }
+    setSavingMailModule(false)
   }
 
   const handleResetAllTenders = async () => {
@@ -461,6 +490,36 @@ function SettingsPageContent() {
         {/* MESSAGERIE */}
         {tab === 'messagerie' && (
           <>
+            <div style={card}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                <div>
+                  <div style={sTitle}>Messagerie intégrée</div>
+                  <div style={sSub}>
+                    Désactivée, vous pouvez toujours suivre vos AO, fournisseurs et devis — l'envoi et
+                    la réception d'emails depuis Operis sont simplement coupés.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={mailModuleEnabled}
+                  onClick={handleToggleMailModule}
+                  disabled={savingMailModule}
+                  style={{
+                    width: 46, height: 26, borderRadius: 13, flexShrink: 0, position: 'relative',
+                    border: 'none', cursor: savingMailModule ? 'wait' : 'pointer',
+                    background: mailModuleEnabled ? 'var(--accent)' : 'var(--border-hi)',
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  <span style={{
+                    position: 'absolute', top: 3, left: mailModuleEnabled ? 23 : 3,
+                    width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                    transition: 'left 0.15s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                  }} />
+                </button>
+              </div>
+            </div>
             {mailAccounts.length > 0 && (
               <div style={card}>
                 <div style={sTitle}>Boites connectees</div>

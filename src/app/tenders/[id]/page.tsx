@@ -704,6 +704,19 @@ export default function TenderDetailPage() {
     else show(`Erreur : ${data.error}`)
   }
 
+  // Trace un contact fait hors Operis (téléphone, en personne…) — aucun email
+  // envoyé, juste le statut mis à jour. Disponible que la messagerie soit
+  // connectée ou non.
+  const handleMarkManual = async (supplierId: string, action: 'sent' | 'relance') => {
+    const res = await authFetch(`/api/tenders/${id}/consult/manual`, {
+      method: 'POST',
+      body: JSON.stringify({ supplier_id: supplierId, action }),
+    })
+    const data = await res.json()
+    if (data.success) { show(action === 'sent' ? 'Marqué comme envoyé' : 'Marqué comme relancé'); await refreshTender() }
+    else show(`Erreur : ${data.error}`)
+  }
+
   const handleValidateQuote = async () => {
     if (!selectedWinner) return
     setValidatingQuote(true)
@@ -1378,10 +1391,20 @@ export default function TenderDetailPage() {
                           </button>
                         )}
                         {c.status === 'en_attente' && (
-                          <Button variant="ghost" onClick={() => openConsultModal([c.supplier_id])} style={{ fontSize: 11, padding: '4px 10px' }}>Envoyer</Button>
+                          <>
+                            <Button variant="ghost" onClick={() => openConsultModal([c.supplier_id])} style={{ fontSize: 11, padding: '4px 10px' }}>Envoyer</Button>
+                            <span title="Contacté hors Operis (téléphone, etc.) — aucun email envoyé">
+                              <Button variant="ghost" onClick={() => handleMarkManual(c.supplier_id, 'sent')} style={{ fontSize: 11, padding: '4px 10px' }}>Marquer envoyé</Button>
+                            </span>
+                          </>
                         )}
                         {['envoye', 'relance', 'relance_2'].includes(c.status) && (
-                          <Button variant="ghost" onClick={() => handleRelaunch(c.supplier_id)} style={{ fontSize: 11, padding: '4px 10px' }}>Relancer</Button>
+                          <>
+                            <Button variant="ghost" onClick={() => handleRelaunch(c.supplier_id)} style={{ fontSize: 11, padding: '4px 10px' }}>Relancer</Button>
+                            <span title="Contacté hors Operis (téléphone, etc.) — aucun email envoyé">
+                              <Button variant="ghost" onClick={() => handleMarkManual(c.supplier_id, 'relance')} style={{ fontSize: 11, padding: '4px 10px' }}>Marquer relancé</Button>
+                            </span>
+                          </>
                         )}
                       </div>
                     </div>

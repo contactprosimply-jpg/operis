@@ -14,6 +14,7 @@ import NotificationPanelContent, {
   formatBadgeCount,
 } from '@/components/NotificationPanelContent'
 import { OperisLogoMark } from '@/components/OperisLogoMark'
+import { readCachedUserSettings, cacheUserSettingsLocally } from '@/lib/user-settings'
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: (a: boolean) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={a ? 2 : 1.6} width="20" height="20"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> },
@@ -57,6 +58,7 @@ export default function Sidebar() {
   const router = useRouter()
   const { session, userId } = useAuth()
   const [unreadCount, setUnreadCount] = useState(0)
+  const [mailModuleEnabled, setMailModuleEnabled] = useState(() => readCachedUserSettings()?.mail_module_enabled ?? true)
   const [showAccountPanel, setShowAccountPanel] = useState(false)
   const [currentUser, setCurrentUser] = useState<{ email: string; name: string } | null>(null)
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([])
@@ -99,9 +101,29 @@ export default function Sidebar() {
     load()
   }, [session])
 
-  // Badge mail : poll 60 s + mise à jour locale si count fourni (pas de Realtime)
+  // Réglage messagerie : lu depuis le cache local au montage, rafraîchi ici.
   useEffect(() => {
     if (!userId) return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const token = await getAccessToken()
+        if (!token || cancelled) return
+        const res = await fetch('/api/user-settings', { headers: { Authorization: `Bearer ${token}` } })
+        const data = await res.json()
+        if (!cancelled && data.success) {
+          cacheUserSettingsLocally(data.data)
+          setMailModuleEnabled(data.data?.mail_module_enabled ?? true)
+        }
+      } catch { /* ignore — garde la valeur en cache */ }
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [userId])
+
+  // Badge mail : poll 60 s + mise à jour locale si count fourni (pas de Realtime)
+  useEffect(() => {
+    if (!userId || !mailModuleEnabled) return
 
     let cancelled = false
     const POLL_MS = 60_000
@@ -166,7 +188,7 @@ export default function Sidebar() {
       clearInterval(pollIv)
       window.removeEventListener(MAIL_UNREAD_CHANGED_EVENT, onUnreadChanged)
     }
-  }, [userId])
+  }, [userId, mailModuleEnabled])
 
   // Centre de notifications — poll 60 s uniquement (pas de Realtime)
   useEffect(() => {
@@ -253,6 +275,8 @@ export default function Sidebar() {
     localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(updated))
     setSavedAccounts(updated)
   }
+
+  const visibleNav = mailModuleEnabled ? nav : nav.filter(item => item.href !== '/mail')
 
   const initials = currentUser ? getInitials(currentUser.name, currentUser.email) : 'OP'
   const avatarColor = currentUser ? getAvatarColor(currentUser.email) : '#3b7ef6'
@@ -457,7 +481,7 @@ export default function Sidebar() {
         </div>
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, width: '100%', alignItems: 'center' }}>
-          {nav.map(item => {
+          {visibleNav.map(item => {
             const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
             const isMail = item.href === '/mail'
             return (
@@ -567,7 +591,7 @@ export default function Sidebar() {
 
       {/* MOBILE */}
       <nav className="mobile-bottom-bar">
-        {nav.map(item => {
+        {visibleNav.map(item => {
           const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
           const isMail = item.href === '/mail'
           return (

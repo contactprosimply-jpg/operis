@@ -393,6 +393,71 @@ export const tenderService = {
     }
   },
 
+  // ── Marquer une consultation comme envoyée/relancée sans email ──
+  // Trace un contact fait hors Operis (téléphone, en personne, etc.) — pas
+  // d'envoi, juste une mise à jour de statut + un log d'audit. Toujours
+  // disponible, que la messagerie intégrée soit active ou non.
+  async markConsultationManual(
+    tenderId: string,
+    supplierId: string,
+    userId: string,
+    action: 'sent' | 'relance',
+  ): Promise<ApiResponse<{ status: string }>> {
+    try {
+      const tender = await tenderRepository.findById(tenderId, userId)
+      if (!tender) return { success: false, error: 'AO introuvable' }
+
+      const supplier = await supplierRepository.findById(supplierId, userId)
+      if (!supplier) return { success: false, error: 'Fournisseur introuvable' }
+
+      const consultations = await consultationRepository.findByTender(tenderId)
+      const current = consultations.find(c => c.supplier_id === supplierId)
+      if (!current) return { success: false, error: 'Consultation introuvable' }
+
+      const now = new Date().toISOString()
+      let newStatus: string
+      let extraFields: Record<string, unknown> = { last_sent_at: now }
+      let logType: 'consultation_manual' | 'relance_manual'
+      let logMessage: string
+
+      if (action === 'sent') {
+        newStatus = 'envoye'
+        logType = 'consultation_manual'
+        logMessage = 'Marqué comme envoyé manuellement (hors Operis)'
+      } else {
+        const newCount = (current.relaunch_count ?? 0) + 1
+        newStatus = newCount >= 2 ? 'relance_2' : 'relance'
+        extraFields = { ...extraFields, relaunch_count: newCount }
+        logType = 'relance_manual'
+        logMessage = `Marqué comme relancé manuellement (hors Operis) — relance ${newCount}`
+      }
+
+      await consultationRepository.updateStatus(
+        tenderId,
+        supplierId,
+        newStatus as any,
+        extraFields,
+      )
+
+      await emailLogRepository.create({
+        user_id: userId,
+        tender_id: tenderId,
+        supplier_id: supplierId,
+        type: logType,
+        to_address: supplierRecipients(supplier),
+        subject: null,
+        body: logMessage,
+        sent_at: now,
+        success: true,
+        error_message: null,
+      })
+
+      return { success: true, data: { status: newStatus } }
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
+  },
+
   // ── Supprimer un AO ──────────────────────────────────────
   async delete(id: string, userId: string): Promise<ApiResponse<{ deleted: boolean }>> {
     try {
