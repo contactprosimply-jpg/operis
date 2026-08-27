@@ -12,7 +12,7 @@ import {
   userBelongsToOrganization,
 } from '@/lib/organization'
 import { ensureSubscriptionRow } from '@/lib/billing/subscription'
-import { canAssignTender, canViewTender, getTenderAccessScope } from '@/lib/tender-access'
+import { canAssignTender, canViewTender, getTenderAccessScope, isValidAssignee } from '@/lib/tender-access'
 
 export async function GET(req: NextRequest) {
   const userId = await getUserFromRequest(req)
@@ -38,10 +38,10 @@ export async function POST(req: NextRequest) {
       const { data: ownedOrg } = await db.from('organizations').select('name').eq('id', existing.organizationId).maybeSingle()
       return Response.json({
         success: false,
-        error: `Vous avez deja le groupe "${ownedOrg?.name ?? 'existant'}". Supprimez-le avant de creer un nouveau.`,
+        error: `Vous avez déjà le groupe "${ownedOrg?.name ?? 'existant'}". Supprimez-le avant de créer un nouveau.`,
       }, { status: 400 })
     }
-    return Response.json({ success: false, error: 'Vous appartenez deja a un groupe' }, { status: 400 })
+    return Response.json({ success: false, error: 'Vous appartenez déjà à un groupe' }, { status: 400 })
   }
 
   const { data: org, error } = await db
@@ -110,7 +110,7 @@ export async function PUT(req: NextRequest) {
 
   if (action === 'remove') {
     const { data: org } = await db.from('organizations').select('id').eq('owner_id', userId).maybeSingle()
-    if (!org) return Response.json({ success: false, error: 'Action reservee au createur' }, { status: 403 })
+    if (!org) return Response.json({ success: false, error: 'Action réservée au créateur' }, { status: 403 })
 
     await db.from('organization_members').delete().eq('id', member_id).eq('organization_id', org.id)
     return Response.json({ success: true, data: { removed: true } })
@@ -119,7 +119,7 @@ export async function PUT(req: NextRequest) {
   if (action === 'assign') {
     const scope = await getTenderAccessScope(userId)
     if (!canAssignTender(scope)) {
-      return Response.json({ success: false, error: 'Assignation reservee au createur' }, { status: 403 })
+      return Response.json({ success: false, error: 'Assignation réservée au créateur' }, { status: 403 })
     }
     if (!tender_id) {
       return Response.json({ success: false, error: 'tender_id requis' }, { status: 400 })
@@ -136,7 +136,7 @@ export async function PUT(req: NextRequest) {
     }
 
     const assignee = assigned_to || null
-    if (assignee && !scope.members.some(m => m.user_id === assignee)) {
+    if (!isValidAssignee(scope, assignee)) {
       return Response.json({ success: false, error: 'Membre invalide' }, { status: 400 })
     }
 
@@ -150,8 +150,8 @@ export async function PUT(req: NextRequest) {
       await db.from('notifications').insert({
         user_id: assignee,
         type: 'assignment',
-        title: 'AO vous a ete assigne',
-        message: `Le createur vous a assigne l'AO "${tender.title}"`,
+        title: 'AO vous a été assigné',
+        message: `Le créateur vous a assigné l'AO "${tender.title}"`,
         tender_id: tender_id,
         is_read: false,
       })

@@ -101,14 +101,12 @@ export const tenderRepository = {
       throw new Error('AO introuvable')
     }
 
-    const patch = { ...payload }
-    if ('assigned_to' in patch && !scope.isOrgOwner) {
-      delete patch.assigned_to
-    }
-
+    // L'assignation (assigned_to) ne passe pas par ici : voir
+    // POST /api/organization { action: 'assign' }, seul chemin qui valide
+    // que la cible est un membre de l'organisation et trace assigned_by/assigned_at.
     const { data, error } = await db
       .from('tenders')
-      .update(patch)
+      .update(payload)
       .eq('id', id)
       .select()
       .single()

@@ -8,6 +8,12 @@ import {
   canAssignTender,
   getTenderIfAccessible,
 } from '@/lib/tender-access'
+// L'assignation (assigned_to) ne passe PAS par cette route : voir
+// POST /api/organization { action: 'assign' }, qui valide que la cible est
+// bien un membre de l'organisation de l'appelant et trace assigned_by/assigned_at.
+// Un simple "l'appelant est le créateur du groupe" (canAssignTender) ne suffit
+// pas à autoriser l'écriture ici, car ça n'empêche pas d'assigner à un user_id
+// arbitraire hors organisation.
 import { buildTenderMemberLabels } from '@/lib/tender-enrich'
 
 export const maxDuration = 60
@@ -105,7 +111,7 @@ export async function PATCH(
   const allowed = [
     'title', 'client', 'description', 'deadline', 'status',
     'budget_ht', 'zone_geo', 'maitre_ouvrage', 'notes_internes',
-    'priorite', 'assigned_to', 'dossier_url', 'is_own_client',
+    'priorite', 'dossier_url', 'is_own_client',
   ]
   const fieldErr = rejectUnexpectedFields(body as Record<string, unknown>, allowed)
   if (fieldErr) return badRequest(fieldErr)
@@ -122,10 +128,6 @@ export async function PATCH(
   const payload: Record<string, unknown> = {}
   for (const key of allowed) {
     if (key in body) payload[key] = body[key]
-  }
-
-  if ('assigned_to' in payload && !canAssignTender(access.scope)) {
-    delete payload.assigned_to
   }
 
   const db = createAdminClient()
@@ -154,7 +156,7 @@ export async function DELETE(
   if (!access) {
     return Response.json({
       success: false,
-      error: 'Suppression reservee au createur du groupe',
+      error: 'Suppression réservée au créateur du groupe',
     }, { status: 403 })
   }
 

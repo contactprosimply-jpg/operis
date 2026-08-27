@@ -59,6 +59,17 @@ export function canAssignTender(scope: TenderAccessScope): boolean {
   return scope.isOrgOwner && scope.organizationId !== null
 }
 
+/**
+ * Un AO ne peut être assigné qu'à un membre réel de l'organisation de l'appelant
+ * (jamais un user_id arbitraire) — c'est ce qui empêche d'accorder un accès à
+ * un compte hors organisation via assigned_to. `null` (retirer l'assignation)
+ * est toujours valide.
+ */
+export function isValidAssignee(scope: TenderAccessScope, targetUserId: string | null): boolean {
+  if (targetUserId === null) return true
+  return scope.members.some(m => m.user_id === targetUserId)
+}
+
 export async function getTenderIfAccessible(
   tenderId: string,
   userId: string,
@@ -97,7 +108,7 @@ export async function assertTenderAccess(
 
   if (!tender) return { ok: false as const, status: 404, error: 'AO introuvable' }
   if (mode === 'delete' && !canDeleteTender(scope, tender)) {
-    return { ok: false as const, status: 403, error: 'Suppression reservee au createur du groupe' }
+    return { ok: false as const, status: 403, error: 'Suppression réservée au créateur du groupe' }
   }
   if (mode === 'mutate' && !canPatchTender(scope, tender)) {
     return { ok: false as const, status: 403, error: 'Acces refuse' }
