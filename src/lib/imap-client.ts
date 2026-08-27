@@ -34,7 +34,7 @@ export function formatImapError(e: unknown): string {
     executedCommand?: string
   }
   if (err.authenticationFailed) {
-    return 'Identifiants IMAP incorrects — verifiez email et mot de passe dans Parametres > Messagerie'
+    return 'Identifiants IMAP incorrects — vérifiez email et mot de passe dans Paramètres > Messagerie'
   }
   const parts = [err.message ?? 'Erreur inconnue']
   if (err.responseStatus) parts.push(`[${err.responseStatus}]`)

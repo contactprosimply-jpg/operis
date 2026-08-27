@@ -177,7 +177,7 @@ export async function authFetch(url: string, options: AuthFetchOptions = {}) {
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
       const ms = options.timeoutMs === undefined ? NETWORK_TIMEOUT_MS : options.timeoutMs
-      throw new Error(ms === null ? 'Requête annulée' : `Timeout reseau (${ms}ms)`)
+      throw new Error(ms === null ? 'Requête annulée' : `Timeout réseau (${ms}ms)`)
     }
     throw err
   }

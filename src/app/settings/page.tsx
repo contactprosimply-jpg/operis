@@ -24,7 +24,7 @@ type MailAccountRow = {
 const ACCENT_COLORS = ['#3b7ef6', '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316']
 
 const TABS = [
-  { id: 'general',    label: 'General',    icon: '⚙' },
+  { id: 'general',    label: 'Général',    icon: '⚙' },
   { id: 'messagerie', label: 'Messagerie', icon: '✉' },
   { id: 'mail-relaunch', label: 'Messagerie & Relances', icon: '📬' },
   { id: 'ao-detection', label: 'Détection AO', icon: '📋' },
@@ -143,7 +143,7 @@ function SettingsPageContent() {
 
   const handleSaveGeneral = () => {
     localStorage.setItem('operis_general', JSON.stringify(general))
-    show('Sauvegardes')
+    show('Sauvegardé')
   }
 
   const handleToggleMailModule = async () => {
@@ -218,7 +218,7 @@ function SettingsPageContent() {
     try {
       const res = await authFetch('/api/mail/accounts/test', { method: 'POST', body: JSON.stringify(mailPayload()) })
       const data = await res.json()
-      setTestResult({ success: data.success, message: data.success ? `Connexion reussie — ${data.data?.count ?? 0} emails` : `Echec : ${data.error}` })
+      setTestResult({ success: data.success, message: data.success ? `Connexion réussie — ${data.data?.count ?? 0} emails` : `Échec : ${data.error}` })
     } catch (e: any) { setTestResult({ success: false, message: `Erreur : ${e.message}` }) }
     setTesting(false)
   }
@@ -233,7 +233,7 @@ function SettingsPageContent() {
       const res = await authFetch('/api/mail/accounts', { method: 'POST', body: JSON.stringify(mailPayload()) })
       const data = await res.json()
       if (data.success) {
-        show(imapPassEdited ? 'Configuration sauvegardee' : 'Configuration mise a jour (mot de passe conserve)')
+        show(imapPassEdited ? 'Configuration sauvegardée' : 'Configuration mise à jour (mot de passe conservé)')
         await loadMailAccounts()
       } else show(`Erreur : ${data.error}`)
     } catch (e: any) { show(`Erreur : ${e.message}`) }
@@ -251,19 +251,19 @@ function SettingsPageContent() {
       })
       const data = await res.json()
       if (data.success) {
-        show(`${account.imap_user} supprimee`)
+        show(`${account.imap_user} supprimée`)
         await loadMailAccounts()
       } else show(`Erreur : ${data.error}`)
     } catch (e: unknown) {
       const err = e as { message?: string }
-      show(`Erreur : ${err.message ?? 'reseau'}`)
+      show(`Erreur : ${err.message ?? 'réseau'}`)
     }
     setDeletingMailId(null)
   }
 
   const handleSaveSig = () => {
     saveSignatureToStorage(sig, sigMode, accentColor)
-    show('Signature sauvegardee')
+    show('Signature sauvegardée')
   }
 
   const handleSignatureFile = (file: File) => {
@@ -298,7 +298,7 @@ function SettingsPageContent() {
     localStorage.setItem('operis_theme', themeId)
     localStorage.setItem('operis_accent', accentColor)
     applyTheme(themeId, accentColor)
-    show('Theme applique')
+    show('Thème appliqué')
   }
 
   const handleCreateOrg = async () => {
@@ -309,12 +309,12 @@ function SettingsPageContent() {
       const data = await res.json()
       if (data.success) {
         setOrg(data.data)
-        show('Groupe cree — lien d\'invitation pret')
+        show('Groupe créé — lien d\'invitation prêt')
         setOrgName('')
       } else show(`Erreur : ${data.error}`)
     } catch (e: unknown) {
       const err = e as { message?: string }
-      show(`Erreur : ${err.message ?? 'reseau'}`)
+      show(`Erreur : ${err.message ?? 'réseau'}`)
     }
     setCreatingOrg(false)
   }
@@ -323,7 +323,7 @@ function SettingsPageContent() {
     if (!org?.invite_link) return
     try {
       await navigator.clipboard.writeText(org.invite_link)
-      show('Lien copie dans le presse-papiers')
+      show('Lien copié dans le presse-papiers')
     } catch {
       show('Copiez le lien manuellement')
     }
@@ -336,11 +336,11 @@ function SettingsPageContent() {
       const data = await res.json()
       if (data.success) {
         setOrg(o => o ? { ...o, invite_link: data.data.invite_link } : o)
-        show('Nouveau lien genere')
+        show('Nouveau lien généré')
       } else show(`Erreur : ${data.error}`)
     } catch (e: unknown) {
       const err = e as { message?: string }
-      show(`Erreur : ${err.message ?? 'reseau'}`)
+      show(`Erreur : ${err.message ?? 'réseau'}`)
     }
     setRegeneratingInvite(false)
   }
@@ -360,11 +360,11 @@ function SettingsPageContent() {
       const data = await res.json()
       if (data.success) {
         setOrg(null)
-        show('Groupe quitte')
+        show('Groupe quitté')
       } else show(`Erreur : ${data.error}`)
     } catch (e: unknown) {
       const err = e as { message?: string }
-      show(`Erreur : ${err.message ?? 'reseau'}`)
+      show(`Erreur : ${err.message ?? 'réseau'}`)
     }
     setLeavingOrg(false)
   }
@@ -388,12 +388,12 @@ function SettingsPageContent() {
       const data = await res.json()
       if (data.success) {
         setOrg(null)
-        show(`Groupe(s) supprime(s) : ${data.data?.name ?? org?.name}`)
+        show(`Groupe(s) supprimé(s) : ${data.data?.name ?? org?.name}`)
         await loadOrganization()
       } else show(`Erreur : ${data.error}`)
     } catch (e: unknown) {
       const err = e as { message?: string }
-      show(`Erreur : ${err.message ?? 'reseau'}`)
+      show(`Erreur : ${err.message ?? 'réseau'}`)
     }
     setDeletingOrg(false)
   }
@@ -434,7 +434,7 @@ function SettingsPageContent() {
         {tab === 'general' && (
           <div style={card}>
             <div style={sTitle}>Informations generales</div>
-            <div style={sSub}>Parametres de base de votre compte Operis</div>
+            <div style={sSub}>Paramètres de base de votre compte Operis</div>
             <Link href="/compte" style={{
               display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 20,
               padding: '10px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
@@ -443,7 +443,7 @@ function SettingsPageContent() {
             }}>
               Mon compte, abonnement et téléchargement →
             </Link>
-            <Field label="Nom de la societe" value={general.companyName} onChange={v => setGeneral(g => ({ ...g, companyName: v }))} placeholder="Ex: Mon entreprise BTP" />
+            <Field label="Nom de la société" value={general.companyName} onChange={v => setGeneral(g => ({ ...g, companyName: v }))} placeholder="Ex: Mon entreprise BTP" />
             <Field label="Votre nom" value={general.userName} onChange={v => setGeneral(g => ({ ...g, userName: v }))} placeholder="Ex: Uros Baralic" />
             <Button variant="primary" onClick={handleSaveGeneral}>Sauvegarder</Button>
             <div style={{ marginTop: 20 }}>
@@ -522,9 +522,10 @@ function SettingsPageContent() {
             </div>
             {mailAccounts.length > 0 && (
               <div style={card}>
-                <div style={sTitle}>Boites connectees</div>
+                <div style={sTitle}>Boîtes connectées</div>
                 <div style={sSub}>
-                  Un seul IMAP = votre email Operis ({session?.user?.email ?? 'login'}). Supprimez les boites en trop avant de tester.
+                  Une seule boîte IMAP à la fois : celle de votre email Operis ({session?.user?.email ?? 'votre email'}).
+                  Si une autre boîte apparaît ci-dessous, supprimez-la avant d'en connecter une nouvelle.
                 </div>
                 {mailAccounts.map(account => {
                   const isOwn = account.imap_user?.toLowerCase() === session?.user?.email?.toLowerCase()
@@ -571,13 +572,13 @@ function SettingsPageContent() {
             <form autoComplete="off" onSubmit={e => e.preventDefault()}>
             <div style={card}>
               <div style={sTitle}>Serveur IMAP</div>
-              <div style={sSub}>Connexion pour lire et importer tes emails</div>
+              <div style={sSub}>Connexion pour lire et importer vos emails</div>
               <div style={{
                 padding: '10px 12px', borderRadius: 8, marginBottom: 14,
                 background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
                 fontSize: 12, color: '#fbbf24', lineHeight: 1.5,
               }}>
-                Le mot de passe mail (Gandi, etc.) est different du mot de passe Operis.
+                Le mot de passe mail (Gandi, etc.) est différent du mot de passe Operis.
                 Si Google remplit le champ automatiquement, effacez-le et saisissez le mot de passe du serveur mail.
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 12 }}>
@@ -588,7 +589,7 @@ function SettingsPageContent() {
                 label="Email *"
                 value={imap.imap_user}
                 onChange={v => setImap(i => ({ ...i, imap_user: v }))}
-                placeholder="ton@email.com"
+                placeholder="vous@email.com"
                 type="email"
                 name="operis-imap-user"
                 inputId="operis-imap-user"
@@ -626,7 +627,7 @@ function SettingsPageContent() {
                 <Field label="Serveur SMTP" value={imap.smtp_host} onChange={v => setImap(i => ({ ...i, smtp_host: v }))} placeholder="mail.gandi.net" />
                 <Field label="Port" value={imap.smtp_port} onChange={v => setImap(i => ({ ...i, smtp_port: v }))} placeholder="587" />
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>Meme identifiant et mot de passe que IMAP.</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>Même identifiant et mot de passe que IMAP.</div>
             </div>
             </form>
           </>
@@ -650,7 +651,7 @@ function SettingsPageContent() {
         {tab === 'signature' && (
           <div style={card}>
             <div style={sTitle}>Signature email</div>
-            <div style={sSub}>Ajoutee automatiquement a tous les emails envoyes depuis Operis</div>
+            <div style={sSub}>Ajoutée automatiquement à tous les emails envoyés depuis Operis</div>
             <div style={{ display: 'flex', gap: 4, marginBottom: 18 }}>
               {[{ key: 'fields', label: 'Champs structures' }, { key: 'html', label: 'HTML libre' }].map(m => (
                 <button key={m.key} onClick={() => setSigMode(m.key as 'fields' | 'html')} style={{ padding: '5px 14px', borderRadius: 7, fontSize: 12, cursor: 'pointer', border: 'none', background: sigMode === m.key ? 'var(--accent-soft)' : 'transparent', color: sigMode === m.key ? 'var(--accent)' : 'var(--text-muted)', fontFamily: 'DM Sans, system-ui' }}>{m.label}</button>
@@ -661,8 +662,8 @@ function SettingsPageContent() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <Field label="Nom complet" value={sig.name} onChange={v => setSig(s => ({ ...s, name: v }))} placeholder="Uros Baralic" />
                   <Field label="Titre / Poste" value={sig.title} onChange={v => setSig(s => ({ ...s, title: v }))} placeholder="Responsable BTP" />
-                  <Field label="Societe" value={sig.company} onChange={v => setSig(s => ({ ...s, company: v }))} placeholder="Mon entreprise BTP" />
-                  <Field label="Telephone" value={sig.phone} onChange={v => setSig(s => ({ ...s, phone: v }))} placeholder="+33 6 XX XX XX XX" />
+                  <Field label="Société" value={sig.company} onChange={v => setSig(s => ({ ...s, company: v }))} placeholder="Mon entreprise BTP" />
+                  <Field label="Téléphone" value={sig.phone} onChange={v => setSig(s => ({ ...s, phone: v }))} placeholder="+33 6 XX XX XX XX" />
                   <Field label="Email" value={sig.email} onChange={v => setSig(s => ({ ...s, email: v }))} placeholder="contact@monentreprise.fr" />
                   <Field label="Site web" value={sig.website} onChange={v => setSig(s => ({ ...s, website: v }))} placeholder="www.monentreprise.fr" />
                 </div>
@@ -708,12 +709,12 @@ function SettingsPageContent() {
           <>
             {!org ? (
               <div style={card}>
-                <div style={sTitle}>Creer votre groupe (AO)</div>
+                <div style={sTitle}>Créer votre groupe (AO)</div>
                 <div style={sSub}>
                   Regroupez vos comptes Operis pour les appels d&apos;offres. Chaque compte garde sa messagerie personnelle.
                 </div>
                 <Field label="Nom du groupe" value={orgName} onChange={setOrgName} placeholder="Ex: Mon groupe BTP" />
-                <Button variant="primary" loading={creatingOrg} onClick={handleCreateOrg}>Creer le groupe</Button>
+                <Button variant="primary" loading={creatingOrg} onClick={handleCreateOrg}>Créer le groupe</Button>
               </div>
             ) : (
               <>
@@ -721,8 +722,8 @@ function SettingsPageContent() {
                   <div style={sTitle}>{org.name}</div>
                   <div style={sSub}>
                     {org.is_owner
-                      ? 'Vous etes le createur (membre n°1). Invitez l\'equipe pour collaborer sur les AO.'
-                      : `Membre n°${org.my_number ?? '?'} — createur : ${org.owner_email ?? 'inconnu'}`}
+                      ? 'Vous êtes le créateur (membre n°1). Invitez l\'équipe pour collaborer sur les AO.'
+                      : `Membre n°${org.my_number ?? '?'} — créateur : ${org.owner_email ?? 'inconnu'}`}
                   </div>
                   {org.is_owner && session?.user?.email && org.owner_email
                     && session.user.email.toLowerCase() !== org.owner_email.toLowerCase() && (
@@ -781,7 +782,7 @@ function SettingsPageContent() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {org.owned_groups && org.owned_groups.length > 1 && (
                         <div style={{ fontSize: 12, color: '#fbbf24', marginBottom: 4 }}>
-                          Vous avez {org.owned_groups.length} groupes crees : {org.owned_groups.map(g => g.name).join(', ')}
+                          Vous avez {org.owned_groups.length} groupes créés : {org.owned_groups.map(g => g.name).join(', ')}
                         </div>
                       )}
                       <Button
@@ -820,7 +821,7 @@ function SettingsPageContent() {
                           onClick={() => handleDeleteOrg(true)}
                           style={{ color: '#f87171', borderColor: 'rgba(248,113,113,0.35)' }}
                         >
-                          Supprimer mes groupes crees ({org.owned_groups.length})
+                          Supprimer mes groupes créés ({org.owned_groups.length})
                         </Button>
                       )}
                     </div>
@@ -831,7 +832,7 @@ function SettingsPageContent() {
                   <div style={card}>
                     <div style={sTitle}>Lien d&apos;invitation</div>
                     <div style={sSub}>
-                      Envoyez ce lien au compte Operis a inviter. Il se connecte, confirme, et devient membre n°{org.members.length + 1}.
+                      Envoyez ce lien au compte Operis à inviter. Il se connecte, confirme, et devient membre n°{org.members.length + 1}.
                     </div>
                     <div style={{
                       padding: '10px 12px', borderRadius: 8, marginBottom: 14,
@@ -859,7 +860,7 @@ function SettingsPageContent() {
           <>
             <div style={card}>
               <div style={sTitle}>Theme</div>
-              <div style={sSub}>Choisissez le theme de couleur de l'interface</div>
+              <div style={sSub}>Choisissez le thème de couleur de l'interface</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 20 }}>
                 {THEMES.map(t => (
                   <button key={t.id} onClick={() => setThemeId(t.id)} style={{ padding: 0, border: `2px solid ${themeId === t.id ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 10, cursor: 'pointer', overflow: 'hidden', transition: 'border-color 0.12s', background: 'none' }}>
@@ -885,7 +886,7 @@ function SettingsPageContent() {
                 </div>
               </div>
 
-              <Button variant="primary" onClick={handleSaveTheme}>Appliquer le theme</Button>
+              <Button variant="primary" onClick={handleSaveTheme}>Appliquer le thème</Button>
             </div>
           </>
         )}

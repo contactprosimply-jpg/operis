@@ -236,12 +236,12 @@ export async function deleteOrganizationForOwner(
 ) {
   const db = createAdminClient()
   const owned = await listOwnedOrganizations(db, userId)
-  if (!owned.length) return { ok: false as const, error: 'Aucun groupe a supprimer' }
+  if (!owned.length) return { ok: false as const, error: 'Aucun groupe à supprimer' }
 
   let targets = owned
   if (options?.organizationId) {
     targets = owned.filter(o => o.id === options.organizationId)
-    if (!targets.length) return { ok: false as const, error: 'Groupe introuvable ou non autorise' }
+    if (!targets.length) return { ok: false as const, error: 'Groupe introuvable ou non autorisé' }
   } else if (!options?.deleteAll) {
     targets = [owned[0]]
   }
@@ -268,7 +268,7 @@ export async function leaveOrganizationAsMember(userId: string) {
   const rawOrg = membership.organizations as { owner_id: string } | { owner_id: string }[] | null
   const linked = Array.isArray(rawOrg) ? rawOrg[0] : rawOrg
   if (linked?.owner_id === userId) {
-    return { ok: false as const, error: 'Le createur doit supprimer le groupe, pas quitter' }
+    return { ok: false as const, error: 'Le créateur doit supprimer le groupe, pas quitter' }
   }
 
   const { error } = await db.from('organization_members').delete().eq('id', membership.id)
@@ -322,7 +322,7 @@ export async function acceptOrganizationInvite(token: string, userId: string) {
   if (!org) return { ok: false as const, error: 'Groupe introuvable' }
 
   if (org.owner_id === userId) {
-    return { ok: false as const, error: 'Vous etes deja le createur de ce groupe' }
+    return { ok: false as const, error: 'Vous êtes déjà le créateur de ce groupe' }
   }
 
   const existing = await userBelongsToOrganization(db, userId)
@@ -341,10 +341,10 @@ export async function acceptOrganizationInvite(token: string, userId: string) {
       const label = ownedOrg?.name ? `"${ownedOrg.name}"` : 'un groupe'
       return {
         ok: false as const,
-        error: `Vous avez deja cree ${label}. Supprimez-le dans Parametres > Famille avant de rejoindre celui-ci.`,
+        error: `Vous avez déjà créé ${label}. Supprimez-le dans Paramètres > Famille avant de rejoindre celui-ci.`,
       }
     }
-    return { ok: false as const, error: 'Vous appartenez deja a un autre groupe' }
+    return { ok: false as const, error: 'Vous appartenez déjà à un autre groupe' }
   }
 
   const { data: existingMember } = await db

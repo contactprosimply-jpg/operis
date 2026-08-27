@@ -187,7 +187,7 @@ function SignupForm() {
             </div>
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 6 }}>Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="ton@email.fr" required style={{ ...inputStyle, borderColor: email && !emailValid ? '#ef4444' : undefined }} />
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="vous@email.fr" required style={{ ...inputStyle, borderColor: email && !emailValid ? '#ef4444' : undefined }} />
             </div>
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 6 }}>Entreprise / Famille</label>

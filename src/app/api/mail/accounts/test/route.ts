@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   const { imap_host, imap_port, imap_user, imap_pass } = await req.json()
 
   if (!imap_host || !imap_user) {
-    return Response.json({ success: false, error: 'Parametres manquants' }, { status: 400 })
+    return Response.json({ success: false, error: 'Paramètres manquants' }, { status: 400 })
   }
 
   let password = imap_pass

@@ -102,7 +102,7 @@ function LoginForm() {
               <input
                 type="email" name="email" autoComplete="username"
                 value={email} onChange={e => setEmail(e.target.value)}
-                placeholder="ton@email.fr" required
+                placeholder="vous@email.fr" required
                 style={{ width: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-hi)', borderRadius: 9, padding: '12px 14px', fontSize: 13, color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box', fontFamily: 'DM Sans, system-ui' }}
                 onFocus={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--accent)'; (e.target as HTMLInputElement).style.boxShadow = '0 0 0 3px var(--accent-soft)' }}
                 onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--border-hi)'; (e.target as HTMLInputElement).style.boxShadow = 'none' }}

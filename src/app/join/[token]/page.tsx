@@ -65,7 +65,7 @@ export default function JoinGroupPage() {
       setTimeout(() => router.push('/settings?tab=famille'), 1200)
     } catch (e: unknown) {
       const err = e as { message?: string }
-      setError(err.message ?? 'Erreur reseau')
+      setError(err.message ?? 'Erreur réseau')
       setJoining(false)
     }
   }
@@ -98,7 +98,7 @@ export default function JoinGroupPage() {
                 Invitation invalide
               </div>
               <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>{error}</p>
-              <Link href="/login" style={{ color: 'var(--accent)', fontSize: 13, fontWeight: 600 }}>Retour a Operis</Link>
+              <Link href="/login" style={{ color: 'var(--accent)', fontSize: 13, fontWeight: 600 }}>Retour à Operis</Link>
             </div>
           ) : joined ? (
             <div style={{ textAlign: 'center' }}>
@@ -106,7 +106,7 @@ export default function JoinGroupPage() {
               <div style={{ fontSize: 15, fontWeight: 600, color: '#4ade80', marginBottom: 8 }}>
                 Vous faites partie du groupe !
               </div>
-              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Redirection vers les parametres...</p>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Redirection vers les paramètres...</p>
             </div>
           ) : (
             <>
@@ -121,7 +121,7 @@ export default function JoinGroupPage() {
                   {preview?.organization_name}
                 </h1>
                 <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                  Cree par <strong>{creatorLabel}</strong>
+                  Créé par <strong>{creatorLabel}</strong>
                   {preview && preview.member_count > 0 && (
                     <> — {preview.member_count} membre{preview.member_count > 1 ? 's' : ''}</>
                   )}
@@ -131,7 +131,7 @@ export default function JoinGroupPage() {
               {!ready || !session ? (
                 <div>
                   <p style={{ fontSize: 13, color: 'var(--text-secondary)', textAlign: 'center', marginBottom: 20, lineHeight: 1.5 }}>
-                    Connectez-vous avec le compte Operis que vous souhaitez rattacher a ce groupe.
+                    Connectez-vous avec le compte Operis que vous souhaitez rattacher à ce groupe.
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <Link
@@ -152,7 +152,7 @@ export default function JoinGroupPage() {
                         borderRadius: 9, fontSize: 13, fontWeight: 600, textDecoration: 'none',
                       }}
                     >
-                      Creer un compte Operis
+                      Créer un compte Operis
                     </Link>
                   </div>
                 </div>

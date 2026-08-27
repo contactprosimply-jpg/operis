@@ -124,7 +124,7 @@ export default function DashboardPage() {
       })
       const data = await res.json()
       if (data.success) {
-        show('AO cree')
+        show('AO créé')
         router.push(tenderSetupUrl(data.data.tender_id))
       } else show(`Erreur : ${data.error}`)
     } catch (e: any) { show(`Erreur : ${e.message}`) }
@@ -173,7 +173,7 @@ export default function DashboardPage() {
         </h1>
         <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
           {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
-          {org?.is_owner ? ` · Vue equipe (${org.name ?? 'groupe'})` : ''}
+          {org?.is_owner ? ` · Vue équipe (${org.name ?? 'groupe'})` : ''}
         </p>
       </div>
 
@@ -184,16 +184,16 @@ export default function DashboardPage() {
           delta={urgents.length > 0 ? `${urgents.length} urgent(s)` : 'Aucune urgence'}
           deltaVariant={urgents.length > 0 ? 'danger' : 'success'} />
         <div>
-          <KpiCard label="Taux reponse" value={`${tauxReponse}%`} icon={<IconChart />} color="purple" delay={60}
+          <KpiCard label="Taux réponse" value={`${tauxReponse}%`} icon={<IconChart />} color="purple" delay={60}
             delta={`${totalResp}/${totalSupp} fournisseurs`} />
           <ResponseBarChart pct={tauxReponse} />
         </div>
-        <KpiCard label="Devis recus" value={totalDevis} icon={<IconMail />} color="amber" delay={120}
+        <KpiCard label="Devis reçus" value={totalDevis} icon={<IconMail />} color="amber" delay={120}
           progress={totalDevis > 0 ? Math.min(100, totalDevis * 10) : 0}
-          delta={quoteEmails.length > 0 ? `${quoteEmails.length} non lies` : 'Tout traite'}
+          delta={quoteEmails.length > 0 ? `${quoteEmails.length} non liés` : 'Tout traité'}
           deltaVariant={quoteEmails.length > 0 ? 'warn' : 'success'} />
-        <KpiCard label="Taux reussite" value={`${tauxReussite}%`} icon={<IconTrophy />} color="green" delay={180}
-          delta={`${gagnes} AO gagnes`} deltaVariant="success" />
+        <KpiCard label="Taux réussite" value={`${tauxReussite}%`} icon={<IconTrophy />} color="green" delay={180}
+          delta={`${gagnes} AO gagnés`} deltaVariant="success" />
       </div>
 
       {/* Notifications + Relances — directement sous les KPI */}
@@ -222,7 +222,7 @@ export default function DashboardPage() {
           {relanceCandidates.length > 0 && (
             <Card hover={false} style={{ padding: '14px 18px', border: '1px solid rgba(245,158,11,0.25)', background: 'rgba(245,158,11,0.06)' }}>
               <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: '#fbbf24', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Relances a envisager ({relanceCandidates.length})
+                Relances à envisager ({relanceCandidates.length})
               </div>
               {relanceCandidates.slice(0, 5).map(t => {
                 const creatorLabel = t.creator_label ?? getTenderCreatorLabel(t, currentUserId, org)
@@ -240,7 +240,7 @@ export default function DashboardPage() {
                         </span>
                       )}
                     </span>
-                    <Badge color="amber">{t.nb_responses}/{t.nb_suppliers} reponses</Badge>
+                    <Badge color="amber">{t.nb_responses}/{t.nb_suppliers} réponses</Badge>
                   </div>
                 )
               })}
@@ -288,7 +288,7 @@ export default function DashboardPage() {
         <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Titre', 'Client', 'Deadline', 'Statut', 'Fournisseurs', 'Reponses'].map(h => (
+              {['Titre', 'Client', 'Deadline', 'Statut', 'Fournisseurs', 'Réponses'].map(h => (
                 <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
               ))}
             </tr>
@@ -332,7 +332,7 @@ export default function DashboardPage() {
             {actifs.length === 0 && (
               <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
                 Aucun AO en cours —{' '}
-                <button onClick={() => router.push('/tenders')} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>creer un AO</button>
+                <button onClick={() => router.push('/tenders')} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>créer un AO</button>
               </td></tr>
             )}
           </tbody>
@@ -352,7 +352,7 @@ export default function DashboardPage() {
           >
             <span style={{ ...sectionTitleStyle, display: 'flex', alignItems: 'center', gap: 8 }}>
               <CollapseArrow open={showQuoteEmails} />
-              Devis recus non lies ({quoteEmails.length})
+              Devis reçus non liés ({quoteEmails.length})
             </span>
             <span
               role="link"
@@ -392,7 +392,7 @@ export default function DashboardPage() {
           >
             <span style={{ ...sectionTitleStyle, display: 'flex', alignItems: 'center', gap: 8 }}>
               <CollapseArrow open={showAoEmails} />
-              Emails AO non lies ({emails.length})
+              Emails AO non liés ({emails.length})
             </span>
             <span
               role="link"
@@ -419,7 +419,7 @@ export default function DashboardPage() {
                     disabled={creatingAo === email.id}
                     style={{ background: 'var(--gradient-primary)', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0, opacity: creatingAo === email.id ? 0.5 : 1, fontFamily: 'DM Sans, system-ui', boxShadow: 'var(--shadow-glow)' }}
                   >
-                    {creatingAo === email.id ? '...' : '+ Creer AO'}
+                    {creatingAo === email.id ? '...' : '+ Créer AO'}
                   </button>
                 </div>
               ))}

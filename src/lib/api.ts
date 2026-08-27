@@ -46,13 +46,13 @@ async function apiFetch<T>(
   try {
     const res = await fetch(url, { ...fetchOptions, headers, signal: controller.signal })
     if (res.status === 401) {
-      return { success: false, error: 'Non autorise' }
+      return { success: false, error: 'Non autorisé' }
     }
     return res.json()
   } catch (err) {
     const msg = err instanceof Error && err.name === 'AbortError'
-      ? `Timeout reseau (${timeoutMs}ms)`
-      : 'Erreur reseau'
+      ? `Timeout réseau (${timeoutMs}ms)`
+      : 'Erreur réseau'
     return { success: false, error: msg }
   } finally {
     clearTimeout(timeout)

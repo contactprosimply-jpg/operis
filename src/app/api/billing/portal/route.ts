@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   if (!orgId || !isOwner) {
     return Response.json({
       success: false,
-      error: 'Seul le createur du groupe peut gerer la facturation',
+      error: 'Seul le créateur du groupe peut gérer la facturation',
     }, { status: 403 })
   }
 

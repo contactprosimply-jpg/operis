@@ -33,7 +33,7 @@ export default function SuppliersPage() {
     if (res.success) {
       setShowModal(false)
       setForm({ name: '', email: '', additionalEmails: '', phone: '', specialty: '', country: '', language: '', notes: '' })
-      show('Fournisseur ajoute')
+      show('Fournisseur ajouté')
     } else show(`Erreur : ${res.error}`)
   }
 
@@ -57,7 +57,7 @@ export default function SuppliersPage() {
       if (data.success) {
         setEditingId(null)
         await refetch()
-        show('Fournisseur mis a jour')
+        show('Fournisseur mis à jour')
       } else show(`Erreur : ${data.error}`)
     } catch (e: any) { show(`Erreur : ${e.message}`) }
     setSaving(false)
@@ -87,7 +87,7 @@ export default function SuppliersPage() {
       </div>
 
       <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-        placeholder="Rechercher par nom, email, specialite..."
+        placeholder="Rechercher par nom, email, spécialité..."
         style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui', outline: 'none', marginBottom: 16 }}
         onFocus={e => (e.target as HTMLInputElement).style.borderColor = 'var(--accent)'}
         onBlur={e => (e.target as HTMLInputElement).style.borderColor = 'var(--border)'}
@@ -97,7 +97,7 @@ export default function SuppliersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Nom', 'Email', 'Emails secondaires', 'Tel', 'Specialite', 'Pays', 'Langue', 'Notes', ''].map(h => (
+              {['Nom', 'Email', 'Emails secondaires', 'Tel', 'Spécialité', 'Pays', 'Langue', 'Notes', ''].map(h => (
                 <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -135,7 +135,7 @@ export default function SuppliersPage() {
                         onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '0'}>
                         <button onClick={() => startEdit(s)} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Modifier</button>
-                        <button onClick={() => { if (confirm(`Supprimer ${s.name} ?`)) remove(s.id).then((res: any) => { if (res.success) show(`${s.name} supprime`); else show(`Erreur : ${res.error}`) }) }}
+                        <button onClick={() => { if (confirm(`Supprimer ${s.name} ?`)) remove(s.id).then((res: any) => { if (res.success) show(`${s.name} supprimé`); else show(`Erreur : ${res.error}`) }) }}
                           style={{ fontSize: 11, color: '#f87171', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
                           Supprimer
                         </button>
@@ -147,7 +147,7 @@ export default function SuppliersPage() {
             })}
             {filtered.length === 0 && (
               <tr><td colSpan={9} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-                {search ? 'Aucun resultat' : 'Aucun fournisseur — clique sur "+ Ajouter"'}
+                {search ? 'Aucun résultat' : 'Aucun fournisseur — cliquez sur "+ Ajouter"'}
               </td></tr>
             )}
           </tbody>
@@ -160,8 +160,8 @@ export default function SuppliersPage() {
         <Field label="Nom *" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} placeholder="Ex: Tehnomarket d.o.o." />
         <Field label="Email *" value={form.email} onChange={v => setForm(f => ({ ...f, email: v }))} placeholder="contact@fournisseur.com" type="email" />
         <Field label="Emails secondaires" value={form.additionalEmails} onChange={v => setForm(f => ({ ...f, additionalEmails: v }))} placeholder="email2@x.com, email3@x.com" />
-        <Field label="Telephone" value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="+381 13 30 77 71" />
-        <Field label="Specialite" value={form.specialty} onChange={v => setForm(f => ({ ...f, specialty: v }))} placeholder="Ex: Menuiseries aluminium" />
+        <Field label="Téléphone" value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="+381 13 30 77 71" />
+        <Field label="Spécialité" value={form.specialty} onChange={v => setForm(f => ({ ...f, specialty: v }))} placeholder="Ex: Menuiseries aluminium" />
         <Field label="Pays" value={form.country} onChange={v => setForm(f => ({ ...f, country: v }))} placeholder="Ex: Serbie" />
         <Field label="Langue" value={form.language} onChange={v => setForm(f => ({ ...f, language: v }))} placeholder="Ex: Serbe / Anglais" />
         <Field label="Notes" value={form.notes} onChange={v => setForm(f => ({ ...f, notes: v }))} placeholder="Observations..." />

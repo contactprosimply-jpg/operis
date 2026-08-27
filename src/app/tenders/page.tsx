@@ -87,7 +87,7 @@ export default function TendersPage() {
     if (res.success) {
       setShowModal(false)
       setForm({ title: '', client: '', deadline: '', description: '', is_own_client: false })
-      show('AO cree')
+      show('AO créé')
       router.push(tenderSetupUrl((res.data as any).id))
     } else show(`Erreur : ${res.error}`)
   }
@@ -119,7 +119,7 @@ export default function TendersPage() {
     { key: 'actifs', label: 'Actifs' },
     { key: 'tous', label: 'Tous' },
     { key: 'mes_assignes', label: 'Mes AO assignés' },
-    { key: 'gagne', label: 'Gagnes' },
+    { key: 'gagne', label: 'Gagnés' },
     { key: 'perdu', label: 'Perdus' },
   ]
 
@@ -129,7 +129,7 @@ export default function TendersPage() {
 
       <div className="kpi-grid" style={{ marginBottom: 24 }}>
         <KpiCard label="Actifs" value={stats.actifs} color="blue" delay={0} />
-        <KpiCard label="Gagnes" value={stats.gagnes} color="green" delay={60} />
+        <KpiCard label="Gagnés" value={stats.gagnes} color="green" delay={60} />
         <KpiCard label="Perdus" value={stats.perdus} color="amber" delay={120} />
         <KpiCard label="Total" value={stats.total} color="purple" delay={180} />
       </div>
@@ -160,9 +160,9 @@ export default function TendersPage() {
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
               {[
-                'Titre', 'Client', 'Deadline', 'Budget HT', 'Priorite', 'Statut',
+                'Titre', 'Client', 'Deadline', 'Budget HT', 'Priorité', 'Statut',
                 ...(showCreatorColumn ? ['Créé par'] : []),
-                'Fournisseurs', 'Reponses', 'Devis',
+                'Fournisseurs', 'Réponses', 'Devis',
               ].map(h => (
                 <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
               ))}
@@ -242,10 +242,10 @@ export default function TendersPage() {
       </Card>
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouvel appel d'offres" size="lg">
-        <Field label="Titre *" value={form.title} onChange={v => setForm(f => ({ ...f, title: v }))} placeholder="Ex: Rehabilitation facades R+5" />
+        <Field label="Titre *" value={form.title} onChange={v => setForm(f => ({ ...f, title: v }))} placeholder="Ex: Réhabilitation façades R+5" />
         <Field label="Client *" value={form.client} onChange={v => setForm(f => ({ ...f, client: v }))} placeholder="Ex: Nexity Grand Paris" />
         <Field label="Deadline" value={form.deadline} onChange={v => setForm(f => ({ ...f, deadline: v }))} type="date" />
-        <Field label="Description" value={form.description} onChange={v => setForm(f => ({ ...f, description: v }))} placeholder="Description du marche..." />
+        <Field label="Description" value={form.description} onChange={v => setForm(f => ({ ...f, description: v }))} placeholder="Description du marché..." />
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
           <input
             type="checkbox"
@@ -257,7 +257,7 @@ export default function TendersPage() {
         </label>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
           <Button variant="ghost" onClick={() => setShowModal(false)}>Annuler</Button>
-          <Button variant="primary" onClick={handleCreate} loading={creating}>Creer l'AO</Button>
+          <Button variant="primary" onClick={handleCreate} loading={creating}>Créer l'AO</Button>
         </div>
       </Modal>
     </div>

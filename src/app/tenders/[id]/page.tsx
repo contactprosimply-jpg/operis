@@ -965,7 +965,7 @@ export default function TenderDetailPage() {
       } else show(`Erreur : ${data.error}`)
     } catch (e: unknown) {
       const err = e as { message?: string }
-      show(`Erreur : ${err.message ?? 'reseau'}`)
+      show(`Erreur : ${err.message ?? 'réseau'}`)
     }
     setAssigningMember(false)
   }
