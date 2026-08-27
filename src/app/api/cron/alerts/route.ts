@@ -4,7 +4,7 @@ export const maxDuration = 60
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { checkAlertsForUser } from '@/lib/alerts'
-import { sendHtmlEmail } from '@/lib/mailer'
+import { sendHtmlEmail, isEmailConfigured } from '@/lib/mailer'
 import { sitePath } from '@/lib/site-url'
 
 const ADMIN_EMAIL = 'operiscontact@gmail.com'
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
 }
 
 async function sendDigest(db: ReturnType<typeof createAdminClient>) {
-  if (!process.env.SMTP_USER) return
+  if (!isEmailConfigured()) return
 
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
