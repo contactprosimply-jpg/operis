@@ -108,7 +108,7 @@ async function resolveQuotePrice(
   db: SupabaseClient,
   bodyText: string,
   attachments: StoredEmailAttachment[],
-): Promise<{ priceHt: number | null; priceNote: string }> {
+): Promise<{ priceHt: number | null; priceNote: string; scannedWithoutText: boolean }> {
   const bodyPrice = extractPriceFromText(bodyText)
   const attResult = await extractPriceFromAttachments(db, attachments)
 
@@ -125,7 +125,7 @@ async function resolveQuotePrice(
     if (priceHt) priceNote = final.note || 'Prix final (document)'
   }
 
-  return { priceHt, priceNote }
+  return { priceHt, priceNote, scannedWithoutText: !!attResult.scannedWithoutText && priceHt == null }
 }
 
 export async function upsertQuoteFromEmail(
@@ -137,12 +137,16 @@ export async function upsertQuoteFromEmail(
   attachments: StoredEmailAttachment[],
 ): Promise<{ id: string; price_ht: number | null } | null> {
   const hasDevisFile = hasDevisAttachment(attachments)
-  const { priceHt, priceNote } = await resolveQuotePrice(db, bodyText, attachments)
+  const { priceHt, priceNote, scannedWithoutText } = await resolveQuotePrice(db, bodyText, attachments)
 
   if (!priceHt && !hasDevisFile) return null
 
   const notes = [
-    priceHt ? priceNote : 'Devis reçu — prix à confirmer',
+    priceHt
+      ? priceNote
+      : scannedWithoutText
+        ? 'PDF scanné (sans texte) — saisissez le prix manuellement'
+        : 'Devis reçu — prix à confirmer',
     attachmentSummary(attachments) ? `PJ: ${attachmentSummary(attachments)}` : '',
   ].filter(Boolean).join(' — ')
 
