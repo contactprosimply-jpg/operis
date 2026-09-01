@@ -2,6 +2,7 @@
 
 import WebsiteNav from '@/components/website/WebsiteNav'
 import { OperisLogoMark } from '@/components/OperisLogoMark'
+import { PLAN_CATALOG } from '@/lib/billing/plan-catalog'
 
 const FEATURES = [
   {
@@ -17,8 +18,8 @@ const FEATURES = [
     ),
   },
   {
-    title: 'Messagerie synchronisée',
-    desc: 'Connectez vos boîtes mail professionnelles. Les AO entrants sont détectés automatiquement et rattachés à vos dossiers.',
+    title: 'Messagerie intégrée (en option)',
+    desc: 'Si vous le souhaitez, connectez vos boîtes mail professionnelles : les AO entrants sont détectés automatiquement et rattachés à vos dossiers. Entièrement facultatif — Operis fonctionne aussi très bien sans messagerie connectée.',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="22" height="22">
         <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
@@ -28,7 +29,7 @@ const FEATURES = [
   },
   {
     title: 'Devis fournisseurs',
-    desc: 'Consultez vos fournisseurs, relancez les absents et comparez les offres. L\'IA vous aide à analyser et valider les devis.',
+    desc: 'Consultez vos fournisseurs, relancez les absents et comparez les offres. Les prix sont extraits automatiquement des PDF envoyés par vos fournisseurs.',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="22" height="22">
         <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
@@ -47,35 +48,7 @@ const DEMO_TENDERS = [
   { title: 'VRD parking commercial', client: 'Carrefour Property', deadline: '8j', budget: '156 000 €', status: 'En cours', statusColor: '#3b7ef6', priorite: 'Normale' },
 ]
 
-const PLANS = [
-  {
-    name: 'Pro',
-    price: '79,99',
-    desc: 'Pour les petites équipes BTP',
-    features: [
-      '2 utilisateurs max',
-      '20 Go de stockage documents',
-      'AO & messagerie synchronisée',
-      'Consultations fournisseurs',
-    ],
-    cta: "S'abonner",
-    highlight: false,
-  },
-  {
-    name: 'Business',
-    price: '129,99',
-    desc: 'Pour les équipes qui veulent aller plus vite',
-    features: [
-      '5 utilisateurs max',
-      '50 Go de stockage documents',
-      'Analyse IA des devis',
-      'Rapports avancés',
-      'Support prioritaire',
-    ],
-    cta: "S'abonner",
-    highlight: true,
-  },
-]
+const PLANS = PLAN_CATALOG.map(p => ({ ...p, cta: "S'abonner" }))
 
 function Logo({ size = 40 }: { size?: number }) {
   return <OperisLogoMark size={size} glow />
@@ -138,7 +111,8 @@ export default function LandingPage() {
           fontSize: 'clamp(15px, 2vw, 18px)', color: 'var(--text-secondary)', lineHeight: 1.65,
           maxWidth: 580, margin: '0 auto 36px',
         }}>
-          Operis centralise vos consultations, synchronise votre messagerie et suit vos devis fournisseurs.
+          Operis centralise vos consultations et vos devis fournisseurs. Une messagerie intégrée,
+          entièrement optionnelle, synchronise vos échanges quand vous le souhaitez.
           Conçu pour les entreprises du BTP qui veulent gagner du temps sur chaque dossier.
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -421,35 +395,6 @@ export default function LandingPage() {
               </a>
             </div>
           ))}
-        </div>
-      </section>
-
-      {/* Testimonials */}
-      <section style={{ background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '64px 24px' }}>
-          <div style={{ textAlign: 'center', marginBottom: 40 }}>
-            <h2 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 12px' }}>
-              Ils pilotent leurs AO avec Operis
-            </h2>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
-            {[
-              { name: 'Marc D.', role: 'Dirigeant TCE — Lyon', quote: 'On a divisé par deux le temps passé sur les consultations. Les relances auto nous ont sauvé plusieurs marchés.' },
-              { name: 'Sophie L.', role: 'Responsable AO — Paris', quote: 'La messagerie synchronisée détecte les AO entrants avant qu\'on les rate. Indispensable au quotidien.' },
-              { name: 'Karim B.', role: 'Gérant BTP — Marseille', quote: 'Le comparatif de devis en un coup d\'œil, c\'est exactement ce qu\'on attendait. Simple et efficace.' },
-            ].map(t => (
-              <div key={t.name} style={{
-                background: 'var(--bg-card)', border: '1px solid var(--border-hi)', borderRadius: 14,
-                padding: '24px 22px', boxShadow: 'var(--shadow-sm)',
-              }}>
-                <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.65, margin: '0 0 16px', fontStyle: 'italic' }}>
-                  &ldquo;{t.quote}&rdquo;
-                </p>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{t.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace', marginTop: 4 }}>{t.role}</div>
-              </div>
-            ))}
-          </div>
         </div>
       </section>
 

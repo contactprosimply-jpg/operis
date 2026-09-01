@@ -1,43 +1,10 @@
 'use client'
 
 import type { BillingPlan } from '@/lib/billing/plan-limits'
+import { PLAN_CATALOG } from '@/lib/billing/plan-catalog'
 import { Button } from '@/components/ui'
 
-const PLANS: Array<{
-  id: BillingPlan
-  name: string
-  price: string
-  desc: string
-  features: string[]
-  highlight?: boolean
-}> = [
-  {
-    id: 'pro',
-    name: 'Pro',
-    price: '79,99',
-    desc: 'Pour les petites équipes BTP',
-    features: [
-      '2 utilisateurs max',
-      '20 Go de stockage documents',
-      'AO & messagerie synchronisée',
-      'Consultations fournisseurs',
-    ],
-  },
-  {
-    id: 'business',
-    name: 'Business',
-    price: '129,99',
-    desc: 'Pour les équipes qui veulent aller plus vite',
-    features: [
-      '5 utilisateurs max',
-      '50 Go de stockage documents',
-      'Analyse IA des devis',
-      'Rapports avancés',
-      'Support prioritaire',
-    ],
-    highlight: true,
-  },
-]
+const PLANS = PLAN_CATALOG
 
 type PricingPlansProps = {
   currentPlan?: BillingPlan | null
