@@ -7,21 +7,7 @@ import { collectTenderDocuments, type QuoteRow } from '@/lib/tender-documents'
 import { uploadTenderDocument, DEVIS_BUCKET } from '@/lib/devis-storage'
 import { assertTenderAccess } from '@/lib/tender-access'
 import { assertStorageQuota } from '@/lib/billing/subscription'
-
-// Fichier brut max accepté — un DCE/plan BTP de 15-20 Mo est un usage normal, pas un abus
-// (voir experimental.proxyClientMaxBodySize dans next.config.ts, relevé en conséquence).
-const MAX_UPLOAD_BYTES = 30 * 1024 * 1024
-// Le corps JSON (base64) est ~33% plus gros que le fichier brut, + une petite marge pour
-// filename/contentType. Rejeter tôt sur Content-Length évite de tenter un JSON.parse() sur
-// un corps tronqué par le proxy si jamais la taille dépasse la limite configurée là-bas.
-const MAX_JSON_BODY_BYTES = Math.ceil(MAX_UPLOAD_BYTES * 1.35) + 4096
-
-function tooLargeResponse() {
-  return Response.json({
-    success: false,
-    error: `Fichier trop volumineux (maximum ${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))} Mo)`,
-  }, { status: 413 })
-}
+import { MAX_UPLOAD_BYTES, requestBodyTooLarge, tooLargeResponse } from '@/lib/upload-limits'
 
 export async function GET(
   req: NextRequest,
@@ -61,9 +47,8 @@ export async function POST(
   if (!userId) return unauthorized()
 
   // Rejette tôt, sur l'en-tête, avant tout req.json() — un corps trop gros peut être tronqué
-  // par le proxy (voir MAX_JSON_BODY_BYTES ci-dessus), et JSON.parse() planterait dessus.
-  const contentLength = Number(req.headers.get('content-length') ?? 0)
-  if (contentLength > MAX_JSON_BODY_BYTES) return tooLargeResponse()
+  // par le proxy, et JSON.parse() planterait dessus.
+  if (requestBodyTooLarge(req)) return tooLargeResponse()
 
   const { id } = await params
   const { filename, contentType, data, source } = await req.json().catch(() => ({}) as Record<string, unknown>)

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
+import { MAX_UPLOAD_BYTES, requestBodyTooLarge, tooLargeResponse } from '@/lib/upload-limits'
 
 export async function GET(req: NextRequest) {
   const userId = await getUserFromRequest(req)
@@ -29,8 +30,21 @@ export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
+  // Rejette tôt, sur l'en-tête, avant tout req.json() — un corps trop gros peut être tronqué
+  // par le proxy, et JSON.parse() planterait dessus.
+  if (requestBodyTooLarge(req)) return tooLargeResponse()
+
   const body = await req.json()
   const id = body?.id as string | undefined
+  const rawAttachments = Array.isArray(body?.attachments) ? body.attachments : []
+
+  // Second contrôle, sur la taille décodée estimée du total des pièces jointes — cas où
+  // Content-Length est absent/faux.
+  const totalBytes = rawAttachments.reduce((sum: number, a: { data?: string }) => (
+    sum + (typeof a?.data === 'string' ? Math.floor(a.data.length * 0.75) : 0)
+  ), 0)
+  if (totalBytes > MAX_UPLOAD_BYTES) return tooLargeResponse()
+
   const row = {
     user_id: userId,
     to_address: String(body?.to ?? body?.to_address ?? '').slice(0, 500),
@@ -38,7 +52,7 @@ export async function POST(req: NextRequest) {
     bcc: String(body?.bcc ?? '').slice(0, 500),
     subject: String(body?.subject ?? '').slice(0, 300),
     body: String(body?.body ?? '').slice(0, 100000),
-    attachments: body?.attachments ?? [],
+    attachments: rawAttachments,
     updated_at: new Date().toISOString(),
   }
 

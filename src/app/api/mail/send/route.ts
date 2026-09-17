@@ -18,6 +18,7 @@ import { upsertContactsFromOutboundSend } from '@/lib/contacts'
 import { extractEmailAddress } from '@/lib/mail-attachments'
 import { isFirstTimeContact, queueVerificationChallenge } from '@/lib/mail-human-verification'
 import { operisFooter } from '@/lib/email-compose'
+import { MAX_UPLOAD_BYTES, requestBodyTooLarge, tooLargeResponse } from '@/lib/upload-limits'
 export const maxDuration = 30
 
 /** Si le destinataire est un fournisseur en attente sur cet AO, marque la consultation "envoyée"
@@ -97,6 +98,11 @@ async function resolveTenderIdForSend(
 export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
+
+  // Rejette tôt, sur l'en-tête, avant tout req.json() — un corps trop gros peut être tronqué
+  // par le proxy, et JSON.parse() planterait dessus.
+  if (requestBodyTooLarge(req)) return tooLargeResponse()
+
   const loginEmail = await getUserEmailFromRequest(req)
 
   const rawBody = await req.json()
@@ -201,6 +207,11 @@ export async function POST(req: NextRequest) {
           size: a.size,
         }))
     : []
+
+  // Second contrôle, sur la taille réelle décodée du total des pièces jointes — cas où
+  // Content-Length est absent/faux.
+  const totalAttachmentBytes = mailAttachments.reduce((sum, a) => sum + a.content.length, 0)
+  if (totalAttachmentBytes > MAX_UPLOAD_BYTES) return tooLargeResponse()
 
   let inReplyToHeader: string | undefined
   let resolvedReplyId = typeof replyToEmailId === 'string' && isValidUuid(replyToEmailId)
