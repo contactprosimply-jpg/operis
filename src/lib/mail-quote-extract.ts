@@ -62,13 +62,14 @@ async function findSupplierByFromEmail(db: SupabaseClient, userId: string, fromA
   })
   if (exactLoose) return exactLoose
 
-  const fromDomain = emailDomain(fromEmail)
-  if (!fromDomain) return null
-
-  return (all ?? []).find(s => emailDomain(s.email ?? '') === fromDomain) ?? null
+  // Pas de repli par domaine : deux fournisseurs BTP partagent très souvent un domaine
+  // générique (gmail.com, orange.fr...) — un rapprochement par domaine attribuerait le
+  // devis d'un fournisseur à un autre. Mieux vaut aucun rattachement automatique qu'un
+  // mauvais (trouvé lors du crash test — un devis attribué au mauvais fournisseur).
+  return null
 }
 
-/** Retrouve le fournisseur même si la réponse vient d'un autre contact du même domaine. */
+/** Retrouve le fournisseur consulté sur cet AO dont l'email correspond exactement. */
 async function findSupplierForReply(
   db: SupabaseClient,
   userId: string,
@@ -79,25 +80,22 @@ async function findSupplierForReply(
   if (direct) return direct
 
   const fromEmail = extractEmailAddress(fromAddress)
-  const fromDomain = fromEmail ? emailDomain(fromEmail) : null
-  if (!fromDomain) return null
+  if (!fromEmail || !tenderIdHint) return null
 
-  if (tenderIdHint) {
-    const { data: consultations } = await db
-      .from('consultation_suppliers')
-      .select('supplier_id, supplier:suppliers(id, email)')
-      .eq('tender_id', tenderIdHint)
+  // Pas de repli par domaine ici non plus (voir findSupplierByFromEmail) : même scopé à un
+  // seul AO, deux fournisseurs consultés peuvent partager un domaine générique.
+  const { data: consultations } = await db
+    .from('consultation_suppliers')
+    .select('supplier_id, supplier:suppliers(id, email)')
+    .eq('tender_id', tenderIdHint)
 
-    for (const c of consultations ?? []) {
-      const sRaw = c.supplier as { id: string; email: string } | { id: string; email: string }[] | null
-      const s = Array.isArray(sRaw) ? sRaw[0] : sRaw
-      if (!s?.id) continue
-      const sDomain = emailDomain(s.email ?? '')
-      if (sDomain === fromDomain) return { id: s.id, email: s.email }
-      const se = extractEmailAddress(s.email ?? '')
-      if (fromEmail && se && (fromEmail === se || fromAddress.toLowerCase().includes(se))) {
-        return { id: s.id, email: s.email }
-      }
+  for (const c of consultations ?? []) {
+    const sRaw = c.supplier as { id: string; email: string } | { id: string; email: string }[] | null
+    const s = Array.isArray(sRaw) ? sRaw[0] : sRaw
+    if (!s?.id) continue
+    const se = extractEmailAddress(s.email ?? '')
+    if (se && (fromEmail === se || fromAddress.toLowerCase().includes(se))) {
+      return { id: s.id, email: s.email }
     }
   }
 
@@ -294,11 +292,10 @@ export async function backfillQuotesForTender(
     for (const email of emails ?? []) {
       const from = extractEmailAddress(email.from_address ?? '')
       const fromRaw = (email.from_address ?? '').toLowerCase()
-      const fromDom = from ? emailDomain(from) : null
+      // Pas de repli par domaine : voir findSupplierByFromEmail plus haut dans ce fichier.
       const matches =
         (from && from === supplierEmail) ||
-        fromRaw.includes(supplierEmail) ||
-        (domain && fromDom === domain)
+        fromRaw.includes(supplierEmail)
       if (!matches) continue
 
       let textParts = [
@@ -401,11 +398,10 @@ export async function analyzeQuotesForTender(
     for (const email of emails ?? []) {
       const from = extractEmailAddress(email.from_address ?? '')
       const fromRaw = (email.from_address ?? '').toLowerCase()
-      const fromDom = from ? emailDomain(from) : null
+      // Pas de repli par domaine : voir findSupplierByFromEmail plus haut dans ce fichier.
       const matches =
         (from && from === supplierEmail) ||
-        fromRaw.includes(supplierEmail) ||
-        (domain && fromDom === domain)
+        fromRaw.includes(supplierEmail)
 
       if (!matches) continue
 
