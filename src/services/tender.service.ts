@@ -326,7 +326,6 @@ export const tenderService = {
       const current = consultations.find(c => c.supplier_id === supplierId)
       if (!current) return { success: false, error: 'Consultation introuvable' }
 
-      const newCount = (current.relaunch_count ?? 0) + 1
       const db = createAdminClient()
       const { getUserSettings, relanceMaxReached } = await import('@/lib/user-settings')
       const settings = await getUserSettings(db, userId)
@@ -334,9 +333,12 @@ export const tenderService = {
         return { success: false, error: 'Nombre maximum de relances atteint' }
       }
 
-      const newStatus = newCount >= 2 ? 'relance_2' : 'relance'
+      // Estimation pour le texte de l'email : le compteur réellement persisté est calculé
+      // de façon atomique côté base juste après (incrementRelaunch), pas ici — l'email doit
+      // partir avant la mise à jour (pas de compteur incrémenté pour un envoi qui a échoué).
+      const estimatedCount = (current.relaunch_count ?? 0) + 1
       const locale = normalizeSupplierLanguage(supplier.language)
-      const bodyPlain = buildRelaunchBodyForLocale(tender, supplier.name, newCount, locale)
+      const bodyPlain = buildRelaunchBodyForLocale(tender, supplier.name, estimatedCount, locale)
       const relaunchSubject = buildRelaunchSubjectForLocale(tender.title, locale)
       const toAddress = supplierRecipients(supplier)
 
@@ -347,18 +349,16 @@ export const tenderService = {
         body: bodyPlain,
       })
 
-      // 2. Update statut + date + compteur (atomique)
-      await consultationRepository.updateStatus(tenderId, supplierId, newStatus, {
-        last_sent_at: new Date().toISOString(),
-        relaunch_count: newCount,
-      })
+      // 2. Incrément atomique du statut + date + compteur — jamais de lecture-puis-écriture
+      // en TS (perdrait des relances sous requêtes concurrentes, cf. crash test).
+      const updated = await consultationRepository.incrementRelaunch(tenderId, supplierId)
 
       // 3. Logger
       await emailLogRepository.create({
         user_id: userId,
         tender_id: tenderId,
         supplier_id: supplierId,
-        type: newCount >= 2 ? 'relance_2' : 'relance',
+        type: updated.relaunch_count >= 2 ? 'relance_2' : 'relance',
         to_address: toAddress,
         subject: relaunchSubject,
         body: sentText,
@@ -416,7 +416,6 @@ export const tenderService = {
 
       const now = new Date().toISOString()
       let newStatus: string
-      let extraFields: Record<string, unknown> = { last_sent_at: now }
       let logType: 'consultation_manual' | 'relance_manual'
       let logMessage: string
 
@@ -424,20 +423,17 @@ export const tenderService = {
         newStatus = 'envoye'
         logType = 'consultation_manual'
         logMessage = 'Marqué comme envoyé manuellement (hors Operis)'
+        await consultationRepository.updateStatus(tenderId, supplierId, newStatus as any, {
+          last_sent_at: now,
+        })
       } else {
-        const newCount = (current.relaunch_count ?? 0) + 1
-        newStatus = newCount >= 2 ? 'relance_2' : 'relance'
-        extraFields = { ...extraFields, relaunch_count: newCount }
+        // Incrément atomique côté base — jamais de lecture-puis-écriture en TS (perdrait
+        // des relances sous requêtes concurrentes, cf. crash test).
+        const updated = await consultationRepository.incrementRelaunch(tenderId, supplierId)
+        newStatus = updated.status
         logType = 'relance_manual'
-        logMessage = `Marqué comme relancé manuellement (hors Operis) — relance ${newCount}`
+        logMessage = `Marqué comme relancé manuellement (hors Operis) — relance ${updated.relaunch_count}`
       }
-
-      await consultationRepository.updateStatus(
-        tenderId,
-        supplierId,
-        newStatus as any,
-        extraFields,
-      )
 
       await emailLogRepository.create({
         user_id: userId,

@@ -65,4 +65,20 @@ export const consultationRepository = {
     if (error) throw new Error(error.message)
     return data as ConsultationSupplier[]
   },
+
+  // ── Incrémenter le compteur de relance (atomique côté base) ──
+  // Un seul UPDATE, verrouillage de ligne Postgres — jamais de perte sous requêtes
+  // concurrentes, contrairement à un lire-puis-écrire en TS. Voir migration 061.
+  async incrementRelaunch(tenderId: string, supplierId: string): Promise<ConsultationSupplier> {
+    const db = createAdminClient()
+    const { data, error } = await db.rpc('increment_consultation_relaunch', {
+      p_tender_id: tenderId,
+      p_supplier_id: supplierId,
+    })
+
+    if (error) throw new Error(error.message)
+    const row = Array.isArray(data) ? data[0] : data
+    if (!row) throw new Error('Consultation introuvable')
+    return row as ConsultationSupplier
+  },
 }
