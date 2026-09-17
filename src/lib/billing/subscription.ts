@@ -7,6 +7,13 @@ import { isStripeConfigured } from '@/lib/billing/stripe'
 
 export const BILLING_ADMIN_EMAIL = 'operiscontact@gmail.com'
 
+/** Vrai uniquement sur le déploiement production Vercel — jamais en preview, en local ou en
+ *  CI. VERCEL_ENV (et non NODE_ENV) est le seul signal fiable : NODE_ENV vaut "production"
+ *  pour tout build Next.js, y compris les previews. */
+function isProductionDeployment(): boolean {
+  return process.env.VERCEL_ENV === 'production'
+}
+
 export type SubscriptionRow = {
   id: string
   org_id: string
@@ -137,8 +144,15 @@ export async function getBillingContext(db: SupabaseClient, userId: string): Pro
     seatCount = 1
   }
 
-  // Sans clé Stripe (dev local sans facturation configurée), on ne bloque jamais l'accès.
-  const stripeBypass = !isStripeConfigured()
+  // Sans clé Stripe (dev local sans facturation configurée), on ne bloque jamais l'accès —
+  // mais JAMAIS sur le déploiement production réel : une clé Stripe manquante/mal
+  // configurée là-bas ne doit jamais se traduire par un accès payant gratuit silencieux
+  // (trouvé lors du crash test — ce bypass, pensé pour le confort du dev local, désactivait
+  // le paywall en entier dès que STRIPE_SECRET_KEY était absent, sans distinction d'env).
+  if (isProductionDeployment() && !isStripeConfigured()) {
+    console.error('[billing] STRIPE_SECRET_KEY absent en production — accès payant refusé par défaut (fail-closed), pas de bypass dev ici.')
+  }
+  const stripeBypass = !isStripeConfigured() && !isProductionDeployment()
   const hasAccess = isBillingAdmin || stripeBypass || hasActiveSubscription(subscription)
   const effectivePlan = hasAccess
     ? ((isBillingAdmin || stripeBypass) && !subscription?.plan ? 'business' : (subscription?.plan ?? null))
