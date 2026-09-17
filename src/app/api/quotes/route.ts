@@ -9,6 +9,7 @@ import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
 import { isValidUuid, badRequest } from '@/lib/api-validation'
+import { assertTenderAccess } from '@/lib/tender-access'
 
 export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
@@ -57,9 +58,15 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const tender_id = searchParams.get('tender_id')
 
-  if (!tender_id) return Response.json({ success: false, error: 'tender_id requis' }, { status: 400 })
+  if (!isValidUuid(tender_id)) return badRequest('tender_id requis')
 
   const db = createAdminClient()
+
+  // L'AO doit appartenir à l'appelant (ou lui être accessible via son organisation) —
+  // sans ça, n'importe quel utilisateur authentifié pouvait lire les devis de n'importe
+  // quel AO en devinant son UUID (aucune vérification d'appartenance auparavant).
+  const access = await assertTenderAccess(db, tender_id!, userId, 'view')
+  if (!access.ok) return Response.json({ success: false, error: access.error }, { status: access.status })
 
   const { data, error } = await db
     .from('quotes')
