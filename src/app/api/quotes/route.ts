@@ -15,10 +15,22 @@ export async function POST(req: NextRequest) {
   const userId = await getUserFromRequest(req)
   if (!userId) return unauthorized()
 
-  const { tender_id, supplier_id, price_ht, document_url, notes } = await req.json().catch(() => ({}))
+  const { tender_id, supplier_id, price_ht: rawPrice, document_url, notes } = await req.json().catch(() => ({}))
 
   if (!isValidUuid(tender_id)) return badRequest('tender_id UUID invalide')
   if (!isValidUuid(supplier_id)) return badRequest('supplier_id UUID invalide')
+
+  // price_ht est optionnel (un devis peut être créé avant qu'un prix soit connu), mais s'il
+  // est fourni, doit être un nombre fini et positif — un prix négatif fausserait le tri
+  // "meilleur prix" (trouvé lors du crash test : accepté sans validation auparavant).
+  let price_ht: number | null = null
+  if (rawPrice !== undefined && rawPrice !== null && rawPrice !== '') {
+    const parsed = typeof rawPrice === 'number' ? rawPrice : Number(rawPrice)
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return badRequest('Prix invalide (doit être un nombre positif)')
+    }
+    price_ht = parsed
+  }
 
   const db = createAdminClient()
 
