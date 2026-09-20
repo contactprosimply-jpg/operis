@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTenders } from '@/hooks'
 import { authFetch } from '@/lib/auth-client'
@@ -13,6 +13,10 @@ import {
   getTenderCreatorLabel,
 } from '@/lib/tender-member-label'
 import { tenderSetupUrl } from '@/lib/tender-setup-nav'
+import { MotionConfig } from 'framer-motion'
+import { TenderCard } from '@/components/tender/TenderCard'
+import { TenderKanban } from '@/components/tender/TenderKanban'
+import { TenderViewSwitch, type TenderViewMode } from '@/components/tender/TenderViewSwitch'
 import { Button, Modal, Field, Badge, useToast, Card, KpiCard, tableRowHoverHandlers, tenderListRowStyle, TableSkeleton } from '@/components/ui'
 import type { TenderStatus } from '@/types/database'
 
@@ -31,6 +35,39 @@ const PRIORITE_LABEL: Record<string, { label: string; color: string; icon: strin
   haute: { label: 'Haute', color: '#f59e0b', icon: '↑' },
   urgente: { label: 'Urgente', color: '#ef4444', icon: '⚡' },
 }
+
+const VIEW_STORAGE_KEY = 'operis_tenders_view'
+const VIEW_CHANGED_EVENT = 'operis:tenders-view-changed'
+const VIEW_MODES: TenderViewMode[] = ['liste', 'cartes', 'kanban']
+
+// Choix d'affichage mémorisé sur l'appareil. Si le stockage est bloqué, il vit en mémoire le
+// temps de la session (le sélecteur reste fonctionnel).
+let viewInMemory: TenderViewMode = 'liste'
+
+function subscribeView(onChange: () => void) {
+  window.addEventListener('storage', onChange)
+  window.addEventListener(VIEW_CHANGED_EVENT, onChange)
+  return () => {
+    window.removeEventListener('storage', onChange)
+    window.removeEventListener(VIEW_CHANGED_EVENT, onChange)
+  }
+}
+
+function getViewSnapshot(): TenderViewMode {
+  try {
+    const saved = localStorage.getItem(VIEW_STORAGE_KEY) as TenderViewMode | null
+    if (saved && VIEW_MODES.includes(saved)) return saved
+  } catch { /* stockage indisponible */ }
+  return viewInMemory
+}
+
+function changeView(next: TenderViewMode) {
+  viewInMemory = next
+  try { localStorage.setItem(VIEW_STORAGE_KEY, next) } catch { /* ignore */ }
+  window.dispatchEvent(new Event(VIEW_CHANGED_EVENT))
+}
+// Le Kanban montre déjà tous les statuts en colonnes : seuls ces filtres y ont un sens.
+const KANBAN_FILTERS = ['tous', 'mes_assignes']
 
 function deadlineColor(days: number | null) {
   if (days === null) return 'var(--text-secondary)'
@@ -55,6 +92,7 @@ export default function TendersPage() {
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ title: '', client: '', deadline: '', description: '', is_own_client: false })
   const [org, setOrg] = useState<OrganizationPayload | null>(null)
+  const view = useSyncExternalStore(subscribeView, getViewSnapshot, () => 'liste' as TenderViewMode)
 
   useEffect(() => {
     authFetch('/api/organization')
@@ -67,11 +105,12 @@ export default function TendersPage() {
   const showCreatorColumn = inTeam || tenders.some(t => !!t.creator_label)
   const tableColCount = showCreatorColumn ? 10 : 9
 
-  const filtered = filter === 'actifs'
+  const effectiveFilter = view === 'kanban' && !KANBAN_FILTERS.includes(filter) ? 'tous' : filter
+  const filtered = effectiveFilter === 'actifs'
     ? tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status))
-    : filter === 'tous' ? tenders
-    : filter === 'mes_assignes' ? tenders.filter(t => t.assigned_to === currentUserId)
-    : tenders.filter(t => t.status === filter)
+    : effectiveFilter === 'tous' ? tenders
+    : effectiveFilter === 'mes_assignes' ? tenders.filter(t => t.assigned_to === currentUserId)
+    : tenders.filter(t => t.status === effectiveFilter)
 
   const handleCreate = async () => {
     if (!form.title || !form.client) return
@@ -92,11 +131,15 @@ export default function TendersPage() {
     } else show(`Erreur : ${res.error}`)
   }
 
-  const handleStatusChange = async (e: React.MouseEvent | React.ChangeEvent, tenderId: string, status: TenderStatus) => {
-    e.stopPropagation()
+  const changeStatus = async (tenderId: string, status: TenderStatus) => {
     const res = await markStatus(tenderId, status)
     if (res.success) show('Statut mis à jour')
     else show(`Erreur : ${res.error}`)
+  }
+
+  const handleStatusChange = (e: React.MouseEvent | React.ChangeEvent, tenderId: string, status: TenderStatus) => {
+    e.stopPropagation()
+    return changeStatus(tenderId, status)
   }
 
   if (loading && tenders.length === 0) return (
@@ -136,24 +179,42 @@ export default function TendersPage() {
 
       <div className="page-toolbar">
         <div className="page-toolbar-tabs">
-          {filters.map(f => (
+          {filters.filter(f => view !== 'kanban' || KANBAN_FILTERS.includes(f.key)).map(f => (
             <button key={f.key} onClick={() => setFilter(f.key)} style={{
               padding: '8px 16px', fontSize: 12, cursor: 'pointer', border: 'none', background: 'transparent',
-              color: filter === f.key ? 'var(--accent)' : 'var(--text-muted)',
-              fontFamily: 'DM Sans, system-ui', fontWeight: filter === f.key ? 600 : 400,
-              borderBottom: filter === f.key ? '2px solid var(--accent)' : '2px solid transparent',
+              color: effectiveFilter === f.key ? 'var(--accent)' : 'var(--text-muted)',
+              fontFamily: 'DM Sans, system-ui', fontWeight: effectiveFilter === f.key ? 600 : 400,
+              borderBottom: effectiveFilter === f.key ? '2px solid var(--accent)' : '2px solid transparent',
               marginBottom: -1, transition: 'all 0.2s ease',
             }}>{f.label}</button>
           ))}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {refreshing && <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>↻ sync</span>}
+          <TenderViewSwitch value={view} onChange={changeView} />
           <span data-tour="tenders-create" style={{ display: 'inline-flex' }}>
             <Button variant="primary" onClick={() => setShowModal(true)}>+ Nouvel AO</Button>
           </span>
         </div>
       </div>
 
+      {view === 'cartes' && (
+        <MotionConfig reducedMotion="user">
+          {filtered.length === 0 ? (
+            <Card hover={false}>
+              <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>Aucun AO</div>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 rounded-2xl bg-slate-50 p-6 md:grid-cols-2 xl:grid-cols-3">
+              {filtered.map((t, i) => <TenderCard key={t.tender_id} tender={t} index={i} />)}
+            </div>
+          )}
+        </MotionConfig>
+      )}
+
+      {view === 'kanban' && <TenderKanban tenders={filtered} onStatusChange={changeStatus} />}
+
+      {view === 'liste' && (
       <Card hover={false} style={{ padding: 0, overflow: 'hidden' }}>
         <div className="table-scroll">
         <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 13 }}>
@@ -240,6 +301,7 @@ export default function TendersPage() {
         </table>
         </div>
       </Card>
+      )}
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouvel appel d'offres" size="lg">
         <Field label="Titre *" value={form.title} onChange={v => setForm(f => ({ ...f, title: v }))} placeholder="Ex: Réhabilitation façades R+5" />
