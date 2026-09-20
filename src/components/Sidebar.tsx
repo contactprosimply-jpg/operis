@@ -14,8 +14,7 @@ import NotificationPanelContent, {
   formatBadgeCount,
 } from '@/components/NotificationPanelContent'
 import { OperisLogoMark } from '@/components/OperisLogoMark'
-import PriorityPanelContent, { PanelTabs, type PanelTab } from '@/components/PriorityPanelContent'
-import { buildPayload, parisClock, type PriorityPayload } from '@/lib/priorities-rules'
+import { useTodo } from '@/components/TodoProvider'
 import { readCachedUserSettings, cacheUserSettingsLocally } from '@/lib/user-settings'
 
 const nav = [
@@ -70,10 +69,14 @@ export default function Sidebar() {
   const notifCount = notifList.filter(n => !n.is_read).length
   const markAllLockRef = useRef(0)
   const [showNotifPanel, setShowNotifPanel] = useState(false)
-  const [panelTab, setPanelTab] = useState<PanelTab>('notifs')
-  const [todo, setTodo] = useState<PriorityPayload | null>(null)
-  const [todoLoading, setTodoLoading] = useState(true)
-  const refetchTodoRef = useRef<(() => Promise<void>) | null>(null)
+  const { todo, openTodo } = useTodo()
+  const todoCount = todo?.total ?? 0
+  const openTodoFromBell = () => { setShowNotifPanel(false); openTodo() }
+  const todoBellBtnStyle: React.CSSProperties = {
+    width: '100%', minHeight: 44, border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer',
+    background: 'rgba(245,158,11,0.14)', color: '#b45309', fontSize: 12, fontWeight: 700,
+    fontFamily: 'DM Sans, system-ui', padding: '10px 16px', textAlign: 'left',
+  }
   const desktopNotifPanelRef = useRef<HTMLDivElement>(null)
   const mobileNotifPanelRef = useRef<HTMLDivElement>(null)
   const notifBellRef = useRef<HTMLButtonElement>(null)
@@ -228,100 +231,6 @@ export default function Sidebar() {
       clearInterval(pollIv)
     }
   }, [userId])
-
-  // « À traiter » : devis reçus, questions fournisseurs, mails importants non traités — poll 3 min
-  // (le calcul est plus lourd que les notifications) + à chaque ouverture du panneau.
-  useEffect(() => {
-    if (!userId) return
-
-    let cancelled = false
-    const POLL_MS = 180_000
-
-    const fetchTodo = async () => {
-      try {
-        const token = await getAccessToken()
-        if (!token || cancelled) return
-        const res = await fetch('/api/priorities', { headers: { Authorization: `Bearer ${token}` } })
-        const data = await res.json()
-        if (!cancelled && data.success) setTodo(data.data as PriorityPayload)
-      } catch { /* ignore — garde la dernière liste connue */ }
-      finally { if (!cancelled) setTodoLoading(false) }
-    }
-
-    refetchTodoRef.current = fetchTodo
-    void fetchTodo()
-    const pollIv = setInterval(() => { if (!cancelled) void fetchTodo() }, POLL_MS)
-
-    return () => {
-      cancelled = true
-      clearInterval(pollIv)
-      refetchTodoRef.current = null
-    }
-  }, [userId])
-
-  useEffect(() => {
-    if (showNotifPanel) void refetchTodoRef.current?.()
-  }, [showNotifPanel])
-
-  // Première connexion de la journée : la liste « À traiter » s'ouvre d'elle-même, une seule fois
-  // par jour et par navigateur, uniquement s'il y a quelque chose à traiter et si le « récap du
-  // matin » n'a pas été désactivé dans Paramètres > Notifications.
-  // La journée n'est marquée « vue » qu'une fois la liste restée ouverte 2 s (ou fermée par
-  // l'utilisateur) : au tout premier chargement d'un navigateur, l'app repasse par /choose-plan
-  // le temps de lire la facturation, ce qui démonte puis remonte cette barre latérale — la liste
-  // ouverte disparaissait alors avec elle et ne revenait plus de la journée.
-  const autoOpenCheckedRef = useRef(false)
-  const autoOpenedRef = useRef(false)
-
-  useEffect(() => {
-    if (autoOpenCheckedRef.current) return
-    if (!userId || todoLoading || !todo) return
-    const today = parisClock().date
-    const key = `operis_todo_autoopen:${userId}`
-    autoOpenCheckedRef.current = true
-    try {
-      if (localStorage.getItem(key) === today) return
-      // Rien à traiter à la connexion : la journée est consommée (pas d'ouverture surprise plus tard).
-      if (todo.total === 0) { localStorage.setItem(key, today); return }
-    } catch { return }
-
-    void (async () => {
-      try {
-        const token = await getAccessToken()
-        if (!token) return
-        const res = await fetch('/api/notification-settings', { headers: { Authorization: `Bearer ${token}` } })
-        const data = await res.json()
-        if (data.success && data.data?.digest_enabled === false) {
-          try { localStorage.setItem(key, today) } catch { /* ignore */ }
-          return
-        }
-      } catch { /* réglage illisible : on ouvre quand même */ }
-      autoOpenedRef.current = true
-      setPanelTab('todo')
-      setShowNotifPanel(true)
-    })()
-  }, [userId, todoLoading, todo])
-
-  useEffect(() => {
-    if (!autoOpenedRef.current || !userId) return
-    const today = parisClock().date
-    const markSeen = () => { try { localStorage.setItem(`operis_todo_autoopen:${userId}`, today) } catch { /* ignore */ } }
-    if (!showNotifPanel) { markSeen(); return }
-    const t = setTimeout(markSeen, 2000)
-    return () => clearTimeout(t)
-  }, [showNotifPanel, userId])
-
-  const handleTodoHandled = async (emailId: string) => {
-    setTodo(prev => (prev ? buildPayload(prev.items.filter(i => i.emailId !== emailId)) : prev))
-    const token = await getAccessToken()
-    if (!token) return
-    const res = await fetch('/api/priorities', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email_id: emailId, handled: true }),
-    })
-    if (!res.ok) void refetchTodoRef.current?.()
-  }
 
   // Fermer panel notifications si clic extérieur
   useEffect(() => {
@@ -612,6 +521,30 @@ export default function Sidebar() {
 
         <div style={{ width: 32, height: 1, background: 'var(--border-hi)', margin: '8px 0 12px' }} />
 
+        {/* À traiter — ouvre la fenêtre des priorités */}
+        <div className="nav-item" style={{ width: '100%', display: 'flex', justifyContent: 'center', marginBottom: 4 }}>
+          <button
+            type="button"
+            data-tour="nav-todo"
+            onClick={openTodo}
+            aria-label={todoCount > 0 ? `À traiter (${todoCount})` : 'À traiter'}
+            style={{
+              width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 11,
+              background: todoCount > 0 ? 'rgba(245,158,11,0.12)' : 'transparent',
+              border: todoCount > 0 ? '1px solid rgba(245,158,11,0.4)' : '1px solid transparent',
+              color: todoCount > 0 ? '#f59e0b' : 'var(--text-muted)', cursor: 'pointer', position: 'relative',
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20" aria-hidden><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
+            {todoCount > 0 && (
+              <span style={{ position: 'absolute', top: 6, right: 6, minWidth: 16, height: 16, borderRadius: 8, background: '#ef4444', color: '#fff', fontSize: 9, fontWeight: 700, fontFamily: 'DM Mono, monospace', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '2px solid var(--bg-card)' }}>
+                {formatBadgeCount(todoCount)}
+              </span>
+            )}
+          </button>
+          <div className="nav-tooltip">À traiter{todoCount > 0 ? ` (${todoCount})` : ''}</div>
+        </div>
+
         {/* Notifications */}
         <div style={{ position: 'relative', marginBottom: 8 }}>
           <button
@@ -654,7 +587,7 @@ export default function Sidebar() {
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Notifications</span>
-                {panelTab === 'notifs' && notifCount > 0 && (
+                {notifCount > 0 && (
                   <button
                     type="button"
                     onMouseDown={e => e.stopPropagation()}
@@ -665,24 +598,19 @@ export default function Sidebar() {
                   </button>
                 )}
               </div>
-              <PanelTabs tab={panelTab} todoCount={todo?.total ?? 0} unreadCount={notifCount} onChange={setPanelTab} />
+              {todoCount > 0 && (
+                <button type="button" onMouseDown={e => e.stopPropagation()} onClick={openTodoFromBell} style={todoBellBtnStyle}>
+                  📋 {todoCount} à traiter — ouvrir la liste
+                </button>
+              )}
               <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-                {panelTab === 'notifs' ? (
-                  <NotificationPanelContent
-                    notifList={notifList}
-                    onMarkRead={id => void handleMarkNotifRead(id)}
-                    onClosePanel={() => setShowNotifPanel(false)}
-                    onRelaunchAction={handleRelaunchAction}
-                    onOpenTodo={() => setPanelTab('todo')}
-                  />
-                ) : (
-                  <PriorityPanelContent
-                    payload={todo}
-                    loading={todoLoading}
-                    onClosePanel={() => setShowNotifPanel(false)}
-                    onHandled={id => void handleTodoHandled(id)}
-                  />
-                )}
+                <NotificationPanelContent
+                  notifList={notifList}
+                  onMarkRead={id => void handleMarkNotifRead(id)}
+                  onClosePanel={() => setShowNotifPanel(false)}
+                  onRelaunchAction={handleRelaunchAction}
+                  onOpenTodo={openTodoFromBell}
+                />
               </div>
             </div>
           )}
@@ -721,6 +649,22 @@ export default function Sidebar() {
             </Link>
           )
         })}
+        {/* À traiter mobile */}
+        <button
+          type="button"
+          className="mobile-nav-item"
+          data-tour="nav-todo"
+          aria-label={todoCount > 0 ? `À traiter (${todoCount})` : 'À traiter'}
+          onClick={() => { setShowAccountPanel(false); setShowNotifPanel(false); openTodo() }}
+          style={{ background: todoCount > 0 ? 'rgba(245,158,11,0.12)' : 'transparent', border: 'none', cursor: 'pointer', color: todoCount > 0 ? '#f59e0b' : 'var(--text-muted)' }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20" aria-hidden><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
+          {todoCount > 0 && (
+            <span style={{ position: 'absolute', top: 4, right: 2, minWidth: 14, height: 14, borderRadius: 7, background: '#ef4444', color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 2px' }}>
+              {formatBadgeCount(todoCount)}
+            </span>
+          )}
+        </button>
         {/* Notifications mobile */}
         <button
           ref={mobileNotifBellRef}
@@ -770,7 +714,7 @@ export default function Sidebar() {
             }}>
               <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>Notifications</span>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {panelTab === 'notifs' && notifCount > 0 && (
+                {notifCount > 0 && (
                   <button
                     type="button"
                     onMouseDown={e => e.stopPropagation()}
@@ -783,24 +727,19 @@ export default function Sidebar() {
                 <button type="button" aria-label="Fermer" onClick={() => setShowNotifPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 22, lineHeight: 1, cursor: 'pointer', padding: 4 }}>×</button>
               </div>
             </div>
-            <PanelTabs tab={panelTab} todoCount={todo?.total ?? 0} unreadCount={notifCount} onChange={setPanelTab} />
-            <div style={{ maxHeight: 'calc(60dvh - 44px)', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              {panelTab === 'notifs' ? (
-                <NotificationPanelContent
-                  notifList={notifList}
-                  onMarkRead={id => void handleMarkNotifRead(id)}
-                  onClosePanel={() => setShowNotifPanel(false)}
-                  onRelaunchAction={handleRelaunchAction}
-                  onOpenTodo={() => setPanelTab('todo')}
-                />
-              ) : (
-                <PriorityPanelContent
-                  payload={todo}
-                  loading={todoLoading}
-                  onClosePanel={() => setShowNotifPanel(false)}
-                  onHandled={id => void handleTodoHandled(id)}
-                />
-              )}
+            {todoCount > 0 && (
+              <button type="button" onMouseDown={e => e.stopPropagation()} onClick={openTodoFromBell} style={todoBellBtnStyle}>
+                📋 {todoCount} à traiter — ouvrir la liste
+              </button>
+            )}
+            <div style={{ maxHeight: '60dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <NotificationPanelContent
+                notifList={notifList}
+                onMarkRead={id => void handleMarkNotifRead(id)}
+                onClosePanel={() => setShowNotifPanel(false)}
+                onRelaunchAction={handleRelaunchAction}
+                onOpenTodo={openTodoFromBell}
+              />
             </div>
           </div>
         </>

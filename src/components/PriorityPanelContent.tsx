@@ -9,8 +9,6 @@ import {
   type PriorityPayload,
 } from '@/lib/priorities-rules'
 
-export type PanelTab = 'notifs' | 'todo'
-
 const KIND_ICON: Record<PriorityKind, string> = {
   quote: '💶',
   question: '❓',
@@ -35,77 +33,34 @@ function ageText(days: number): string {
 
 const eur = (n: number) => `${n.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} € HT`
 
-/** Onglets « Notifications | À traiter » en tête du panneau de la cloche. */
-export function PanelTabs({ tab, todoCount, unreadCount, onChange }: {
-  tab: PanelTab
-  todoCount: number
-  unreadCount: number
-  onChange: (t: PanelTab) => void
-}) {
-  const item = (id: PanelTab, label: string, count: number) => {
-    const active = tab === id
-    return (
-      <button
-        key={id}
-        type="button"
-        role="tab"
-        aria-selected={active}
-        onMouseDown={e => e.stopPropagation()}
-        onClick={() => onChange(id)}
-        style={{
-          flex: 1, minHeight: 44, border: 'none', cursor: 'pointer', background: 'transparent',
-          fontFamily: 'DM Sans, system-ui', fontSize: 12, fontWeight: active ? 700 : 500,
-          color: active ? 'var(--accent)' : 'var(--text-muted)',
-          borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-        }}
-      >
-        {label}
-        {count > 0 && (
-          <span style={{
-            minWidth: 18, height: 18, borderRadius: 9, padding: '0 5px', fontSize: 10, fontWeight: 700,
-            fontFamily: 'DM Mono, monospace', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            background: id === 'todo' ? '#ef4444' : 'var(--accent)', color: '#fff',
-          }}>
-            {count > 99 ? '99+' : count}
-          </span>
-        )}
-      </button>
-    )
-  }
-  return (
-    <div role="tablist" style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
-      {item('notifs', 'Récentes', unreadCount)}
-      {item('todo', 'À traiter', todoCount)}
-    </div>
-  )
-}
-
-function Row({ it, onOpenMail, onOpenTender, onHandled }: {
+function Row({ it, large, onOpenMail, onOpenTender, onHandled }: {
   it: PriorityItem
+  large: boolean
   onOpenMail: (id: string) => void
   onOpenTender: (id: string) => void
   onHandled: (id: string) => void
 }) {
   const late = it.ageDays >= 3
+  // Fenêtre (large) : texte plus grand et respiration ; petit panneau : compact.
+  const f = large ? { name: 14, subject: 13, snippet: 12, meta: 11, price: 14, btn: 12, pad: '16px 22px' } : { name: 12, subject: 12, snippet: 11, meta: 10, price: 12, btn: 11, pad: '12px 16px' }
   return (
-    <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', fontFamily: 'DM Sans, system-ui' }}>
+    <div style={{ padding: f.pad, borderBottom: '1px solid var(--border)', fontFamily: 'DM Sans, system-ui' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: f.name, fontWeight: 700, color: 'var(--text-primary)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {it.supplierName ?? it.fromName}
         </span>
         <span style={{
-          fontSize: 10, fontFamily: 'DM Mono, monospace', flexShrink: 0, fontWeight: late ? 700 : 400,
+          fontSize: f.meta, fontFamily: 'DM Mono, monospace', flexShrink: 0, fontWeight: late ? 700 : 400,
           color: late ? '#ef4444' : 'var(--text-muted)',
         }}>
           {ageText(it.ageDays)}
         </span>
       </div>
-      <div style={{ fontSize: 12, color: 'var(--text-primary)', marginTop: 2, overflowWrap: 'anywhere' }}>{it.subject}</div>
+      <div style={{ fontSize: f.subject, color: 'var(--text-primary)', marginTop: 2, overflowWrap: 'anywhere' }}>{it.subject}</div>
       {it.snippet && (
         <div style={{
-          fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4, marginTop: 2,
-          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          fontSize: f.snippet, color: 'var(--text-secondary)', lineHeight: 1.4, marginTop: 2,
+          display: '-webkit-box', WebkitLineClamp: large ? 3 : 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
         }}>
           {it.snippet}
         </div>
@@ -113,10 +68,10 @@ function Row({ it, onOpenMail, onOpenTender, onHandled }: {
       {(it.tenderTitle || it.price) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 6 }}>
           {it.tenderTitle && (
-            <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>AO · {it.tenderTitle}</span>
+            <span style={{ fontSize: f.meta, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>AO · {it.tenderTitle}</span>
           )}
           {it.price ? (
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#10b981', fontFamily: 'DM Mono, monospace' }}>
+            <span style={{ fontSize: f.price, fontWeight: 700, color: '#10b981', fontFamily: 'DM Mono, monospace' }}>
               {eur(it.price)}{it.isBestPrice ? ' · meilleur prix' : ''}
             </span>
           ) : null}
@@ -124,17 +79,17 @@ function Row({ it, onOpenMail, onOpenTender, onHandled }: {
       )}
       <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
         <button type="button" onMouseDown={e => e.stopPropagation()} onClick={() => onOpenMail(it.emailId)}
-          style={{ ...btn, border: 'none', background: '#FFB400', color: '#021246' }}>
+          style={{ ...btn, fontSize: f.btn, border: 'none', background: '#FFB400', color: '#021246' }}>
           Ouvrir le mail
         </button>
         {it.tenderId && (
           <button type="button" onMouseDown={e => e.stopPropagation()} onClick={() => onOpenTender(it.tenderId as string)}
-            style={{ ...btn, border: '1px solid var(--border-hi)', background: 'transparent', color: 'var(--text-secondary)' }}>
+            style={{ ...btn, fontSize: f.btn, border: '1px solid var(--border-hi)', background: 'transparent', color: 'var(--text-secondary)' }}>
             Voir l&apos;AO
           </button>
         )}
         <button type="button" onMouseDown={e => e.stopPropagation()} onClick={() => onHandled(it.emailId)}
-          style={{ ...btn, border: '1px solid var(--border-hi)', background: 'transparent', color: 'var(--text-secondary)' }}>
+          style={{ ...btn, fontSize: f.btn, border: '1px solid var(--border-hi)', background: 'transparent', color: 'var(--text-secondary)' }}>
           ✓ Traité
         </button>
       </div>
@@ -142,9 +97,11 @@ function Row({ it, onOpenMail, onOpenTender, onHandled }: {
   )
 }
 
-export default function PriorityPanelContent({ payload, loading, onClosePanel, onHandled }: {
+export default function PriorityPanelContent({ payload, loading, large = false, onClosePanel, onHandled }: {
   payload: PriorityPayload | null
   loading: boolean
+  /** Affichage en fenêtre (plus aéré) plutôt qu'en petit panneau. */
+  large?: boolean
   onClosePanel: () => void
   onHandled: (emailId: string) => void
 }) {
@@ -187,7 +144,7 @@ export default function PriorityPanelContent({ payload, loading, onClosePanel, o
               {KIND_ICON[kind]} {PRIORITY_KIND_LABEL[kind]} · {items.length}
             </div>
             {items.map(it => (
-              <Row key={it.emailId} it={it} onOpenMail={openMail} onOpenTender={openTender} onHandled={onHandled} />
+              <Row key={it.emailId} it={it} large={large} onOpenMail={openMail} onOpenTender={openTender} onHandled={onHandled} />
             ))}
           </section>
         )

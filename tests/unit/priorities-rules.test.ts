@@ -3,6 +3,7 @@ import {
   ageInDays,
   buildPayload,
   classifyInbound,
+  describeCounts,
   displayName,
   isAlertRecipient,
   looksLikeQuestion,
@@ -110,6 +111,14 @@ describe('buildPayload', () => {
     expect(p.items.map(i => i.emailId)).toEqual(['d', 'b', 'c', 'a'])
     expect(p.counts).toEqual({ quote: 2, question: 1, important: 1, ao_to_create: 0 })
     expect(p.total).toBe(4)
+  })
+})
+
+describe('describeCounts', () => {
+  it('accorde au singulier et au pluriel, dans l’ordre d’affichage', () => {
+    expect(describeCounts({ quote: 1, question: 1, important: 1, ao_to_create: 0 })).toBe('1 devis reçu · 1 question de fournisseur · 1 mail important')
+    expect(describeCounts({ quote: 2, question: 3, important: 2, ao_to_create: 2 })).toBe('2 devis reçus · 3 questions de fournisseurs · 2 mails importants · 2 AO à créer')
+    expect(describeCounts({ quote: 0, question: 0, important: 0, ao_to_create: 0 })).toBe('')
   })
 })
 

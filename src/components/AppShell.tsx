@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { AuthProvider } from '@/components/AuthProvider'
+import { TodoProvider } from '@/components/TodoProvider'
 import Sidebar from '@/components/Sidebar'
 import PwaInstaller from '@/components/PwaInstaller'
 import DesktopUpdateBanner from '@/components/DesktopUpdateBanner'
@@ -24,6 +25,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthProvider>
+      <TodoProvider enabled={!minimalShell}>
       {!minimalShell && <PwaInstaller />}
       <DesktopUpdateBanner />
       {minimalShell ? (
@@ -41,6 +43,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {!isBillingExemptRoute(pathname) && <ProductTour />}
         </div>
       )}
+      </TodoProvider>
     </AuthProvider>
   )
 }

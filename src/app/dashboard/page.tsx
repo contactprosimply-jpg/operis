@@ -11,6 +11,8 @@ import TenderOriginBadge from '@/components/TenderOriginBadge'
 import type { OrganizationPayload } from '@/lib/organization'
 import { getTenderCreatorLabel } from '@/lib/tender-member-label'
 import { tenderSetupUrl } from '@/lib/tender-setup-nav'
+import { useTodo } from '@/components/TodoProvider'
+import { describeCounts } from '@/lib/priorities-rules'
 
 const IconDoc = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18">
@@ -70,6 +72,7 @@ export default function DashboardPage() {
   const { userId, session } = useAuth()
   const { tenders, loading } = useTenders()
   const { show, ToastComponent } = useToast()
+  const { todo, openTodo } = useTodo()
   const [emails, setEmails] = useState<Email[]>([])
   const [quoteEmails, setQuoteEmails] = useState<Email[]>([])
   const [creatingAo, setCreatingAo] = useState<string | null>(null)
@@ -176,6 +179,32 @@ export default function DashboardPage() {
           {org?.is_owner ? ` · Vue équipe (${org.name ?? 'groupe'})` : ''}
         </p>
       </div>
+
+      {/* À traiter : bannière bien visible, ouvre la fenêtre des priorités */}
+      {todo && todo.total > 0 && (
+        <button
+          type="button"
+          onClick={openTodo}
+          data-tour="dashboard-todo"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 14, width: '100%', textAlign: 'left', cursor: 'pointer',
+            padding: '14px 16px', marginBottom: 24, borderRadius: 12, fontFamily: 'DM Sans, system-ui',
+            background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderLeft: '4px solid #f59e0b',
+            color: 'var(--text-primary)',
+          }}
+        >
+          <span style={{ fontSize: 24, lineHeight: 1 }} aria-hidden>📋</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <strong style={{ display: 'block', fontSize: 14 }}>
+              {todo.total} élément{todo.total > 1 ? 's' : ''} à traiter
+            </strong>
+            <span style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+              {describeCounts(todo.counts)}
+            </span>
+          </span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#b45309', flexShrink: 0 }}>Ouvrir la liste →</span>
+        </button>
+      )}
 
       {/* b. KPI — inchangés, en haut */}
       <div className="kpi-grid" data-tour="dashboard-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>

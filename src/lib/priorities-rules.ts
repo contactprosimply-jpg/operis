@@ -121,6 +121,21 @@ export function classifyInbound(i: ClassifyInput): PriorityKind | 'needs_body' |
   return null
 }
 
+const COUNT_LABEL: Record<PriorityKind, [string, string]> = {
+  quote: ['devis reçu', 'devis reçus'],
+  question: ['question de fournisseur', 'questions de fournisseurs'],
+  important: ['mail important', 'mails importants'],
+  ao_to_create: ['AO à créer', 'AO à créer'],
+}
+
+/** « 2 devis reçus · 1 question de fournisseur » — accordé au singulier/pluriel. */
+export function describeCounts(counts: Record<PriorityKind, number>): string {
+  return PRIORITY_KIND_ORDER
+    .filter(k => counts[k] > 0)
+    .map(k => `${counts[k]} ${COUNT_LABEL[k][counts[k] > 1 ? 1 : 0]}`)
+    .join(' · ')
+}
+
 export function emptyCounts(): Record<PriorityKind, number> {
   return { quote: 0, question: 0, important: 0, ao_to_create: 0 }
 }
