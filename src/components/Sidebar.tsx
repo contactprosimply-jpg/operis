@@ -14,6 +14,8 @@ import NotificationPanelContent, {
   formatBadgeCount,
 } from '@/components/NotificationPanelContent'
 import { OperisLogoMark } from '@/components/OperisLogoMark'
+import PriorityPanelContent, { PanelTabs, type PanelTab } from '@/components/PriorityPanelContent'
+import { buildPayload, type PriorityPayload } from '@/lib/priorities-rules'
 import { readCachedUserSettings, cacheUserSettingsLocally } from '@/lib/user-settings'
 
 const nav = [
@@ -68,6 +70,10 @@ export default function Sidebar() {
   const notifCount = notifList.filter(n => !n.is_read).length
   const markAllLockRef = useRef(0)
   const [showNotifPanel, setShowNotifPanel] = useState(false)
+  const [panelTab, setPanelTab] = useState<PanelTab>('notifs')
+  const [todo, setTodo] = useState<PriorityPayload | null>(null)
+  const [todoLoading, setTodoLoading] = useState(true)
+  const refetchTodoRef = useRef<(() => Promise<void>) | null>(null)
   const desktopNotifPanelRef = useRef<HTMLDivElement>(null)
   const mobileNotifPanelRef = useRef<HTMLDivElement>(null)
   const notifBellRef = useRef<HTMLButtonElement>(null)
@@ -222,6 +228,52 @@ export default function Sidebar() {
       clearInterval(pollIv)
     }
   }, [userId])
+
+  // « À traiter » : devis reçus, questions fournisseurs, mails importants non traités — poll 3 min
+  // (le calcul est plus lourd que les notifications) + à chaque ouverture du panneau.
+  useEffect(() => {
+    if (!userId) return
+
+    let cancelled = false
+    const POLL_MS = 180_000
+
+    const fetchTodo = async () => {
+      try {
+        const token = await getAccessToken()
+        if (!token || cancelled) return
+        const res = await fetch('/api/priorities', { headers: { Authorization: `Bearer ${token}` } })
+        const data = await res.json()
+        if (!cancelled && data.success) setTodo(data.data as PriorityPayload)
+      } catch { /* ignore — garde la dernière liste connue */ }
+      finally { if (!cancelled) setTodoLoading(false) }
+    }
+
+    refetchTodoRef.current = fetchTodo
+    void fetchTodo()
+    const pollIv = setInterval(() => { if (!cancelled) void fetchTodo() }, POLL_MS)
+
+    return () => {
+      cancelled = true
+      clearInterval(pollIv)
+      refetchTodoRef.current = null
+    }
+  }, [userId])
+
+  useEffect(() => {
+    if (showNotifPanel) void refetchTodoRef.current?.()
+  }, [showNotifPanel])
+
+  const handleTodoHandled = async (emailId: string) => {
+    setTodo(prev => (prev ? buildPayload(prev.items.filter(i => i.emailId !== emailId)) : prev))
+    const token = await getAccessToken()
+    if (!token) return
+    const res = await fetch('/api/priorities', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email_id: emailId, handled: true }),
+    })
+    if (!res.ok) void refetchTodoRef.current?.()
+  }
 
   // Fermer panel notifications si clic extérieur
   useEffect(() => {
@@ -554,7 +606,7 @@ export default function Sidebar() {
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Notifications</span>
-                {notifCount > 0 && (
+                {panelTab === 'notifs' && notifCount > 0 && (
                   <button
                     type="button"
                     onMouseDown={e => e.stopPropagation()}
@@ -565,13 +617,24 @@ export default function Sidebar() {
                   </button>
                 )}
               </div>
-              <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                <NotificationPanelContent
-                  notifList={notifList}
-                  onMarkRead={id => void handleMarkNotifRead(id)}
-                  onClosePanel={() => setShowNotifPanel(false)}
-                  onRelaunchAction={handleRelaunchAction}
-                />
+              <PanelTabs tab={panelTab} todoCount={todo?.total ?? 0} unreadCount={notifCount} onChange={setPanelTab} />
+              <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+                {panelTab === 'notifs' ? (
+                  <NotificationPanelContent
+                    notifList={notifList}
+                    onMarkRead={id => void handleMarkNotifRead(id)}
+                    onClosePanel={() => setShowNotifPanel(false)}
+                    onRelaunchAction={handleRelaunchAction}
+                    onOpenTodo={() => setPanelTab('todo')}
+                  />
+                ) : (
+                  <PriorityPanelContent
+                    payload={todo}
+                    loading={todoLoading}
+                    onClosePanel={() => setShowNotifPanel(false)}
+                    onHandled={id => void handleTodoHandled(id)}
+                  />
+                )}
               </div>
             </div>
           )}
@@ -659,7 +722,7 @@ export default function Sidebar() {
             }}>
               <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>Notifications</span>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {notifCount > 0 && (
+                {panelTab === 'notifs' && notifCount > 0 && (
                   <button
                     type="button"
                     onMouseDown={e => e.stopPropagation()}
@@ -669,16 +732,27 @@ export default function Sidebar() {
                     Tout marquer lu
                   </button>
                 )}
-                <button type="button" onClick={() => setShowNotifPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 22, lineHeight: 1, cursor: 'pointer', padding: 4 }}>×</button>
+                <button type="button" aria-label="Fermer" onClick={() => setShowNotifPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 22, lineHeight: 1, cursor: 'pointer', padding: 4 }}>×</button>
               </div>
             </div>
-            <div style={{ maxHeight: '60dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              <NotificationPanelContent
-                notifList={notifList}
-                onMarkRead={id => void handleMarkNotifRead(id)}
-                onClosePanel={() => setShowNotifPanel(false)}
-                onRelaunchAction={handleRelaunchAction}
-              />
+            <PanelTabs tab={panelTab} todoCount={todo?.total ?? 0} unreadCount={notifCount} onChange={setPanelTab} />
+            <div style={{ maxHeight: 'calc(60dvh - 44px)', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              {panelTab === 'notifs' ? (
+                <NotificationPanelContent
+                  notifList={notifList}
+                  onMarkRead={id => void handleMarkNotifRead(id)}
+                  onClosePanel={() => setShowNotifPanel(false)}
+                  onRelaunchAction={handleRelaunchAction}
+                  onOpenTodo={() => setPanelTab('todo')}
+                />
+              ) : (
+                <PriorityPanelContent
+                  payload={todo}
+                  loading={todoLoading}
+                  onClosePanel={() => setShowNotifPanel(false)}
+                  onHandled={id => void handleTodoHandled(id)}
+                />
+              )}
             </div>
           </div>
         </>

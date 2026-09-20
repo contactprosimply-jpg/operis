@@ -19,6 +19,7 @@ import { extractEmailAddress } from '@/lib/mail-attachments'
 import { isFirstTimeContact, queueVerificationChallenge } from '@/lib/mail-human-verification'
 import { operisFooter } from '@/lib/email-compose'
 import { MAX_UPLOAD_BYTES, requestBodyTooLarge, tooLargeResponse } from '@/lib/upload-limits'
+import { markEmailHandledQuietly } from '@/lib/priorities'
 export const maxDuration = 30
 
 /** Si le destinataire est un fournisseur en attente sur cet AO, marque la consultation "envoyée"
@@ -293,6 +294,9 @@ export async function POST(req: NextRequest) {
       references: inReplyToHeader,
       attachments: mailAttachments.length > 0 ? mailAttachments : undefined,
     })
+
+    // Répondre à un mail le sort de la liste « À traiter ».
+    await markEmailHandledQuietly(db, userId, resolvedReplyId)
 
     const sentAt = new Date().toISOString()
     const messageId = normalizeMessageId(info.messageId, `sent-${userId}-${Date.now()}`)

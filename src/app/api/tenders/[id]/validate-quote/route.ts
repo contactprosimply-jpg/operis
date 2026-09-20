@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
+import { markEmailHandledQuietly } from '@/lib/priorities'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getUserFromRequest(req)
@@ -36,6 +37,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .single()
 
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
+
+  // Valider un devis traite le mail dont il provient (il sort de la liste « À traiter »).
+  await markEmailHandledQuietly(db, userId, (quote as { source_email_id?: string | null }).source_email_id)
 
   // Update tender status to won
   await db.from('tenders').update({ status: 'gagne' }).eq('id', id)

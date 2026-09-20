@@ -30,6 +30,7 @@ const NOTIF_ICONS: Record<string, string> = {
   new_ao: '📄',
   quote_received: '✅',
   relaunch_confirm: '📤',
+  todo_recap: '📋',
 }
 
 function timeAgo(dateStr: string): string {
@@ -56,10 +57,12 @@ function NotifRow({
   n,
   onMarkRead,
   onClosePanel,
+  onOpenTodo,
 }: {
   n: AppNotification
   onMarkRead: (id: string) => void
   onClosePanel: () => void
+  onOpenTodo?: () => void
 }) {
   const router = useRouter()
   const [preview, setPreview] = useState<MailPreviewData | null>(null)
@@ -166,6 +169,16 @@ function NotifRow({
                 </button>
               </div>
             )}
+            {n.type === 'todo_recap' && onOpenTodo && (
+              <button
+                type="button"
+                onMouseDown={e => e.stopPropagation()}
+                onClick={e => { e.stopPropagation(); if (!n.is_read) onMarkRead(n.id); onOpenTodo() }}
+                style={{ ...actionBtnBase, marginTop: 10, border: 'none', background: '#FFB400', color: '#021246' }}
+              >
+                Voir la liste à traiter
+              </button>
+            )}
             {!hasEmail && n.tender_id && (
               <button
                 type="button"
@@ -208,11 +221,13 @@ export default function NotificationPanelContent({
   onMarkRead,
   onClosePanel,
   onRelaunchAction,
+  onOpenTodo,
 }: {
   notifList: AppNotification[]
   onMarkRead: (id: string) => void
   onClosePanel: () => void
   onRelaunchAction: (id: string, action: 'send' | 'cancel') => Promise<void>
+  onOpenTodo?: () => void
 }) {
   const importantNotifs = notifList.filter(n => n.priority === 'important' && n.type !== 'relaunch_confirm')
   const otherNotifs = notifList.filter(n => n.priority !== 'important')
@@ -243,7 +258,7 @@ export default function NotificationPanelContent({
             Important
           </div>
           {importantNotifs.map(n => (
-            <NotifRow key={n.id} n={n} onMarkRead={onMarkRead} onClosePanel={onClosePanel} />
+            <NotifRow key={n.id} n={n} onMarkRead={onMarkRead} onClosePanel={onClosePanel} onOpenTodo={onOpenTodo} />
           ))}
         </>
       )}
