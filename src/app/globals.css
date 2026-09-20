@@ -480,8 +480,8 @@ a, button, input, select, textarea, label, summary, [role="button"], [role="tab"
   }
 }
 
-/* Libellés en 8-10px (DM Mono) illisibles sur téléphone : plancher à 11px, hors pastilles de badge. */
-@media (max-width: 767px) {
+/* Libellés en 8-10px (DM Mono) illisibles sur téléphone/tablette : plancher à 11px, hors pastilles de badge. */
+@media (max-width: 767px), (pointer: coarse) {
   [style*="font-size:10px"]:not(.mobile-nav-item *):not(.nav-item *),
   [style*="font-size: 10px"]:not(.mobile-nav-item *):not(.nav-item *),
   [style*="font-size:9px"]:not(.mobile-nav-item *):not(.nav-item *),
@@ -577,9 +577,13 @@ body:not(.app-shell-mode) { overflow-x: clip; }
 
 /* ── Fournisseurs ── */
 .suppliers-mobile-list { display: none; }
-@media (max-width: 767px) {
-  .suppliers-mobile-list { display: flex; flex-direction: column; gap: 10px; }
+.suppliers-table-view { overflow-x: auto !important; }
+@media (max-width: 1024px) {
+  .suppliers-mobile-list { display: grid; grid-template-columns: 1fr; gap: 10px; }
   .suppliers-table-view { display: none; }
+}
+@media (min-width: 700px) and (max-width: 1024px) {
+  .suppliers-mobile-list { grid-template-columns: 1fr 1fr; align-items: start; }
 }
 /* Sans souris, pas de survol : les actions de ligne ne doivent jamais rester invisibles. */
 @media (hover: none) {
