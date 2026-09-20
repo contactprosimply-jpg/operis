@@ -55,7 +55,9 @@ export function tenderListRowStyle(status: TenderStatus): React.CSSProperties {
     borderLeft: `${s.borderWidth}px solid ${s.border}`,
     background: s.bg,
     transition: 'background 0.15s, filter 0.15s',
-    ...(s.urgent ? { animation: 'urgenceRowPulse 2.5s ease-in-out infinite' } : {}),
+    // Les deux animations : `animation` en ligne écrasait le fadeUp de .animate-fade (opacity:0 au départ)
+    // et la ligne d'un AO en urgence restait invisible pour toujours.
+    ...(s.urgent ? { animation: 'fadeUp 0.35s ease forwards, urgenceRowPulse 2.5s ease-in-out infinite' } : {}),
   }
 }
 
