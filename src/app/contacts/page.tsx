@@ -46,6 +46,8 @@ function ContactCard({
         </div>
         <button
           type="button"
+          className="tap-min"
+          aria-label={contact.is_favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
           disabled={toggling === contact.email}
           title={contact.is_favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
           onClick={() => onToggleFavorite(contact.email, !contact.is_favorite)}
@@ -165,6 +167,8 @@ function ContactRow({
       </div>
       <button
         type="button"
+        className="tap-min"
+        aria-label={contact.is_favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
         disabled={toggling === contact.email}
         title={contact.is_favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
         onClick={() => onToggleFavorite(contact.email, !contact.is_favorite)}

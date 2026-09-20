@@ -232,7 +232,7 @@ function SignupForm() {
           </form>
           <div style={{ marginTop: 20, textAlign: 'center' }}>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Déjà client ? </span>
-            <a href={loginHref} style={{ fontSize: 12, color: '#021246', textDecoration: 'none', fontWeight: 600 }}>Se connecter</a>
+            <a href={loginHref} style={{ fontSize: 12, color: '#021246', textDecoration: 'none', fontWeight: 600, display: 'inline-block', padding: '12px 0' }}>Se connecter</a>
           </div>
         </div>
       </div>

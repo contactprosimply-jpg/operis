@@ -281,7 +281,7 @@ function ComptePageContent() {
       {ToastComponent}
       <div style={{ marginBottom: 24 }}>
         <Link href="/dashboard" style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 14,
+          display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 14, minHeight: 44,
           fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', textDecoration: 'none',
         }}>
           ← Retour à mon espace

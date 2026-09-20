@@ -14,6 +14,7 @@ function Logo({ size = 36 }: { size?: number }) {
 function NavLink({ href, children, active }: { href: string; children: React.ReactNode; active?: boolean }) {
   return (
     <Link href={href} style={{
+      display: 'inline-flex', alignItems: 'center', minHeight: 44,
       fontSize: 13, fontWeight: active ? 600 : 500,
       color: active ? '#021246' : 'var(--text-secondary)',
       textDecoration: 'none',
@@ -26,7 +27,7 @@ function NavLink({ href, children, active }: { href: string; children: React.Rea
 function BtnOutline({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link href={href} style={{
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minHeight: 44,
       padding: '9px 16px', borderRadius: 9, fontSize: 13, fontWeight: 600,
       border: '1px solid var(--border-hi)', color: 'var(--text-secondary)',
       textDecoration: 'none', fontFamily: 'DM Sans, system-ui',
@@ -39,7 +40,7 @@ function BtnOutline({ href, children }: { href: string; children: React.ReactNod
 function BtnPrimary({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link href={href} style={{
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minHeight: 44,
       padding: '9px 16px', borderRadius: 9, fontSize: 13, fontWeight: 600,
       background: '#021246', color: '#fff', textDecoration: 'none',
       fontFamily: 'DM Sans, system-ui',
@@ -71,19 +72,19 @@ export default function WebsiteNav() {
         maxWidth: 1100, margin: '0 auto', padding: '14px 24px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
       }}>
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none' }}>
+        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, textDecoration: 'none' }}>
           <Logo />
           <span style={{ fontSize: 18, fontWeight: 700, color: '#021246' }}>Operis</span>
         </Link>
 
-        <nav style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+        <nav style={{ display: 'flex', alignItems: 'center', gap: '0 18px', flexWrap: 'wrap' }}>
           <NavLink href="/pricing" active={pathname === '/pricing'}>Tarifs</NavLink>
           {session ? (
             <>
               <NavLink href="/compte" active={pathname === '/compte'}>Mon compte</NavLink>
               <NavLink href="/telechargement" active={pathname === '/telechargement'}>Téléchargement</NavLink>
               <button type="button" onClick={() => void logout()} style={{
-                background: 'none', border: 'none', cursor: 'pointer',
+                background: 'none', border: 'none', cursor: 'pointer', minHeight: 44,
                 fontSize: 13, color: 'var(--text-muted)', fontFamily: 'DM Sans, system-ui',
               }}>
                 Déconnexion

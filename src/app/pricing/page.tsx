@@ -51,22 +51,23 @@ export default function PricingPage() {
         justifyContent: 'space-between',
         gap: 16,
       }}>
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'var(--text-primary)' }}>
+        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 44, textDecoration: 'none', color: 'var(--text-primary)' }}>
           <OperisLogoMark size={36} />
           <span style={{ fontWeight: 700, fontSize: 16 }}>Operis</span>
         </Link>
         <div style={{ display: 'flex', gap: 10 }}>
           {isLoggedIn ? (
-            <Link href="/dashboard" style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>
+            <Link href="/dashboard" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, fontSize: 13, color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>
               Mon espace →
             </Link>
           ) : (
             <>
-              <Link href="/login?redirect=/pricing" style={{ fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none' }}>
+              <Link href="/login?redirect=/pricing" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, fontSize: 13, color: 'var(--text-secondary)', textDecoration: 'none' }}>
                 Connexion
               </Link>
               <Link href="/register?redirect=/pricing" style={{
                 fontSize: 13, color: '#fff', background: 'var(--gradient-primary)',
+                display: 'inline-flex', alignItems: 'center', minHeight: 44,
                 padding: '8px 14px', borderRadius: 8, fontWeight: 600, textDecoration: 'none',
               }}>
                 Créer un compte

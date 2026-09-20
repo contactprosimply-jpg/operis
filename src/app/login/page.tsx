@@ -134,7 +134,7 @@ function LoginForm() {
           </form>
           <div style={{ marginTop: 20, textAlign: 'center' }}>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Pas encore de compte ? </span>
-            <a href={`/signup${searchParams.get('redirect') ? `?redirect=${encodeURIComponent(searchParams.get('redirect')!)}` : ''}`} style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Créer un compte</a>
+            <a href={`/signup${searchParams.get('redirect') ? `?redirect=${encodeURIComponent(searchParams.get('redirect')!)}` : ''}`} style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600, display: 'inline-block', padding: '12px 0' }}>Créer un compte</a>
           </div>
         </div>
       </div>

@@ -414,7 +414,7 @@ function SettingsPageContent() {
       <div style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
         {TABS.map(t => (
           <button key={t.id} data-tour={t.id === 'messagerie' ? 'settings-messagerie' : undefined} onClick={() => setTab(t.id)} style={{
-            padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer',
+            padding: '8px 16px', minHeight: 44, border: 'none', background: 'transparent', cursor: 'pointer',
             fontSize: 13, fontWeight: tab === t.id ? 600 : 400,
             color: tab === t.id ? 'var(--accent)' : 'var(--text-muted)',
             borderBottom: tab === t.id ? '2px solid var(--accent)' : '2px solid transparent',

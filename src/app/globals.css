@@ -574,3 +574,21 @@ body:not(.app-shell-mode) { overflow-x: clip; }
   .page-toolbar-tabs { flex: 1 1 100%; }
   .page-toolbar-actions { width: 100%; justify-content: space-between; }
 }
+
+/* ── Fournisseurs ── */
+.suppliers-mobile-list { display: none; }
+@media (max-width: 767px) {
+  .suppliers-mobile-list { display: flex; flex-direction: column; gap: 10px; }
+  .suppliers-table-view { display: none; }
+}
+/* Sans souris, pas de survol : les actions de ligne ne doivent jamais rester invisibles. */
+@media (hover: none) {
+  .row-actions { opacity: 1 !important; }
+}
+
+/* Cartes KPI en 2 colonnes : le libellé ne doit pas chevaucher l'icône (ex. « TAUX RÉPONSE » à 360px). */
+@media (max-width: 767px) {
+  .kpi-card > div:first-child { gap: 8px; }
+  .kpi-card > div:first-child > div:first-child { flex-shrink: 0; width: 34px !important; height: 34px !important; }
+  .kpi-card > div:first-child > div:last-child { min-width: 0; line-height: 1.3; letter-spacing: 0.03em !important; overflow-wrap: anywhere; }
+}

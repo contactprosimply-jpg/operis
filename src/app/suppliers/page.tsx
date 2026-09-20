@@ -5,6 +5,17 @@ import { useSuppliers } from '@/hooks'
 import { Button, Modal, Field, Spinner, useToast } from '@/components/ui'
 import { authFetch } from '@/lib/auth-client'
 
+const SUPPLIER_FIELDS: [string, string][] = [
+  ['name', 'Nom'],
+  ['email', 'Email'],
+  ['additionalEmails', 'Emails secondaires'],
+  ['phone', 'Téléphone'],
+  ['specialty', 'Spécialité'],
+  ['country', 'Pays'],
+  ['language', 'Langue'],
+  ['notes', 'Notes'],
+]
+
 export default function SuppliersPage() {
   const { suppliers, loading, create, remove, refetch } = useSuppliers()
   const { show, ToastComponent } = useToast()
@@ -93,7 +104,68 @@ export default function SuppliersPage() {
         onBlur={e => (e.target as HTMLInputElement).style.borderColor = 'var(--border)'}
       />
 
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+      {/* Téléphone : cartes (le tableau à 9 colonnes était rogné, actions et téléphone inaccessibles). */}
+      <div className="suppliers-mobile-list">
+        {filtered.map((s: any) => {
+          const isEditing = editingId === s.id
+          const meta = [s.specialty, s.country, s.language].filter(Boolean).join(' · ')
+          return (
+            <div key={s.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
+              {isEditing ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {SUPPLIER_FIELDS.map(([field, label]) => (
+                    <label key={field} style={{ display: 'block' }}>
+                      <span style={{ display: 'block', fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</span>
+                      <input
+                        value={editForm[field] ?? ''}
+                        onChange={e => setEditForm((f: any) => ({ ...f, [field]: e.target.value }))}
+                        placeholder={field === 'additionalEmails' ? 'email1@x.com, email2@x.com' : undefined}
+                        inputMode={field === 'phone' ? 'tel' : field === 'email' || field === 'additionalEmails' ? 'email' : undefined}
+                        autoCapitalize="none"
+                        style={{ ...inputStyle(true), padding: '10px 12px', minHeight: 44 }}
+                      />
+                    </label>
+                  ))}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <Button variant="success" loading={saving} onClick={() => saveEdit(s.id)} style={{ flex: 1, justifyContent: 'center' }}>Sauvegarder</Button>
+                    <Button variant="ghost" onClick={() => setEditingId(null)} style={{ flex: 1, justifyContent: 'center' }}>Annuler</Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', overflowWrap: 'anywhere' }}>{s.name}</div>
+                  <a href={`mailto:${s.email}`} style={{ display: 'block', marginTop: 4, fontSize: 12, fontFamily: 'DM Mono, monospace', color: 'var(--accent)', textDecoration: 'none', overflowWrap: 'anywhere', padding: '6px 0' }}>{s.email}</a>
+                  {(s.additional_emails ?? []).length > 0 && (
+                    <div style={{ fontSize: 12, fontFamily: 'DM Mono, monospace', color: 'var(--text-secondary)', overflowWrap: 'anywhere' }}>{(s.additional_emails ?? []).join(', ')}</div>
+                  )}
+                  {s.phone && (
+                    <a href={`tel:${String(s.phone).replace(/\s+/g, '')}`} style={{ display: 'inline-block', marginTop: 2, fontSize: 13, fontFamily: 'DM Mono, monospace', color: 'var(--text-primary)', textDecoration: 'none', padding: '6px 0' }}>📞 {s.phone}</a>
+                  )}
+                  {meta && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{meta}</div>}
+                  {s.notes && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6, overflowWrap: 'anywhere' }}>{s.notes}</div>}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                    <Button variant="ghost" onClick={() => startEdit(s)} style={{ flex: 1, justifyContent: 'center' }}>Modifier</Button>
+                    <Button
+                      variant="danger"
+                      onClick={() => { if (confirm(`Supprimer ${s.name} ?`)) remove(s.id).then((res: any) => { if (res.success) show(`${s.name} supprimé`); else show(`Erreur : ${res.error}`) }) }}
+                      style={{ flex: 1, justifyContent: 'center' }}
+                    >
+                      Supprimer
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )
+        })}
+        {filtered.length === 0 && (
+          <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+            {search ? 'Aucun résultat' : 'Aucun fournisseur — appuyez sur « + Ajouter »'}
+          </div>
+        )}
+      </div>
+
+      <div className="suppliers-table-view" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
