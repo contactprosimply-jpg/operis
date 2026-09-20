@@ -116,10 +116,11 @@ export function TableSkeleton({ rows = 5, cols = 6 }: { rows?: number; cols?: nu
 }
 
 // ── CARD ─────────────────────────────────────────────────────
-export function Card({ children, style = {}, hover = true }: { children: ReactNode; style?: React.CSSProperties; hover?: boolean }) {
+export function Card({ children, style = {}, hover = true, className }: { children: ReactNode; style?: React.CSSProperties; hover?: boolean; className?: string }) {
   const [hov, setHov] = useState(false)
   return (
     <div
+      className={className}
       onMouseEnter={() => hover && setHov(true)}
       onMouseLeave={() => hover && setHov(false)}
       style={{
@@ -165,7 +166,7 @@ export function Button({
   }
   return (
     <button
-      type={type} onClick={onClick} disabled={loading || disabled} className={className}
+      type={type} onClick={onClick} disabled={loading || disabled} className={`op-btn ${className}`.trim()}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         padding: '8px 16px', borderRadius: 9,
@@ -401,7 +402,7 @@ export function KpiCard({ label, value, delta, deltaVariant = 'success', icon, c
   const deltaColor = { success: '#34d399', warn: '#fbbf24', danger: '#f87171' }
   return (
     <div
-      className="animate-fade"
+      className="animate-fade kpi-card"
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{

@@ -1,8 +1,9 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import AppShell from '@/components/AppShell'
 import ThemeBootstrap from '@/components/ThemeBootstrap'
 import { siteUrl } from '@/lib/site-url'
+import { themeInitScript } from '@/lib/theme'
 
 const publicSiteUrl = siteUrl()
 
@@ -15,7 +16,9 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: 'Operis',
-    statusBarStyle: 'black-translucent',
+    // « default » : barre d'état claire (texte sombre), lisible avec le thème clair par défaut.
+    // black-translucent rendait l'heure/la batterie blanches sur fond clair sur iPhone installé.
+    statusBarStyle: 'default',
   },
   formatDetection: { telephone: false },
   icons: { icon: '/favicon.svg', apple: '/apple-icon' },
@@ -34,14 +37,22 @@ export const metadata: Metadata = {
   },
 }
 
+// Le zoom reste autorisé (WCAG 1.4.4) : l'ancien maximum-scale=1 le bloquait sur Android.
+// viewportFit=cover expose les safe-area (encoche, barre de geste) déjà gérées dans globals.css.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr">
+    <html lang="fr" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-        <meta name="theme-color" content="#080d18" />
+        <meta name="theme-color" content="#f8fafc" />
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript() }} />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <link rel="manifest" href="/manifest.webmanifest" />

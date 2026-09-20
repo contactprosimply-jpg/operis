@@ -375,7 +375,9 @@ body.app-shell-mode {
   .kpi-grid { grid-template-columns: repeat(2, 1fr) !important; }
 }
 
-@media (max-width: 420px) {
+/* 2 colonnes conservées sur téléphone (4 cartes = 2 écrans de scroll en 1 colonne) ; on ne
+   passe à 1 colonne que sur les écrans vraiment étroits (< 340px). */
+@media (max-width: 339px) {
   .kpi-grid { grid-template-columns: 1fr !important; }
 }
 
@@ -448,5 +450,82 @@ body.app-shell-mode {
 
   .page-content {
     padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ═══ Optimisation mobile (iOS Safari / Android Chrome) ═══ */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Supprime le délai de 300 ms et le zoom au double-tap sur les contrôles (le pincement reste possible). */
+a, button, input, select, textarea, label, summary, [role="button"], [role="tab"] {
+  touch-action: manipulation;
+}
+
+@media (pointer: coarse) {
+  a, button, summary, [role="button"], [role="tab"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* iOS zoome la page dès qu'un champ de moins de 16px prend le focus (et ne dézoome pas seul). */
+@media (max-width: 767px), (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+  select,
+  textarea,
+  [contenteditable="true"] {
+    font-size: 16px !important;
+  }
+}
+
+/* Libellés en 8-10px (DM Mono) illisibles sur téléphone : plancher à 11px, hors pastilles de badge. */
+@media (max-width: 767px) {
+  [style*="font-size:10px"]:not(.mobile-nav-item *):not(.nav-item *),
+  [style*="font-size: 10px"]:not(.mobile-nav-item *):not(.nav-item *),
+  [style*="font-size:9px"]:not(.mobile-nav-item *):not(.nav-item *),
+  [style*="font-size: 9px"]:not(.mobile-nav-item *):not(.nav-item *) {
+    font-size: 11px !important;
+  }
+}
+
+/* Cibles tactiles : 44px recommandés (Apple HIG) / 48dp (Material). */
+@media (pointer: coarse) {
+  .modal-close { width: 44px; height: 44px; }
+  .op-btn { min-height: 40px; }
+  /* Agrandit la zone de tap sans toucher à la mise en page (l'élément doit être positionnable). */
+  .tap-target { position: relative; }
+  .tap-target::after { content: ''; position: absolute; inset: -10px; }
+  .tap-min { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+}
+
+@media (max-width: 767px) {
+  .kpi-grid { gap: 10px; }
+  .kpi-card { padding: 14px 14px 12px !important; }
+}
+
+/* Pages « site » du mode installé : le contenu ne doit pas passer sous la barre d'état. */
+@media (display-mode: standalone) {
+  body:not(.app-shell-mode) { padding-top: env(safe-area-inset-top, 0px); }
+}
+
+/* Filet de sécurité : jamais de scroll horizontal de la page (les tableaux gardent leur propre scroll). */
+body:not(.app-shell-mode) { overflow-x: clip; }
+
+/* Bannière d'installation PWA : bulle en bas à droite sur desktop, bandeau au-dessus de la barre de nav sur mobile. */
+.pwa-banner {
+  position: fixed;
+  right: 20px;
+  bottom: 80px;
+  z-index: 150;
+  max-width: 320px;
+}
+@media (max-width: 1024px) {
+  .pwa-banner {
+    left: 12px;
+    right: 12px;
+    max-width: none;
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   }
 }

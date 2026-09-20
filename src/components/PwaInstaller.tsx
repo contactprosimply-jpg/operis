@@ -8,6 +8,8 @@ type BeforeInstallPromptEvent = Event & {
 }
 
 const DISMISS_KEY = 'operis_pwa_install_dismissed'
+// Sur téléphone la bannière recouvrait le contenu dès l'arrivée : on la montre après quelques secondes d'usage.
+const SHOW_DELAY_MS = 20_000
 
 export default function PwaInstaller() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
@@ -15,6 +17,7 @@ export default function PwaInstaller() {
   const [isStandalone, setIsStandalone] = useState(false)
   const [isIos, setIsIos] = useState(false)
   const [dismissed, setDismissed] = useState(false)
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -41,7 +44,9 @@ export default function PwaInstaller() {
 
     window.addEventListener('beforeinstallprompt', onInstallable)
     window.addEventListener('appinstalled', onInstalled)
+    const delay = setTimeout(() => setReady(true), SHOW_DELAY_MS)
     return () => {
+      clearTimeout(delay)
       window.removeEventListener('beforeinstallprompt', onInstallable)
       window.removeEventListener('appinstalled', onInstalled)
     }
@@ -63,13 +68,12 @@ export default function PwaInstaller() {
     }
   }
 
-  if (isStandalone || installed || dismissed) return null
+  if (!ready || isStandalone || installed || dismissed) return null
   if (!installEvent && !isIos) return null
 
   return (
-    <div style={{
-      position: 'fixed', bottom: 80, right: 20, zIndex: 150,
-      maxWidth: 320, background: 'var(--bg-card)',
+    <div role="dialog" aria-label="Installer Operis" className="pwa-banner" style={{
+      background: 'var(--bg-card)',
       border: '1px solid var(--border-hi)', borderRadius: 12,
       padding: '14px 16px 14px 14px', boxShadow: 'var(--shadow-md)',
       animation: 'fadeUp 0.35s ease',
@@ -81,10 +85,10 @@ export default function PwaInstaller() {
         title="Fermer"
         style={{
           position: 'absolute',
-          top: 8,
-          right: 8,
-          width: 28,
-          height: 28,
+          top: 4,
+          right: 4,
+          width: 44,
+          height: 44,
           border: '1px solid var(--border-hi)',
           borderRadius: 8,
           background: 'var(--bg-secondary)',
@@ -107,7 +111,9 @@ export default function PwaInstaller() {
       <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 12 }}>
         {isIos
           ? 'Sur iPhone : bouton Partager → « Sur l\'écran d\'accueil » pour utiliser Operis comme une application.'
-          : 'Installez Operis sur votre PC pour l\'ouvrir comme une application (sans barre du navigateur).'}
+          : /android/i.test(navigator.userAgent)
+            ? 'Ajoutez Operis à votre écran d\'accueil pour l\'ouvrir comme une application, en plein écran.'
+            : 'Installez Operis sur votre PC pour l\'ouvrir comme une application (sans barre du navigateur).'}
       </div>
       {!isIos && installEvent && (
         <button
@@ -115,7 +121,7 @@ export default function PwaInstaller() {
           onClick={handleInstall}
           style={{
             background: 'var(--gradient-primary)', color: '#fff', border: 'none',
-            borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600,
+            borderRadius: 8, padding: '11px 16px', fontSize: 13, fontWeight: 600,
             cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
             boxShadow: 'var(--shadow-glow)',
           }}

@@ -83,3 +83,24 @@ export function loadStoredTheme() {
     accent: localStorage.getItem('operis_accent') ?? DEFAULT_ACCENT,
   }
 }
+
+/**
+ * Script inline exécuté avant le premier rendu : applique le thème mémorisé sans le flash
+ * sombre → clair qu'on avait en attendant l'hydratation (ThemeBootstrap ne tourne qu'après).
+ * Doit rester aligné sur applyTheme ci-dessus.
+ */
+export function themeInitScript(): string {
+  const themes = Object.fromEntries(THEMES.map(t => [t.id, { light: t.light, vars: t.vars }]))
+  return `(function(){try{var T=${JSON.stringify(themes)};var D='${DEFAULT_THEME_ID}';`
+    + `var id=localStorage.getItem('operis_theme')||D;var a=localStorage.getItem('operis_accent')||'${DEFAULT_ACCENT}';`
+    + `var t=T[id]||T[D];var s=document.documentElement.style;for(var k in t.vars)s.setProperty(k,t.vars[k]);`
+    + `s.setProperty('--accent',a);s.setProperty('--accent-soft',a+'18');s.setProperty('--accent-2',a);`
+    + `var g='linear-gradient(135deg, '+a+' 0%, #6366f1 100%)';s.setProperty('--gradient-primary',g);s.setProperty('--gradient-logo',g);`
+    + `s.setProperty('--border',t.light?'rgba(15,23,42,0.08)':'rgba(148,163,184,0.1)');`
+    + `s.setProperty('--border-hi',t.light?'rgba(15,23,42,0.14)':'rgba(148,163,184,0.18)');`
+    + `s.setProperty('--success-soft',t.light?'rgba(16,185,129,0.12)':'rgba(16,185,129,0.1)');`
+    + `s.setProperty('--warn-soft',t.light?'rgba(245,158,11,0.12)':'rgba(245,158,11,0.1)');`
+    + `s.setProperty('--danger-soft','rgba(239,68,68,0.1)');`
+    + `var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',t.light?'#f8fafc':'#080d18')`
+    + `}catch(e){}})();`
+}
