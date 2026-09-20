@@ -15,7 +15,7 @@ import NotificationPanelContent, {
 } from '@/components/NotificationPanelContent'
 import { OperisLogoMark } from '@/components/OperisLogoMark'
 import PriorityPanelContent, { PanelTabs, type PanelTab } from '@/components/PriorityPanelContent'
-import { buildPayload, type PriorityPayload } from '@/lib/priorities-rules'
+import { buildPayload, parisClock, type PriorityPayload } from '@/lib/priorities-rules'
 import { readCachedUserSettings, cacheUserSettingsLocally } from '@/lib/user-settings'
 
 const nav = [
@@ -262,6 +262,54 @@ export default function Sidebar() {
   useEffect(() => {
     if (showNotifPanel) void refetchTodoRef.current?.()
   }, [showNotifPanel])
+
+  // Première connexion de la journée : la liste « À traiter » s'ouvre d'elle-même, une seule fois
+  // par jour et par navigateur, uniquement s'il y a quelque chose à traiter et si le « récap du
+  // matin » n'a pas été désactivé dans Paramètres > Notifications.
+  // La journée n'est marquée « vue » qu'une fois la liste restée ouverte 2 s (ou fermée par
+  // l'utilisateur) : au tout premier chargement d'un navigateur, l'app repasse par /choose-plan
+  // le temps de lire la facturation, ce qui démonte puis remonte cette barre latérale — la liste
+  // ouverte disparaissait alors avec elle et ne revenait plus de la journée.
+  const autoOpenCheckedRef = useRef(false)
+  const autoOpenedRef = useRef(false)
+
+  useEffect(() => {
+    if (autoOpenCheckedRef.current) return
+    if (!userId || todoLoading || !todo) return
+    const today = parisClock().date
+    const key = `operis_todo_autoopen:${userId}`
+    autoOpenCheckedRef.current = true
+    try {
+      if (localStorage.getItem(key) === today) return
+      // Rien à traiter à la connexion : la journée est consommée (pas d'ouverture surprise plus tard).
+      if (todo.total === 0) { localStorage.setItem(key, today); return }
+    } catch { return }
+
+    void (async () => {
+      try {
+        const token = await getAccessToken()
+        if (!token) return
+        const res = await fetch('/api/notification-settings', { headers: { Authorization: `Bearer ${token}` } })
+        const data = await res.json()
+        if (data.success && data.data?.digest_enabled === false) {
+          try { localStorage.setItem(key, today) } catch { /* ignore */ }
+          return
+        }
+      } catch { /* réglage illisible : on ouvre quand même */ }
+      autoOpenedRef.current = true
+      setPanelTab('todo')
+      setShowNotifPanel(true)
+    })()
+  }, [userId, todoLoading, todo])
+
+  useEffect(() => {
+    if (!autoOpenedRef.current || !userId) return
+    const today = parisClock().date
+    const markSeen = () => { try { localStorage.setItem(`operis_todo_autoopen:${userId}`, today) } catch { /* ignore */ } }
+    if (!showNotifPanel) { markSeen(); return }
+    const t = setTimeout(markSeen, 2000)
+    return () => clearTimeout(t)
+  }, [showNotifPanel, userId])
 
   const handleTodoHandled = async (emailId: string) => {
     setTodo(prev => (prev ? buildPayload(prev.items.filter(i => i.emailId !== emailId)) : prev))

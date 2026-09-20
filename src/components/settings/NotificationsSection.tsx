@@ -62,7 +62,8 @@ export default function NotificationsSection({ onSaved, onError }: {
       <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5, margin: '0 0 16px' }}>
         Chaque jour ouvré, un e-mail et un rappel dans la cloche listent ce qui reste à traiter : devis reçus,
         questions de vos fournisseurs, mails importants sans réponse et échéances proches. Rien n&apos;est envoyé
-        quand il n&apos;y a rien à traiter.
+        quand il n&apos;y a rien à traiter. La liste s&apos;ouvre aussi toute seule à votre première connexion de
+        la journée.
       </p>
 
       <div style={{
