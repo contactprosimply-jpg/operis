@@ -23,9 +23,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Icônes d'app : le navigateur / iOS les lit sans cookie (« Sur l'écran d'accueil », installabilité
+  // PWA) — les rediriger vers /login donnait une icône vide aux visiteurs non connectés.
   if (
     pathname.startsWith('/_next')
     || pathname.includes('.')
+    || pathname === '/icon'
+    || pathname === '/apple-icon'
   ) {
     return NextResponse.next()
   }
