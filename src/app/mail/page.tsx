@@ -170,6 +170,28 @@ async function fileToBase64(file: File): Promise<string> {
   return btoa(binary)
 }
 
+/** Action « Voir l'AO / AO / Lier » d'une ligne de mail — sur mobile elle vit dans la rangée de pastilles. */
+function MailRowAoButton({ email, busy, onAction }: { email: Email; busy: boolean; onAction: (email: Email) => void }) {
+  return (
+    <button
+      type="button"
+      title={email.tender_id ? "Voir l'AO" : "Créer un appel d'offres"}
+      disabled={busy}
+      onClick={(e) => { e.stopPropagation(); onAction(email) }}
+      style={{
+        background: email.tender_id ? 'rgba(34,197,94,0.12)' : email.is_ao ? 'rgba(245,158,11,0.15)' : 'var(--bg-hover)',
+        color: email.tender_id ? '#4ade80' : email.is_ao ? '#fbbf24' : 'var(--text-secondary)',
+        border: `1px solid ${email.tender_id ? 'rgba(34,197,94,0.25)' : email.is_ao ? 'rgba(245,158,11,0.25)' : 'var(--border-hi)'}`,
+        borderRadius: 8, padding: '6px 14px', minHeight: 36, minWidth: 48,
+        fontSize: 12, fontWeight: 700, cursor: busy ? 'wait' : 'pointer',
+        fontFamily: 'DM Mono, monospace', opacity: busy ? 0.6 : 1,
+      }}
+    >
+      {busy ? '…' : email.tender_id ? 'Voir' : email.is_ao ? 'AO' : 'Lier'}
+    </button>
+  )
+}
+
 export default function MailPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -2099,12 +2121,13 @@ export default function MailPage() {
               </button>
             )}
             {isMobile && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
               <button
                 type="button"
                 onClick={() => setMobileFolderSidebarOpen(true)}
                 aria-label="Ouvrir les dossiers"
                 style={{
-                  marginBottom: 10,
+                  minHeight: 44,
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
@@ -2127,6 +2150,11 @@ export default function MailPage() {
                 </svg>
                 Dossiers
               </button>
+              <button type="button" onClick={() => openCompose()} style={{
+                background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, minHeight: 44,
+                padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
+              }}>+ Nouveau mail</button>
+              </div>
             )}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 10 }}>
               <div style={{ minWidth: 0, flex: '1 1 auto' }}>
@@ -2184,8 +2212,8 @@ export default function MailPage() {
                     border: '1px solid var(--border-hi)',
                     color: 'var(--text-secondary)',
                     borderRadius: 8,
-                    padding: isMobile ? '8px 10px' : '5px 10px',
-                    minHeight: isMobile ? 36 : undefined,
+                    padding: isMobile ? '8px 12px' : '5px 10px',
+                    minHeight: isMobile ? 44 : undefined,
                     fontSize: 11,
                     cursor: 'pointer',
                     fontFamily: 'DM Mono, monospace',
@@ -2203,14 +2231,16 @@ export default function MailPage() {
                       onClick={handleSync}
                       disabled={syncing || mailInteractionBlocked}
                       title="Synchroniser la boîte mail"
+                      aria-label={syncing ? 'Synchronisation en cours' : 'Synchroniser la boîte mail'}
                       style={{
                         background: syncing ? 'var(--bg-hover)' : 'transparent',
                         border: '1px solid var(--border-hi)',
                         color: syncing ? 'var(--text-muted)' : 'var(--text-secondary)',
                         borderRadius: 8,
                         padding: '8px 12px',
-                        minHeight: 36,
+                        minHeight: 44,
                         minWidth: 44,
+                        justifyContent: 'center',
                         fontSize: 11,
                         cursor: syncing ? 'wait' : 'pointer',
                         display: 'flex',
@@ -2223,12 +2253,8 @@ export default function MailPage() {
                       }}
                     >
                       {syncing ? <Spinner size={12} /> : <span style={{ fontSize: 13, lineHeight: 1 }}>↻</span>}
-                      <span>{syncing ? 'Synchronisation…' : 'Synchroniser'}</span>
+                      <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{syncing ? 'Synchronisation…' : 'Synchroniser'}</span>
                     </button>
-                    <button onClick={() => openCompose()} style={{
-                      background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
-                      padding: '5px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, system-ui',
-                    }}>+ Nouveau mail</button>
                   </>
                 )}
               </div>
@@ -2238,7 +2264,7 @@ export default function MailPage() {
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
               {filterButtons.map(f => (
                 <button key={f.key} onClick={() => setFilter(f.key)} style={{
-                  padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: 'none',
+                  padding: isMobile ? '10px 14px' : '4px 10px', borderRadius: 6, fontSize: isMobile ? 13 : 11, cursor: 'pointer', border: 'none',
                   background: filter === f.key ? 'var(--accent-soft)' : 'transparent',
                   color: filter === f.key ? 'var(--accent)' : 'var(--text-muted)', fontFamily: 'DM Sans, system-ui',
                 }}>{f.label}</button>
@@ -2252,7 +2278,7 @@ export default function MailPage() {
                 value={priorityFilter}
                 onChange={e => setPriorityFilter(e.target.value as EmailPriority | '')}
                 style={{
-                  fontSize: 11, padding: '4px 8px', borderRadius: 6,
+                  fontSize: 11, padding: isMobile ? '10px 10px' : '4px 8px', borderRadius: 6,
                   border: '1px solid var(--border)', background: 'var(--bg-card)',
                   color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui',
                 }}
@@ -2268,7 +2294,7 @@ export default function MailPage() {
                 onChange={e => setFromFilter(e.target.value)}
                 placeholder="Expéditeur…"
                 style={{
-                  flex: 1, minWidth: 100, fontSize: 11, padding: '4px 8px', borderRadius: 6,
+                  flex: 1, minWidth: 100, fontSize: 11, padding: isMobile ? '10px 10px' : '4px 8px', borderRadius: 6,
                   border: '1px solid var(--border)', background: 'var(--bg-card)',
                   color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui',
                 }}
@@ -2277,7 +2303,7 @@ export default function MailPage() {
                 type="button"
                 onClick={() => setShowAdvancedFilters(v => !v)}
                 style={{
-                  fontSize: 11, padding: '4px 8px', borderRadius: 6, cursor: 'pointer',
+                  fontSize: isMobile ? 13 : 11, padding: isMobile ? '10px 12px' : '4px 8px', borderRadius: 6, cursor: 'pointer',
                   border: '1px solid var(--border)', background: showAdvancedFilters ? 'var(--accent-soft)' : 'var(--bg-card)',
                   color: showAdvancedFilters ? 'var(--accent)' : 'var(--text-muted)',
                   fontFamily: 'DM Sans, system-ui',
@@ -2588,6 +2614,17 @@ export default function MailPage() {
                               </span>
                             )
                           })}
+                          {isMobile && (
+                            <MailRowAoButton
+                              email={email}
+                              busy={creatingAoId === email.id}
+                              onAction={(em) => {
+                                if (em.tender_id) router.push(`/tenders/${em.tender_id}`)
+                                else if (em.is_ao) handleCreateAo(em)
+                                else openLinkTenderModal(em)
+                              }}
+                            />
+                          )}
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
@@ -2609,12 +2646,14 @@ export default function MailPage() {
                           style={{
                             background: 'transparent', color: 'var(--text-muted)',
                             border: '1px solid var(--border)', borderRadius: 6,
-                            padding: '2px 6px', fontSize: 10, cursor: 'pointer',
+                            padding: isMobile ? '6px 14px' : '2px 6px', fontSize: isMobile ? 18 : 10, cursor: 'pointer',
                             fontFamily: 'DM Mono, monospace',
+                            minHeight: isMobile ? 40 : undefined, lineHeight: 1,
                           }}
                         >
                           ⋮
                         </button>
+                        {!isMobile && (
                         <button
                           type="button"
                           title={email.tender_id ? 'Voir l\'AO' : 'Créer un appel d\'offres'}
@@ -2642,6 +2681,7 @@ export default function MailPage() {
                         >
                           {creatingAoId === email.id ? '…' : email.tender_id ? 'Voir' : email.is_ao ? 'AO' : 'Lier'}
                         </button>
+                        )}
                       </div>
                     </div>
                     )}
