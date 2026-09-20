@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
+import { listAllAuthUsers } from '@/lib/auth-users'
 
 const ADMIN_EMAIL = 'operiscontact@gmail.com'
 
@@ -18,8 +19,8 @@ export async function GET(req: NextRequest) {
       return Response.json({ success: false, error: 'Accès réservé' }, { status: 403 })
     }
 
-    const { data: { users } } = await db.auth.admin.listUsers()
-    if (!users) return Response.json({ success: true, data: [] })
+    const users = await listAllAuthUsers(db)
+    if (!users.length) return Response.json({ success: true, data: [] })
 
     const stats = await Promise.all(users.map(async (u) => {
       const uid = u.id

@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase'
 import { sendHtmlEmail } from '@/lib/mailer'
 import { getTenderAccessScope } from '@/lib/tender-access'
 import { sitePath } from '@/lib/site-url'
+import { isAlertRecipient } from '@/lib/priorities-rules'
 
 const ADMIN_EMAIL = 'operiscontact@gmail.com'
 
@@ -36,8 +37,15 @@ export async function checkAlertsForUser(userId: string): Promise<number> {
     const now = new Date()
 
     for (const tender of tenders) {
+      // Destinataires : responsable + créateur ; le propriétaire de l'organisation seulement en copie
+      // quand l'échéance est urgente (≤ 2 jours).
+      const daysToDeadline = tender.deadline ? Math.ceil((new Date(tender.deadline).getTime() - now.getTime()) / 86400000) : null
+      const urgentDeadline = daysToDeadline !== null && daysToDeadline >= 0 && daysToDeadline <= 2
+      const receivesDeadlineAlert = isAlertRecipient(tender, userId, { isOrgOwner: !!scope.isOrgOwner, urgent: urgentDeadline })
+      const isResponsibleOrCreator = isAlertRecipient(tender, userId, { isOrgOwner: false, urgent: false })
+
       // 1. Alerte deadline dans 7 jours
-      if (tender.deadline) {
+      if (tender.deadline && receivesDeadlineAlert) {
         const deadline = new Date(tender.deadline)
         const daysLeft = Math.ceil((deadline.getTime() - now.getTime()) / 86400000)
 
@@ -109,7 +117,7 @@ export async function checkAlertsForUser(userId: string): Promise<number> {
         return sentAt > 0 && sentAt <= sevenDaysAgo
       })
 
-      if (nonResponders.length > 0) {
+      if (nonResponders.length > 0 && isResponsibleOrCreator) {
         const today = now.toISOString().split('T')[0]
         const { data: existing } = await db
           .from('notifications')
