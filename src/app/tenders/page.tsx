@@ -189,7 +189,7 @@ export default function TendersPage() {
             }}>{f.label}</button>
           ))}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="page-toolbar-actions" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {refreshing && <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>↻ sync</span>}
           <TenderViewSwitch value={view} onChange={changeView} />
           <span data-tour="tenders-create" style={{ display: 'inline-flex' }}>
@@ -215,7 +215,56 @@ export default function TendersPage() {
       {view === 'kanban' && <TenderKanban tenders={filtered} onStatusChange={changeStatus} />}
 
       {view === 'liste' && (
-      <Card hover={false} style={{ padding: 0, overflow: 'hidden' }}>
+      <>
+      {/* Téléphone : lignes compactes (le tableau de 900px obligeait à défiler dans les deux sens). */}
+      <div className="tenders-mobile-list">
+        {filtered.map(t => {
+          const respPct = t.nb_suppliers > 0 ? Math.round((t.nb_responses / t.nb_suppliers) * 100) : 0
+          const priorite = PRIORITE_LABEL[t.priorite ?? 'normale'] ?? PRIORITE_LABEL.normale
+          return (
+            <div
+              key={t.tender_id}
+              role="link"
+              tabIndex={0}
+              onClick={() => router.push(`/tenders/${t.tender_id}`)}
+              onKeyDown={e => { if (e.key === 'Enter') router.push(`/tenders/${t.tender_id}`) }}
+              style={{ borderRadius: 12, padding: '12px 14px', cursor: 'pointer', ...tenderListRowStyle(t.status) }}
+            >
+              <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.35, overflowWrap: 'anywhere' }}>{t.title}</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
+                <span style={{ color: 'var(--text-secondary)', fontSize: 13, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.client}</span>
+                {t.priorite && t.priorite !== 'normale' && (
+                  <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: priorite.color, fontWeight: 600, flexShrink: 0 }}>{priorite.icon} {priorite.label}</span>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                {t.days_remaining !== null && (
+                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: deadlineColor(t.days_remaining), fontWeight: t.days_remaining <= 3 ? 600 : 400 }}>
+                    {t.days_remaining < 0 ? 'Échéance dépassée' : `${t.days_remaining}j`}
+                  </span>
+                )}
+                {!!t.budget_ht && <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#34d399' }}>{formatBudget(t.budget_ht)}</span>}
+                <Badge color={respPct === 100 ? 'green' : respPct >= 50 ? 'amber' : t.nb_suppliers > 0 ? 'red' : 'gray'}>{t.nb_responses}/{t.nb_suppliers} rép.</Badge>
+                <Badge color={t.nb_quotes > 0 ? 'green' : 'gray'}>{t.nb_quotes} devis</Badge>
+              </div>
+              <div style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
+                <select
+                  aria-label={`Statut de ${t.title}`}
+                  value={t.status}
+                  onChange={e => handleStatusChange(e, t.tender_id, e.target.value as TenderStatus)}
+                  style={{ width: '100%', minHeight: 40, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px', color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui', fontWeight: 500 }}
+                >
+                  {STATUS_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                </select>
+              </div>
+            </div>
+          )
+        })}
+        {filtered.length === 0 && (
+          <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>Aucun AO</div>
+        )}
+      </div>
+      <Card hover={false} className="tenders-table-view" style={{ padding: 0, overflow: 'hidden' }}>
         <div className="table-scroll">
         <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
@@ -301,6 +350,7 @@ export default function TendersPage() {
         </table>
         </div>
       </Card>
+      </>
       )}
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouvel appel d'offres" size="lg">

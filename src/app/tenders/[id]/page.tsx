@@ -105,6 +105,7 @@ export default function TenderDetailPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
   const [showEdit, setShowEdit] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
   const [isNewAoSetup, setIsNewAoSetup] = useState(false)
   const [showConsultModal, setShowConsultModal] = useState(false)
   const [consultPreselect, setConsultPreselect] = useState<string[]>([])
@@ -1042,19 +1043,19 @@ export default function TenderDetailPage() {
       {ToastComponent}
 
       {/* Header */}
-      <Card hover={false} style={{
+      <Card hover={false} className="ao-header" style={{
         padding: '22px 26px', marginBottom: 24,
         background: 'var(--bg-card)',
         border: `1px solid ${headerBorder}`,
         borderLeft: `4px solid ${headerBorder}`,
       }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
-          <div style={{ flex: 1 }}>
-            <button onClick={() => router.push('/tenders')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, padding: 0, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'DM Sans, system-ui' }}>
+        <div className="ao-header-row" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <button className="tap-min ao-back" onClick={() => router.push('/tenders')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, padding: 0, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'DM Sans, system-ui' }}>
               ← Retour aux AO
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>{tender.title}</h1>
+              <h1 className="ao-title" style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', overflowWrap: 'anywhere' }}>{tender.title}</h1>
               <TenderStatusBadge status={tender.status} pulse={tender.status === 'urgence'} />
               {tender.is_own_client && (
                 <span style={{
@@ -1119,7 +1120,15 @@ export default function TenderDetailPage() {
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="ao-actions-toggle"
+            aria-expanded={actionsOpen}
+            onClick={() => setActionsOpen(v => !v)}
+          >
+            Actions {actionsOpen ? '▴' : '▾'}
+          </button>
+          <div className={`ao-header-actions${actionsOpen ? ' is-open' : ''}`} style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', gap: 2 }}>
               <span title={
                 !tender.dossier_url
@@ -1169,7 +1178,7 @@ export default function TenderDetailPage() {
       )}
 
       {/* Onglets */}
-      <div style={{
+      <div className="ao-tabs" style={{
         display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap',
         padding: '4px', background: 'var(--bg-card)', borderRadius: 12,
         border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)',
@@ -1307,11 +1316,11 @@ export default function TenderDetailPage() {
 
       {activeTab === 'fournisseurs' && (
       <div style={card}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div className="ao-section-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
             Fournisseurs consultés ({consultations.length})
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="ao-section-actions" style={{ display: 'flex', gap: 8 }}>
             <Button variant="ghost" onClick={() => setShowAddSupplierModal(true)}>+ Ajouter</Button>
             {consultations.length > 0 && (
               <>
@@ -1339,7 +1348,7 @@ export default function TenderDetailPage() {
               const isBest = quote?.id === bestQuoteId && price != null
               const isSelected = quote?.is_selected || selectedWinner === c.supplier_id
               return (
-                <div key={c.id} className="animate-slide" style={{
+                <div key={c.id} className="animate-slide ao-supplier-row" style={{
                   display: 'flex', alignItems: 'stretch', gap: 12, padding: '12px 14px',
                   border: `1px solid ${isSelected ? 'rgba(59,126,246,0.35)' : isBest ? 'rgba(16,185,129,0.35)' : 'var(--border)'}`,
                   borderRadius: 10,
@@ -1348,6 +1357,8 @@ export default function TenderDetailPage() {
                 }}>
                   <button
                     type="button"
+                    className="tap-target"
+                    aria-pressed={!!isSelected}
                     title="Sélectionner ce devis"
                     disabled={!hasResponse}
                     onClick={() => setSelectedWinner(prev => prev === c.supplier_id ? null : c.supplier_id)}
@@ -1383,7 +1394,7 @@ export default function TenderDetailPage() {
                             ? `Envoyé : ${new Date(c.last_sent_at).toLocaleDateString('fr-FR')}`
                             : 'Pas encore contacté'}
                       </span>
-                      <div style={{ display: 'flex', gap: 6 }}>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {quote?.source_email_id && (
                           <button type="button" onClick={() => router.push(`/mail?email=${quote.source_email_id}`)}
                             style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
@@ -1413,7 +1424,7 @@ export default function TenderDetailPage() {
                     )}
                   </div>
 
-                  <div style={{
+                  <div className="ao-price-box" style={{
                     minWidth: 120, flexShrink: 0, alignSelf: 'center',
                     padding: '8px 10px', borderRadius: 8, textAlign: 'center',
                     background: price ? (isBest ? 'rgba(16,185,129,0.15)' : 'var(--bg-card)') : 'transparent',

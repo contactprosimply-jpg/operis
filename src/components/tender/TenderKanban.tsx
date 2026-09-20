@@ -33,7 +33,7 @@ export function TenderKanban({ tenders, onStatusChange }: {
   }
 
   return (
-    <div className="flex items-start gap-4 overflow-x-auto rounded-2xl bg-slate-50 p-4">
+    <div className="flex snap-x snap-mandatory items-start gap-4 overflow-x-auto rounded-2xl bg-slate-50 p-3 sm:p-4">
       {AO_STATUSES.map(col => {
         const items = tenders.filter(t => t.status === col.value)
         const isOver = overStatus === col.value && dragId !== null
@@ -45,7 +45,7 @@ export function TenderKanban({ tenders, onStatusChange }: {
             onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOverStatus(null) }}
             onDrop={e => drop(col.value, e)}
             className={cn(
-              'w-[280px] shrink-0 rounded-xl border border-t-4 border-slate-200 bg-slate-100/70 p-3 transition-colors',
+              'w-[86%] max-w-[320px] shrink-0 snap-start rounded-xl sm:w-[280px] border border-t-4 border-slate-200 bg-slate-100/70 p-3 transition-colors',
               col.accent,
               isOver && 'bg-blue-50 ring-2 ring-blue-300',
             )}

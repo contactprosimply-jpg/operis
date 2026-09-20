@@ -529,3 +529,48 @@ body:not(.app-shell-mode) { overflow-x: clip; }
     bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* ── Fiche AO sur téléphone ── */
+@media (max-width: 767px) {
+  .ao-header { padding: 16px !important; margin-bottom: 16px !important; }
+  /* Les boutons d'action étaient en flex-shrink:0 à côté du titre et l'écrasaient (et sortaient de l'écran). */
+  .ao-header-row { flex-direction: column; gap: 14px !important; }
+  /* Actions en grille 2 colonnes (5 boutons pleine largeur mangeaient la moitié de l'écran). */
+  .ao-header-actions { width: 100%; flex-shrink: 1 !important; display: none !important; grid-template-columns: 1fr 1fr; gap: 8px !important; }
+  .ao-header-actions.is-open { display: grid !important; }
+  .ao-actions-toggle {
+    display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 44px;
+    border-radius: 9px; border: 1px solid var(--border-hi); background: transparent; color: var(--text-secondary);
+    font: 600 13px 'DM Sans', system-ui, sans-serif; cursor: pointer;
+  }
+  .ao-header-actions > span:first-child { grid-column: 1 / -1; display: flex !important; }
+  .ao-header-actions > span:first-child > span:first-child { flex: 1; }
+  .ao-header-actions button { width: 100%; justify-content: center; }
+  .ao-header-actions > span:first-child button { min-width: 0; }
+  .ao-section-head { flex-wrap: wrap; gap: 10px; }
+  .ao-section-actions { flex-wrap: wrap; width: 100%; }
+  .ao-section-actions > button { flex: 1 1 auto; }
+  /* Ligne fournisseur : le bloc « Devis HT » passe sous le contenu au lieu de le réduire à 180px. */
+  .ao-supplier-row { flex-wrap: wrap; }
+  .ao-price-box { flex: 1 1 100% !important; min-width: 0 !important; }
+  .ao-title { font-size: 18px !important; line-height: 1.3; }
+  /* Onglets : une seule rangée qu'on fait défiler, au lieu de 3 lignes de boutons. */
+  .ao-tabs { flex-wrap: nowrap !important; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .ao-tabs::-webkit-scrollbar { display: none; }
+  .ao-tabs > button { flex: 0 0 auto !important; min-width: 0 !important; white-space: nowrap; }
+}
+
+/* Bouton « Actions » : uniquement sur téléphone (sur desktop les actions sont toujours visibles). */
+@media (min-width: 768px) {
+  .ao-actions-toggle { display: none; }
+}
+
+/* ── Liste des AO ── */
+.tenders-mobile-list { display: none; }
+@media (max-width: 767px) {
+  .tenders-mobile-list { display: flex; flex-direction: column; gap: 10px; }
+  .tenders-table-view { display: none; }
+  /* Onglets sur toute la largeur, puis sélecteur de vue + « Nouvel AO » sur une 2e ligne. */
+  .page-toolbar-tabs { flex: 1 1 100%; }
+  .page-toolbar-actions { width: 100%; justify-content: space-between; }
+}
