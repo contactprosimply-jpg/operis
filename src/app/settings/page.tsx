@@ -11,6 +11,7 @@ import { THEMES, applyTheme, DEFAULT_THEME_ID, DEFAULT_ACCENT } from '@/lib/them
 import { requestProductTour } from '@/lib/product-tour'
 import { useAuth } from '@/components/AuthProvider'
 import MailRelancesSection from '@/components/settings/MailRelancesSection'
+import NotificationsSection from '@/components/settings/NotificationsSection'
 import AoDetectionSection from '@/components/settings/AoDetectionSection'
 import BillingSummarySection from '@/components/settings/BillingSummarySection'
 import { cacheUserSettingsLocally } from '@/lib/user-settings'
@@ -27,6 +28,7 @@ const TABS = [
   { id: 'general',    label: 'Général',    icon: '⚙' },
   { id: 'messagerie', label: 'Messagerie', icon: '✉' },
   { id: 'mail-relaunch', label: 'Messagerie & Relances', icon: '📬' },
+  { id: 'notifications', label: 'Notifications', icon: '🔔' },
   { id: 'ao-detection', label: 'Détection AO', icon: '📋' },
   { id: 'signature',  label: 'Signature',  icon: '✍' },
   { id: 'famille',    label: 'Famille',    icon: '👥' },
@@ -635,6 +637,13 @@ function SettingsPageContent() {
 
         {tab === 'mail-relaunch' && (
           <MailRelancesSection
+            onSaved={() => show('✓ Paramètres enregistrés')}
+            onError={msg => show(`Erreur : ${msg}`)}
+          />
+        )}
+
+        {tab === 'notifications' && (
+          <NotificationsSection
             onSaved={() => show('✓ Paramètres enregistrés')}
             onError={msg => show(`Erreur : ${msg}`)}
           />
