@@ -46,9 +46,10 @@ npm run desktop:build     # Windows installer + portable → dist-desktop/
   `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and two test-user credentials in
   `.env.test` (copy `.env.test.example`).
 - **Never point integration tests at the production Supabase project.** `supabase-test.ts` hard-refuses
-  any URL containing the prod project ref (`lixlqcarbucmczjbgbhp`) unless `VITEST_ALLOW_PROD=1` is set —
-  don't set that. See `docs/ENVIRONMENTS.md` for why prod/test must use separate Supabase projects (mail
-  data isolation) and how to provision a second project.
+  any URL containing the prod project ref (`tbrxojcsahthzeowbzdi`, plus the old prod ref
+  `lixlqcarbucmczjbgbhp` for safety) unless `VITEST_ALLOW_PROD=1` is set — don't set that. See
+  `docs/ENVIRONMENTS.md` for why prod/test must use separate Supabase projects (mail data isolation) and
+  how to provision a second project.
 
 ## Auto-deploy policy (`.cursor/rules/deploy.mdc`)
 
