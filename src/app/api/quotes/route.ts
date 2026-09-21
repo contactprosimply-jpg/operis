@@ -44,6 +44,18 @@ export async function POST(req: NextRequest) {
 
   if (!tender) return Response.json({ success: false, error: 'AO introuvable' }, { status: 404 })
 
+  // Le fournisseur doit être celui de l'appelant : sinon on pouvait rattacher à son AO le
+  // fournisseur d'une autre organisation, et GET (supplier:suppliers(*)) renvoyait ensuite
+  // ses coordonnées (nom, e-mail, téléphone).
+  const { data: supplier } = await db
+    .from('suppliers')
+    .select('id')
+    .eq('id', supplier_id)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (!supplier) return Response.json({ success: false, error: 'Fournisseur introuvable' }, { status: 404 })
+
   // Créer le devis
   const { data, error } = await db
     .from('quotes')
