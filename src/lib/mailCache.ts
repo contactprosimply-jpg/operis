@@ -161,7 +161,8 @@ export type MailListQueryOpts = {
   folderKey: string
   searchQuery?: string
   favoritesOnly?: boolean
-  listFilter?: 'all' | 'unread' | 'ao' | 'attachments'
+  // « devis » (devis non rattachés) est résolu côté serveur : la messagerie n'interroge pas le cache local dans ce cas.
+  listFilter?: 'all' | 'unread' | 'ao' | 'attachments' | 'devis'
   priorityFilter?: string
   fromFilter?: string
   tenderFilter?: string

@@ -17,6 +17,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isPaywall = pathname === '/choose-plan' || pathname === '/billing/activating'
   const minimalShell = isWebsiteShellRoute(pathname) || isPaywall
   const isFillPage = pathname === '/mail' || pathname.startsWith('/mail/')
+  const isDashboard = pathname === '/dashboard'
 
   useEffect(() => {
     document.body.classList.toggle('app-shell-mode', !minimalShell)
@@ -35,7 +36,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {!isBillingExemptRoute(pathname) && <BillingGateBanner />}
           <Sidebar />
           <main className={`app-main${isFillPage ? ' app-main--fill' : ''}`}>
-            <div className={`page-content${isFillPage ? ' page-content--fill' : ''}`}>
+            <div className={`page-content${isFillPage ? ' page-content--fill' : ''}${isDashboard ? ' page-content--flush' : ''}`}>
               {children}
             </div>
           </main>

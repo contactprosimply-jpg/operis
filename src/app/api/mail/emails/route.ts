@@ -18,6 +18,7 @@ import { mailMatchesSearch, sortEmailsSearchResults } from '@/lib/mail-search'
 import { getMailUserScope } from '@/lib/mail-access'
 import { resolveMailAccount } from '@/lib/mail-sync'
 import { linkEmailToTenderWithDocuments } from '@/lib/tender-documents'
+import { QUOTE_OR_FILTER, quoteLookbackSince } from '@/lib/quote-mail-heuristic'
 
 function sentListKey(subject: string | null | undefined, to: string | null | undefined, at: string | null | undefined): string {
   return `${subject ?? ''}|${to ?? ''}|${(at ?? '').slice(0, 16)}`
@@ -95,6 +96,7 @@ export async function GET(req: NextRequest) {
   const isRead = searchParams.get('unread') === 'true' ? false : undefined
   const hasAttachments = searchParams.get('attachments') === 'true' ? true : undefined
   const unlinked = searchParams.get('unlinked') === 'true'
+  const quotesUnlinked = searchParams.get('quotes') === 'unlinked'
   const tenderId = searchParams.get('tender_id') || undefined
   const priority = searchParams.get('priority') || undefined
   const fromQuery = searchParams.get('from')?.trim() || undefined
@@ -130,6 +132,8 @@ export async function GET(req: NextRequest) {
     if (isRead !== undefined) q = q.eq('is_read', isRead)
     if (hasAttachments) q = q.eq('has_attachments', true)
     if (unlinked) q = q.is('tender_id', null)
+    // Devis à rattacher (même règle que le compteur du dashboard, voir lib/quote-mail-heuristic).
+    if (quotesUnlinked) q = q.is('tender_id', null).eq('is_ao', false).or(QUOTE_OR_FILTER).gte('received_at', quoteLookbackSince())
     if (tenderId) q = q.eq('tender_id', tenderId)
     if (useV8Filters && priority && ['urgent', 'normal', 'info'].includes(priority)) {
       q = q.eq('priority', priority)

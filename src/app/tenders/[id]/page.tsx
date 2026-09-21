@@ -114,7 +114,8 @@ export default function TenderDetailPage() {
   const [sendingConsult, setSendingConsult] = useState(false)
   const [validatingQuote, setValidatingQuote] = useState(false)
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null)
-  const [showAddSupplierModal, setShowAddSupplierModal] = useState(false)
+  // ?action=add-supplier : arrivée depuis le dashboard (« Choisir » sur un AO sans fournisseur)
+  const [showAddSupplierModal, setShowAddSupplierModal] = useState(() => searchParams.get('action') === 'add-supplier')
   const [uploadingDoc, setUploadingDoc] = useState(false)
   const [showOptionalPng, setShowOptionalPng] = useState(false)
   const [pngAttachmentAction, setPngAttachmentAction] = useState<string | null>(null)
@@ -214,6 +215,11 @@ export default function TenderDetailPage() {
   const closeEditModal = useCallback(() => {
     setShowEdit(false)
     setIsNewAoSetup(false)
+  }, [])
+
+  useEffect(() => {
+    if (searchParams.get('action') === 'add-supplier') router.replace(`/tenders/${id}`, { scroll: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {

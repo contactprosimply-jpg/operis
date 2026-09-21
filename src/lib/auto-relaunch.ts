@@ -7,7 +7,7 @@ import {
   type UserSettings,
 } from '@/lib/user-settings'
 
-const ACTIVE_TENDER_STATUSES = ['nouveau', 'en_cours', 'urgence']
+export const ACTIVE_TENDER_STATUSES = ['nouveau', 'en_cours', 'urgence']
 
 export interface AutoRelaunchResult {
   sent: number
@@ -17,7 +17,7 @@ export interface AutoRelaunchResult {
   pending: number
 }
 
-type ConsultationRow = {
+export type ConsultationRow = {
   tender_id: string
   supplier_id: string
   last_sent_at: string | null
@@ -29,7 +29,7 @@ function daysSince(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / 86400000
 }
 
-function isRelanceDue(row: ConsultationRow, settings: UserSettings): boolean {
+export function isRelanceDue(row: ConsultationRow, settings: UserSettings): boolean {
   if (!row.last_sent_at) return false
   const elapsed = daysSince(row.last_sent_at)
   const count = row.relaunch_count ?? 0

@@ -353,6 +353,14 @@ export const tenderService = {
       // en TS (perdrait des relances sous requêtes concurrentes, cf. crash test).
       const updated = await consultationRepository.incrementRelaunch(tenderId, supplierId)
 
+      // La relance est partie : la demande « Relance en attente » du même fournisseur n'a plus lieu
+      // d'être — sinon un clic sur « Envoyer » dans la cloche enverrait la relance une 2e fois.
+      try {
+        await db.from('notifications').update({ is_read: true })
+          .eq('user_id', userId).eq('tender_id', tenderId).eq('supplier_id', supplierId)
+          .eq('type', 'relaunch_confirm').eq('is_read', false)
+      } catch { /* non bloquant */ }
+
       // 3. Logger
       await emailLogRepository.create({
         user_id: userId,

@@ -122,7 +122,9 @@ function speechErrorMessage(code?: string): string {
   }
 }
 
-type MailFilter = 'all' | 'unread' | 'ao' | 'attachments'
+type MailFilter = 'all' | 'unread' | 'ao' | 'attachments' | 'devis'
+
+const MAIL_FILTER_VALUES: MailFilter[] = ['all', 'unread', 'ao', 'attachments', 'devis']
 
 const PRIORITY_STYLES: Record<EmailPriority, { label: string; color: string; bg: string }> = {
   urgent: { label: 'Urgent', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
@@ -252,7 +254,11 @@ export default function MailPage() {
   const [folderActionLoading, setFolderActionLoading] = useState(false)
   const [mailAccountEmail, setMailAccountEmail] = useState<string | null>(null)
   const [inboxUnread, setInboxUnread] = useState(0)
-  const [filter, setFilter] = useState<MailFilter>('all')
+  // ?filter=devis|ao : arrivée depuis le dashboard (« Trier les devis », « Voir les mails »)
+  const [filter, setFilter] = useState<MailFilter>(() => {
+    const f = searchParams.get('filter') as MailFilter | null
+    return f && MAIL_FILTER_VALUES.includes(f) ? f : 'all'
+  })
   const [priorityFilter, setPriorityFilter] = useState<EmailPriority | ''>('')
   const [fromFilter, setFromFilter] = useState('')
   const [tenderFilter, setTenderFilter] = useState('')
@@ -294,7 +300,8 @@ export default function MailPage() {
 
   const userId = session?.user?.id
 
-  const localFirst = isLocalFirstFolder(folderSelection)
+  // Le filtre « Devis » (devis non rattachés, règle serveur) ne se calcule pas dans le cache local.
+  const localFirst = isLocalFirstFolder(folderSelection) && filter !== 'devis'
   const folderKey = localFirst ? folderKeyFromSelection(folderSelection) : null
 
   const listFilterOpts = useMemo((): Omit<MailListQueryOpts, 'folderKey'> => ({
@@ -744,6 +751,7 @@ export default function MailPage() {
       if (favoritesOnly) params.set('starred', 'true')
       const listFilter = activeFolder === 'inbox' ? (listListFilter === 'all' ? filter : listListFilter) : 'all'
       if (listFilter === 'ao') params.set('ao', 'true')
+      if (listFilter === 'devis') params.set('quotes', 'unlinked')
       if (listFilter === 'unread') params.set('unread', 'true')
       if (listFilter === 'attachments') params.set('attachments', 'true')
       if (priorityFilter) params.set('priority', priorityFilter)
@@ -1857,6 +1865,7 @@ export default function MailPage() {
     { key: 'unread', label: 'Non lus' },
     { key: 'attachments', label: 'PJ' },
     { key: 'ao', label: 'AO' },
+    { key: 'devis', label: 'Devis' },
   ]
 
   if (!mailModuleEnabled) {

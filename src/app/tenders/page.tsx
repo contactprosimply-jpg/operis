@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useSyncExternalStore } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState, useEffect, useSyncExternalStore } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useTenders } from '@/hooks'
 import { authFetch } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
@@ -81,6 +81,23 @@ function formatBudget(v?: number | null) {
   return `${v.toLocaleString('fr-FR')} €`
 }
 
+/**
+ * Arrivée depuis le dashboard : ?new=1 ouvre « Nouvel AO », ?filter=sans_echeance filtre la liste.
+ * Lu via useSearchParams (window.location est encore périmé pendant une navigation client), puis
+ * l'URL est nettoyée pour qu'un rechargement ne rouvre pas la modale.
+ */
+function DashboardDeepLink({ onNew, onFilter }: { onNew: () => void; onFilter: (f: string) => void }) {
+  const router = useRouter()
+  const params = useSearchParams()
+  useEffect(() => {
+    if (params.get('new') === '1') onNew()
+    if (params.get('filter') === 'sans_echeance') onFilter('sans_echeance')
+    if (params.has('new') || params.has('filter')) router.replace('/tenders')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params])
+  return null
+}
+
 export default function TendersPage() {
   const router = useRouter()
   const { session } = useAuth()
@@ -110,6 +127,7 @@ export default function TendersPage() {
     ? tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status))
     : effectiveFilter === 'tous' ? tenders
     : effectiveFilter === 'mes_assignes' ? tenders.filter(t => t.assigned_to === currentUserId)
+    : effectiveFilter === 'sans_echeance' ? tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status) && !t.deadline)
     : tenders.filter(t => t.status === effectiveFilter)
 
   const handleCreate = async () => {
@@ -156,6 +174,7 @@ export default function TendersPage() {
     gagnes: tenders.filter(t => t.status === 'gagne').length,
     perdus: tenders.filter(t => t.status === 'perdu').length,
     total: tenders.length,
+    sansEcheance: tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status) && !t.deadline).length,
   }
 
   const filters = [
@@ -164,6 +183,8 @@ export default function TendersPage() {
     { key: 'mes_assignes', label: 'Mes AO assignés' },
     { key: 'gagne', label: 'Gagnés' },
     { key: 'perdu', label: 'Perdus' },
+    // Onglet visible seulement quand il sert (arrivée depuis le dashboard, ou des AO sans échéance)
+    ...(filter === 'sans_echeance' || stats.sansEcheance > 0 ? [{ key: 'sans_echeance', label: 'Sans échéance' }] : []),
   ]
 
   return (
@@ -353,6 +374,9 @@ export default function TendersPage() {
       </>
       )}
 
+      <Suspense fallback={null}>
+        <DashboardDeepLink onNew={() => setShowModal(true)} onFilter={setFilter} />
+      </Suspense>
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nouvel appel d'offres" size="lg">
         <Field label="Titre *" value={form.title} onChange={v => setForm(f => ({ ...f, title: v }))} placeholder="Ex: Réhabilitation façades R+5" />
         <Field label="Client *" value={form.client} onChange={v => setForm(f => ({ ...f, client: v }))} placeholder="Ex: Nexity Grand Paris" />
