@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useSuppliers } from '@/hooks'
 import { Button, Modal, Field, Spinner, useToast } from '@/components/ui'
 import { authFetch } from '@/lib/auth-client'
+import { SupplierHistoryModal } from '@/components/suppliers/SupplierHistoryModal'
 
 const SUPPLIER_FIELDS: [string, string][] = [
   ['name', 'Nom'],
@@ -26,6 +27,7 @@ export default function SuppliersPage() {
   const [editForm, setEditForm] = useState<any>({})
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', additionalEmails: '', phone: '', specialty: '', country: '', language: '', notes: '' })
+  const [historyTarget, setHistoryTarget] = useState<{ id: string; name: string } | null>(null)
 
   const filtered = suppliers.filter((s: any) =>
     s.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -144,6 +146,7 @@ export default function SuppliersPage() {
                   {meta && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{meta}</div>}
                   {s.notes && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6, overflowWrap: 'anywhere' }}>{s.notes}</div>}
                   <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                    <Button variant="ghost" onClick={() => setHistoryTarget({ id: s.id, name: s.name })} style={{ flex: 1, justifyContent: 'center' }}>Historique</Button>
                     <Button variant="ghost" onClick={() => startEdit(s)} style={{ flex: 1, justifyContent: 'center' }}>Modifier</Button>
                     <Button
                       variant="danger"
@@ -206,6 +209,7 @@ export default function SuppliersPage() {
                       <div style={{ display: 'flex', gap: 6, opacity: 0 }} className="row-actions"
                         onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '0'}>
+                        <button onClick={() => setHistoryTarget({ id: s.id, name: s.name })} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Historique</button>
                         <button onClick={() => startEdit(s)} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>Modifier</button>
                         <button onClick={() => { if (confirm(`Supprimer ${s.name} ?`)) remove(s.id).then((res: any) => { if (res.success) show(`${s.name} supprimé`); else show(`Erreur : ${res.error}`) }) }}
                           style={{ fontSize: 11, color: '#f87171', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
@@ -242,6 +246,13 @@ export default function SuppliersPage() {
           <Button variant="primary" onClick={handleCreate} loading={creating}>Ajouter</Button>
         </div>
       </Modal>
+
+      <SupplierHistoryModal
+        open={!!historyTarget}
+        onClose={() => setHistoryTarget(null)}
+        supplierId={historyTarget?.id ?? null}
+        supplierName={historyTarget?.name}
+      />
     </div>
   )
 }
