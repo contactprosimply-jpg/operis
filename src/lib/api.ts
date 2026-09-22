@@ -15,6 +15,7 @@ import {
   TenderStatus,
   Email,
   ApiResponse,
+  CorpsEtat,
 } from '@/types/database'
 
 // ── Helper : récupérer le token auth ─────────────────────────
@@ -134,10 +135,25 @@ export const suppliersApi = {
       body: JSON.stringify(payload),
     }),
 
+  update: (id: string, payload: Partial<CreateSupplierPayload>) =>
+    apiFetch<Supplier>(`/api/suppliers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+
   delete: (id: string) =>
     apiFetch<{ deleted: boolean }>(`/api/suppliers/${id}`, {
       method: 'DELETE',
     }),
+}
+
+// ============================================================
+// CORPS D'ÉTAT (nomenclature BTP — table de référence)
+// ============================================================
+
+export const corpsEtatsApi = {
+  getAll: () =>
+    apiFetch<CorpsEtat[]>('/api/corps-etats'),
 }
 
 // ============================================================

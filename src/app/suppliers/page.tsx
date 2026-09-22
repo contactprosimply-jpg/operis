@@ -1,17 +1,19 @@
 'use client'
 
 import { useState } from 'react'
-import { useSuppliers } from '@/hooks'
-import { Button, Modal, Field, Spinner, useToast } from '@/components/ui'
+import { useSuppliers, useCorpsEtats } from '@/hooks'
+import { Button, Modal, Field, Spinner, Badge, useToast } from '@/components/ui'
+import { CorpsEtatPicker } from '@/components/ui/CorpsEtatPicker'
 import { authFetch } from '@/lib/auth-client'
 import { SupplierHistoryModal } from '@/components/suppliers/SupplierHistoryModal'
+import { CorpsEtatCategorizeModal } from '@/components/suppliers/CorpsEtatCategorizeModal'
 
 const SUPPLIER_FIELDS: [string, string][] = [
   ['name', 'Nom'],
   ['email', 'Email'],
   ['additionalEmails', 'Emails secondaires'],
   ['phone', 'Téléphone'],
-  ['specialty', 'Spécialité'],
+  ['specialty_note', 'Note'],
   ['country', 'Pays'],
   ['language', 'Langue'],
   ['notes', 'Notes'],
@@ -19,33 +21,39 @@ const SUPPLIER_FIELDS: [string, string][] = [
 
 export default function SuppliersPage() {
   const { suppliers, loading, create, remove, refetch } = useSuppliers()
+  const { corpsEtats } = useCorpsEtats()
   const { show, ToastComponent } = useToast()
   const [showModal, setShowModal] = useState(false)
+  const [showCategorize, setShowCategorize] = useState(false)
   const [creating, setCreating] = useState(false)
   const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<any>({})
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', additionalEmails: '', phone: '', specialty: '', country: '', language: '', notes: '' })
+  const [form, setForm] = useState({ name: '', email: '', additionalEmails: '', phone: '', specialty_note: '', country: '', language: '', notes: '', corpsEtats: [] as string[] })
   const [historyTarget, setHistoryTarget] = useState<{ id: string; name: string } | null>(null)
+
+  const uncategorized = suppliers.filter((s: any) => (s.corps_etats ?? []).length === 0 && (s.specialty_note ?? '').trim() !== '')
 
   const filtered = suppliers.filter((s: any) =>
     s.name.toLowerCase().includes(search.toLowerCase()) ||
     s.email.toLowerCase().includes(search.toLowerCase()) ||
-    (s.specialty ?? '').toLowerCase().includes(search.toLowerCase())
+    (s.specialty_note ?? '').toLowerCase().includes(search.toLowerCase())
   )
+
+  const labelFor = (id: string) => corpsEtats.find(c => c.id === id)?.label ?? id
 
   const parseEmailList = (raw: string): string[] => raw.split(',').map(e => e.trim()).filter(Boolean)
 
   const handleCreate = async () => {
     if (!form.name || !form.email) return
     setCreating(true)
-    const { additionalEmails, ...rest } = form
-    const res = await create({ ...rest, additional_emails: parseEmailList(additionalEmails) })
+    const { additionalEmails, corpsEtats: selectedCorpsEtats, ...rest } = form
+    const res = await create({ ...rest, additional_emails: parseEmailList(additionalEmails), corps_etats: selectedCorpsEtats })
     setCreating(false)
     if (res.success) {
       setShowModal(false)
-      setForm({ name: '', email: '', additionalEmails: '', phone: '', specialty: '', country: '', language: '', notes: '' })
+      setForm({ name: '', email: '', additionalEmails: '', phone: '', specialty_note: '', country: '', language: '', notes: '', corpsEtats: [] })
       show('Fournisseur ajouté')
     } else show(`Erreur : ${res.error}`)
   }
@@ -54,17 +62,18 @@ export default function SuppliersPage() {
     setEditingId(s.id)
     setEditForm({
       name: s.name, email: s.email, additionalEmails: (s.additional_emails ?? []).join(', '),
-      phone: s.phone ?? '', specialty: s.specialty ?? '', country: s.country ?? '', language: s.language ?? '', notes: s.notes ?? '',
+      phone: s.phone ?? '', specialty_note: s.specialty_note ?? '', country: s.country ?? '', language: s.language ?? '', notes: s.notes ?? '',
+      corpsEtats: s.corps_etats ?? [],
     })
   }
 
   const saveEdit = async (id: string) => {
     setSaving(true)
     try {
-      const { additionalEmails, ...rest } = editForm
+      const { additionalEmails, corpsEtats: selectedCorpsEtats, ...rest } = editForm
       const res = await authFetch(`/api/suppliers/${id}`, {
         method: 'PUT',
-        body: JSON.stringify({ ...rest, additional_emails: parseEmailList(additionalEmails ?? '') }),
+        body: JSON.stringify({ ...rest, additional_emails: parseEmailList(additionalEmails ?? ''), corps_etats: selectedCorpsEtats ?? [] }),
       })
       const data = await res.json()
       if (data.success) {
@@ -99,6 +108,17 @@ export default function SuppliersPage() {
         </span>
       </div>
 
+      {uncategorized.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          background: 'var(--accent-soft)', border: '1px solid var(--accent)', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 16, fontSize: 12, color: 'var(--text-primary)',
+        }}>
+          <span>{uncategorized.length} fournisseur{uncategorized.length > 1 ? 's' : ''} sans corps d'état classé (ancienne spécialité texte libre disponible).</span>
+          <Button variant="ghost" onClick={() => setShowCategorize(true)}>Catégoriser</Button>
+        </div>
+      )}
+
       <input type="text" value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Rechercher par nom, email, spécialité..."
         style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--text-primary)', fontFamily: 'DM Sans, system-ui', outline: 'none', marginBottom: 16 }}
@@ -110,11 +130,12 @@ export default function SuppliersPage() {
       <div className="suppliers-mobile-list">
         {filtered.map((s: any) => {
           const isEditing = editingId === s.id
-          const meta = [s.specialty, s.country, s.language].filter(Boolean).join(' · ')
+          const meta = [s.specialty_note, s.country, s.language].filter(Boolean).join(' · ')
           return (
             <div key={s.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
               {isEditing ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <CorpsEtatPicker label="Corps d'état" options={corpsEtats} value={editForm.corpsEtats ?? []} onChange={next => setEditForm((f: any) => ({ ...f, corpsEtats: next }))} />
                   {SUPPLIER_FIELDS.map(([field, label]) => (
                     <label key={field} style={{ display: 'block' }}>
                       <span style={{ display: 'block', fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</span>
@@ -142,6 +163,11 @@ export default function SuppliersPage() {
                   )}
                   {s.phone && (
                     <a href={`tel:${String(s.phone).replace(/\s+/g, '')}`} style={{ display: 'inline-block', marginTop: 2, fontSize: 13, fontFamily: 'DM Mono, monospace', color: 'var(--text-primary)', textDecoration: 'none', padding: '6px 0' }}>📞 {s.phone}</a>
+                  )}
+                  {(s.corps_etats ?? []).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                      {s.corps_etats.map((id: string) => <Badge key={id} color="blue">{labelFor(id)}</Badge>)}
+                    </div>
                   )}
                   {meta && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{meta}</div>}
                   {s.notes && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6, overflowWrap: 'anywhere' }}>{s.notes}</div>}
@@ -172,7 +198,7 @@ export default function SuppliersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Nom', 'Email', 'Emails secondaires', 'Tel', 'Spécialité', 'Pays', 'Langue', 'Notes', ''].map(h => (
+              {['Nom', 'Email', 'Emails secondaires', 'Tel', 'Corps d’état', 'Note', 'Pays', 'Langue', 'Notes', ''].map(h => (
                 <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -182,7 +208,7 @@ export default function SuppliersPage() {
               const isEditing = editingId === s.id
               return (
                 <tr key={s.id} style={{ borderBottom: '1px solid var(--border)', background: isEditing ? 'var(--bg-hover)' : 'transparent' }}>
-                  {['name', 'email', 'additionalEmails', 'phone', 'specialty', 'country', 'language', 'notes'].map(field => (
+                  {['name', 'email', 'additionalEmails', 'phone'].map(field => (
                     <td key={field} style={{ padding: '8px 12px' }}>
                       {isEditing ? (
                         <input value={editForm[field] ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, [field]: e.target.value }))}
@@ -194,6 +220,29 @@ export default function SuppliersPage() {
                         </span>
                       ) : (
                         <span style={{ fontSize: 12, color: field === 'name' ? 'var(--text-primary)' : 'var(--text-secondary)', fontFamily: ['email', 'phone'].includes(field) ? 'DM Mono, monospace' : 'DM Sans, system-ui', fontWeight: field === 'name' ? 500 : 400 }}>
+                          {s[field] ?? '—'}
+                        </span>
+                      )}
+                    </td>
+                  ))}
+                  <td style={{ padding: '8px 12px', minWidth: 180 }}>
+                    {isEditing ? (
+                      <CorpsEtatPicker options={corpsEtats} value={editForm.corpsEtats ?? []} onChange={next => setEditForm((f: any) => ({ ...f, corpsEtats: next }))} />
+                    ) : (s.corps_etats ?? []).length > 0 ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {s.corps_etats.map((id: string) => <Badge key={id} color="blue">{labelFor(id)}</Badge>)}
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>À classer</span>
+                    )}
+                  </td>
+                  {['specialty_note', 'country', 'language', 'notes'].map(field => (
+                    <td key={field} style={{ padding: '8px 12px' }}>
+                      {isEditing ? (
+                        <input value={editForm[field] ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, [field]: e.target.value }))}
+                          style={inputStyle(true)} />
+                      ) : (
+                        <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui' }}>
                           {s[field] ?? '—'}
                         </span>
                       )}
@@ -222,7 +271,7 @@ export default function SuppliersPage() {
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={9} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+              <tr><td colSpan={10} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
                 {search ? 'Aucun résultat' : 'Aucun fournisseur — cliquez sur "+ Ajouter"'}
               </td></tr>
             )}
@@ -237,7 +286,8 @@ export default function SuppliersPage() {
         <Field label="Email *" value={form.email} onChange={v => setForm(f => ({ ...f, email: v }))} placeholder="contact@fournisseur.com" type="email" />
         <Field label="Emails secondaires" value={form.additionalEmails} onChange={v => setForm(f => ({ ...f, additionalEmails: v }))} placeholder="email2@x.com, email3@x.com" />
         <Field label="Téléphone" value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="+381 13 30 77 71" />
-        <Field label="Spécialité" value={form.specialty} onChange={v => setForm(f => ({ ...f, specialty: v }))} placeholder="Ex: Menuiseries aluminium" />
+        <CorpsEtatPicker label="Corps d'état" options={corpsEtats} value={form.corpsEtats} onChange={next => setForm(f => ({ ...f, corpsEtats: next }))} />
+        <Field label="Note" value={form.specialty_note} onChange={v => setForm(f => ({ ...f, specialty_note: v }))} placeholder="Ex: Menuiseries aluminium" />
         <Field label="Pays" value={form.country} onChange={v => setForm(f => ({ ...f, country: v }))} placeholder="Ex: Serbie" />
         <Field label="Langue" value={form.language} onChange={v => setForm(f => ({ ...f, language: v }))} placeholder="Ex: Serbe / Anglais" />
         <Field label="Notes" value={form.notes} onChange={v => setForm(f => ({ ...f, notes: v }))} placeholder="Observations..." />
@@ -252,6 +302,14 @@ export default function SuppliersPage() {
         onClose={() => setHistoryTarget(null)}
         supplierId={historyTarget?.id ?? null}
         supplierName={historyTarget?.name}
+      />
+
+      <CorpsEtatCategorizeModal
+        open={showCategorize}
+        onClose={() => setShowCategorize(false)}
+        suppliers={uncategorized}
+        corpsEtats={corpsEtats}
+        onDone={refetch}
       />
     </div>
   )

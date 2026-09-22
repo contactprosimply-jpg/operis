@@ -53,6 +53,12 @@ export async function GET(
     .eq('tender_id', id)
     .maybeSingle()
 
+  const { data: corpsEtatsRows } = await db
+    .from('tender_corps_etats')
+    .select('corps_etat_id')
+    .eq('tender_id', id)
+  const corpsEtats = (corpsEtatsRows ?? []).map(r => r.corps_etat_id)
+
   const ownerId = tender.user_id as string
   const [{ count: documentCount }, { count: linkedEmailCount }] = await Promise.all([
     db.from('tender_documents')
@@ -77,6 +83,7 @@ export async function GET(
     data: {
       ...tender,
       ...memberLabels,
+      corps_etats: corpsEtats,
       consultations: consultations ?? [],
       quotes: quotes ?? [],
       documents: { received: [], sent: [], optional_png: [], document_groups: [] },
@@ -111,7 +118,7 @@ export async function PATCH(
   const allowed = [
     'title', 'client', 'description', 'deadline', 'status',
     'budget_ht', 'zone_geo', 'maitre_ouvrage', 'notes_internes',
-    'priorite', 'dossier_url', 'is_own_client',
+    'priorite', 'dossier_url', 'is_own_client', 'corps_etats',
   ]
   const fieldErr = rejectUnexpectedFields(body as Record<string, unknown>, allowed)
   if (fieldErr) return badRequest(fieldErr)
@@ -119,27 +126,54 @@ export async function PATCH(
     const titleErr = validateTitle(body.title)
     if (titleErr) return badRequest(titleErr)
   }
+  if ('corps_etats' in body && (!Array.isArray(body.corps_etats) || !body.corps_etats.every((v: unknown) => typeof v === 'string'))) {
+    return badRequest('corps_etats doit être un tableau de chaînes')
+  }
 
   const access = await getTenderIfAccessible(id, userId, 'mutate')
   if (!access) {
     return Response.json({ success: false, error: 'AO introuvable' }, { status: 404 })
   }
 
+  const { corps_etats, ...bodyRest } = body as Record<string, unknown> & { corps_etats?: string[] }
   const payload: Record<string, unknown> = {}
   for (const key of allowed) {
-    if (key in body) payload[key] = body[key]
+    if (key === 'corps_etats') continue
+    if (key in bodyRest) payload[key] = bodyRest[key]
   }
 
   const db = createAdminClient()
-  const { data, error } = await db
-    .from('tenders')
-    .update(payload)
-    .eq('id', id)
-    .select()
-    .single()
 
-  if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
-  return Response.json({ success: true, data })
+  let data: unknown = null
+  if (Object.keys(payload).length > 0) {
+    const { data: updated, error } = await db
+      .from('tenders')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
+    data = updated
+  } else {
+    const { data: existing, error } = await db.from('tenders').select('*').eq('id', id).single()
+    if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
+    data = existing
+  }
+
+  let updatedCorpsEtats: string[] | undefined
+  if (corps_etats !== undefined) {
+    const { error: delErr } = await db.from('tender_corps_etats').delete().eq('tender_id', id)
+    if (delErr) return Response.json({ success: false, error: delErr.message }, { status: 500 })
+    if (corps_etats.length > 0) {
+      const { error: insErr } = await db
+        .from('tender_corps_etats')
+        .insert(corps_etats.map(corps_etat_id => ({ tender_id: id, corps_etat_id })))
+      if (insErr) return Response.json({ success: false, error: insErr.message }, { status: 400 })
+    }
+    updatedCorpsEtats = corps_etats
+  }
+
+  return Response.json({ success: true, data: { ...(data as object), ...(updatedCorpsEtats ? { corps_etats: updatedCorpsEtats } : {}) } })
 }
 
 export async function DELETE(

@@ -67,6 +67,8 @@ export interface Tender {
   status: TenderStatus
   source_email_id: string | null
   assigned_to?: string | null
+  /** Corps d'état couverts par cet AO (ids de `corps_etats`) — optionnel, pilote la suggestion de fournisseurs. */
+  corps_etats?: string[]
   created_at: string
   updated_at: string
 }
@@ -78,12 +80,22 @@ export interface Supplier {
   email: string
   additional_emails: string[]
   phone: string | null
-  specialty: string | null
+  /** Ancien champ "spécialité" en texte libre — conservé en note, non structuré. */
+  specialty_note: string | null
   country: string | null
   language: string | null
   notes: string | null
+  /** Corps d'état structurés (ids de `corps_etats`) — voir CorpsEtat. */
+  corps_etats: string[]
+  response_rate?: { responded: number; contacted: number; rate: number } | null
   created_at: string
   updated_at: string
+}
+
+export interface CorpsEtat {
+  id: string
+  label: string
+  sort_order: number
 }
 
 export interface ConsultationSupplier {
@@ -251,6 +263,7 @@ export interface UpdateTenderPayload {
   deadline?: string
   status?: TenderStatus
   is_own_client?: boolean
+  corps_etats?: string[]
 }
 
 export interface CreateSupplierPayload {
@@ -258,10 +271,11 @@ export interface CreateSupplierPayload {
   email: string
   additional_emails?: string[]
   phone?: string
-  specialty?: string
+  specialty_note?: string
   country?: string
   language?: string
   notes?: string
+  corps_etats?: string[]
 }
 
 export interface ApiSuccess<T> {

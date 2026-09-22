@@ -27,13 +27,16 @@ export async function POST(req: NextRequest) {
   if (!body || typeof body !== 'object') return badRequest('Corps JSON requis')
 
   const fieldErr = rejectUnexpectedFields(body as Record<string, unknown>, [
-    'name', 'email', 'phone', 'specialty', 'country', 'language', 'notes',
+    'name', 'email', 'phone', 'specialty_note', 'country', 'language', 'notes', 'corps_etats',
   ])
   if (fieldErr) return badRequest(fieldErr)
 
   if (!body.name || typeof body.name !== 'string' || !body.name.trim()) return badRequest('Nom requis')
   if (body.name.length > 200) return badRequest('Nom trop long (max 200 caractères)')
   if (!body.email || typeof body.email !== 'string' || !body.email.includes('@')) return badRequest('Email invalide')
+  if (body.corps_etats !== undefined && (!Array.isArray(body.corps_etats) || !body.corps_etats.every((v: unknown) => typeof v === 'string'))) {
+    return badRequest('corps_etats doit être un tableau de chaînes')
+  }
 
   const result = await supplierService.create(userId, body)
   return Response.json(result, { status: result.success ? 201 : 400 })

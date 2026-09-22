@@ -45,7 +45,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     smtp_user: '',
     smtp_pass: '',
   })
-  const [supplierForm, setSupplierForm] = useState({ name: '', email: '', specialty: '' })
+  const [supplierForm, setSupplierForm] = useState({ name: '', email: '', specialty_note: '' })
   const [suppliersAdded, setSuppliersAdded] = useState(0)
   const [tenderForm, setTenderForm] = useState({ title: '', client: '', deadline: '' })
   const [testing, setTesting] = useState(false)
@@ -165,13 +165,13 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         body: JSON.stringify({
           name: supplierForm.name,
           email: supplierForm.email || null,
-          specialty: supplierForm.specialty || null,
+          specialty_note: supplierForm.specialty_note || null,
         }),
       })
       const data = await res.json()
       if (data.success) {
         setSuppliersAdded(n => n + 1)
-        setSupplierForm({ name: '', email: '', specialty: '' })
+        setSupplierForm({ name: '', email: '', specialty_note: '' })
       } else setError(data.error ?? 'Erreur')
     } catch {
       setError('Erreur réseau')
@@ -342,7 +342,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             </div>
             <Field label="Nom" value={supplierForm.name} onChange={v => setSupplierForm(f => ({ ...f, name: v }))} placeholder="Ex: Technomarket" />
             <Field label="Email" value={supplierForm.email} onChange={v => setSupplierForm(f => ({ ...f, email: v }))} placeholder="contact@fournisseur.fr" />
-            <Field label="Spécialité" value={supplierForm.specialty} onChange={v => setSupplierForm(f => ({ ...f, specialty: v }))} placeholder="Électricité, plomberie…" />
+            <Field label="Note" value={supplierForm.specialty_note} onChange={v => setSupplierForm(f => ({ ...f, specialty_note: v }))} placeholder="Électricité, plomberie…" />
             <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
               <Button variant="ghost" onClick={addSupplier} loading={saving}>+ Ajouter</Button>
               <Button onClick={() => goStep(3)}>Continuer</Button>

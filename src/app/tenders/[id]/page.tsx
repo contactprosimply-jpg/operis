@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { authFetch, getAccessToken } from '@/lib/auth-client'
 import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast, Card } from '@/components/ui'
+import { CorpsEtatPicker } from '@/components/ui/CorpsEtatPicker'
+import { useCorpsEtats } from '@/hooks'
 import ConsultationComposeModal, { type ConsultationComposePayload } from '@/components/ConsultationComposeModal'
 import MailComposePopup from '@/components/mail/MailComposePopup'
 import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
@@ -93,6 +95,7 @@ export default function TenderDetailPage() {
   const setupOpenedRef = useRef(false)
   const { userId, ready } = useAuth()
   const currentUserId = userId
+  const { corpsEtats } = useCorpsEtats()
   const { show, ToastComponent } = useToast()
   const showRef = useRef(show)
   const routerRef = useRef(router)
@@ -164,6 +167,7 @@ export default function TenderDetailPage() {
     title: '', client: '', description: '', deadline: '',
     budget_ht: '', zone_geo: '', maitre_ouvrage: '',
     notes_internes: '', priorite: 'normale', status: 'nouveau',
+    corps_etats: [] as string[],
   })
 
   const loadTender = useCallback(async (silent = false) => {
@@ -195,6 +199,7 @@ export default function TenderDetailPage() {
           notes_internes: data.data.notes_internes ?? '',
           priorite: data.data.priorite ?? 'normale',
           status: data.data.status ?? 'nouveau',
+          corps_etats: data.data.corps_etats ?? [],
         })
       } else if (!silent) {
         setLoadError(data.error ?? 'AO introuvable')
@@ -573,6 +578,7 @@ export default function TenderDetailPage() {
         notes_internes: editForm.notes_internes || null,
         priorite: editForm.priorite,
         status: editForm.status,
+        corps_etats: editForm.corps_etats ?? [],
       }
       const res = await authFetch(`/api/tenders/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
       const data = await res.json()
@@ -1020,7 +1026,33 @@ export default function TenderDetailPage() {
     ? linkedEmails.length
     : (tenderMeta?.linked_email_count ?? 0)
   const alreadyAdded = new Set(consultations.map((c: any) => c.supplier_id))
-  const availableSuppliers = suppliers.filter(s => !alreadyAdded.has(s.id))
+  const notAddedSuppliers = suppliers.filter(s => !alreadyAdded.has(s.id))
+  // Suggestion par lot : n'apparaît que si l'AO a des corps d'état renseignés — sinon
+  // un tri par taux de réponse seul, sans prétendre à une correspondance de lot.
+  const tenderCorpsEtatSet = new Set(tender.corps_etats ?? [])
+  const byResponseRateDesc = (a: any, b: any) => (b.response_rate?.rate ?? -1) - (a.response_rate?.rate ?? -1)
+  const suggestedSuppliers = tenderCorpsEtatSet.size > 0
+    ? notAddedSuppliers
+      .filter(s => (s.corps_etats ?? []).some((ce: string) => tenderCorpsEtatSet.has(ce)))
+      .sort(byResponseRateDesc)
+    : []
+  const suggestedIds = new Set(suggestedSuppliers.map(s => s.id))
+  const otherSuppliers = notAddedSuppliers.filter(s => !suggestedIds.has(s.id)).sort(byResponseRateDesc)
+
+  const renderSupplierRow = (s: any) => (
+    <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{s.name}</div>
+        <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>{s.email}</div>
+        {s.response_rate && (
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+            {Math.round(s.response_rate.rate * 100)} % de réponse
+          </div>
+        )}
+      </div>
+      <Button variant="ghost" onClick={() => { handleAddSupplier(s.id); setShowAddSupplierModal(false) }} style={{ fontSize: 11 }}>+ Ajouter</Button>
+    </div>
+  )
 
   const prioriteOpt = PRIORITE_OPTIONS.find(p => p.value === tender.priorite)
   const headerBorder = tender.priorite === 'urgente' ? '#ef4444'
@@ -1907,6 +1939,13 @@ export default function TenderDetailPage() {
 
           <Field label="Zone géographique" value={editForm.zone_geo} onChange={v => setEditForm(f => ({ ...f, zone_geo: v }))} placeholder="Ex: Île-de-France, Seine-Saint-Denis" />
 
+          <CorpsEtatPicker
+            label="Corps d'état (optionnel — pilote la suggestion de fournisseurs)"
+            options={corpsEtats}
+            value={editForm.corps_etats ?? []}
+            onChange={next => setEditForm(f => ({ ...f, corps_etats: next }))}
+          />
+
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'DM Mono, monospace' }}>Description</div>
             <textarea value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} placeholder="Description du marché..."
@@ -1935,21 +1974,30 @@ export default function TenderDetailPage() {
 
       {/* === MODAL AJOUTER FOURNISSEUR === */}
       <Modal open={showAddSupplierModal} onClose={() => setShowAddSupplierModal(false)} title="Ajouter un fournisseur">
-        {availableSuppliers.length === 0 ? (
+        {notAddedSuppliers.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)', fontSize: 12 }}>
             Tous vos fournisseurs sont déjà ajoutés à cet AO.
           </div>
         ) : (
-          <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-            {availableSuppliers.map(s => (
-              <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{s.name}</div>
-                  <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)' }}>{s.email}</div>
+          <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+            {suggestedSuppliers.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+                  Suggérés pour ce lot
                 </div>
-                <Button variant="ghost" onClick={() => { handleAddSupplier(s.id); setShowAddSupplierModal(false) }} style={{ fontSize: 11 }}>+ Ajouter</Button>
+                {suggestedSuppliers.map(renderSupplierRow)}
               </div>
-            ))}
+            )}
+            {otherSuppliers.length > 0 && (
+              <div>
+                {suggestedSuppliers.length > 0 && (
+                  <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4, marginTop: 8 }}>
+                    Autres fournisseurs
+                  </div>
+                )}
+                {otherSuppliers.map(renderSupplierRow)}
+              </div>
+            )}
           </div>
         )}
         <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)' }}>

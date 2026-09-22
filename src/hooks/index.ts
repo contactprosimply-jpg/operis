@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '@/components/AuthProvider'
-import { tendersApi, suppliersApi, mailApi } from '@/lib/api'
+import { tendersApi, suppliersApi, mailApi, corpsEtatsApi } from '@/lib/api'
 import { readCache, writeCache, cacheKeyForUser } from '@/lib/client-cache'
 import {
   TenderStats,
@@ -15,6 +15,7 @@ import {
   CreateTenderPayload,
   CreateSupplierPayload,
   TenderStatus,
+  CorpsEtat,
 } from '@/types/database'
 
 const MIN_HIDDEN_MS = 5000
@@ -251,13 +252,43 @@ export function useSuppliers() {
     return res
   }
 
+  const update = async (id: string, payload: Partial<CreateSupplierPayload>) => {
+    const res = await suppliersApi.update(id, payload)
+    if (res.success) await fetch(true)
+    return res
+  }
+
   const remove = async (id: string) => {
     const res = await suppliersApi.delete(id)
     if (res.success) await fetch(true)
     return res
   }
 
-  return { suppliers, loading, refetch: fetch, create, remove }
+  return { suppliers, loading, refetch: fetch, create, update, remove }
+}
+
+// ── Hook : nomenclature corps d'état (référence globale, quasi statique) ──
+let corpsEtatsCache: CorpsEtat[] | null = null
+
+export function useCorpsEtats() {
+  const [corpsEtats, setCorpsEtats] = useState<CorpsEtat[]>(corpsEtatsCache ?? [])
+  const [loading, setLoading] = useState(!corpsEtatsCache)
+
+  useEffect(() => {
+    if (corpsEtatsCache) return
+    let cancelled = false
+    corpsEtatsApi.getAll().then(res => {
+      if (cancelled) return
+      if (res.success) {
+        corpsEtatsCache = res.data
+        setCorpsEtats(res.data)
+      }
+      setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  return { corpsEtats, loading }
 }
 
 // ── Hook : boîte mail ─────────────────────────────────────────

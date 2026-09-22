@@ -3,6 +3,8 @@ export const dynamic = 'force-dynamic'
 import { NextRequest } from 'next/server'
 import { getUserFromRequest, unauthorized } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase'
+import { supplierRepository } from '@/repositories/supplier.repository'
+import { badRequest } from '@/lib/api-validation'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getUserFromRequest(req)
@@ -10,20 +12,36 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { id } = await params
   const body = await req.json()
-  const { name, email, additional_emails, phone, specialty, country, language, notes } = body
+  const { name, email, additional_emails, phone, specialty_note, country, language, notes, corps_etats } = body
+
+  if (corps_etats !== undefined && (!Array.isArray(corps_etats) || !corps_etats.every((v: unknown) => typeof v === 'string'))) {
+    return badRequest('corps_etats doit être un tableau de chaînes')
+  }
 
   const db = createAdminClient()
 
   const { data, error } = await db
     .from('suppliers')
-    .update({ name, email, additional_emails, phone, specialty, country, language, notes })
+    .update({ name, email, additional_emails, phone, specialty_note, country, language, notes })
     .eq('id', id)
     .eq('user_id', userId)
     .select()
     .single()
 
   if (error) return Response.json({ success: false, error: error.message }, { status: 500 })
-  return Response.json({ success: true, data })
+
+  let updatedCorpsEtats = await supplierRepository.getCorpsEtats(id)
+  if (corps_etats !== undefined) {
+    try {
+      await supplierRepository.setCorpsEtats(id, corps_etats)
+      updatedCorpsEtats = corps_etats
+    } catch (e: unknown) {
+      const err = e as { message?: string }
+      return Response.json({ success: false, error: err.message ?? 'corps_etats invalide' }, { status: 400 })
+    }
+  }
+
+  return Response.json({ success: true, data: { ...data, corps_etats: updatedCorpsEtats } })
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
