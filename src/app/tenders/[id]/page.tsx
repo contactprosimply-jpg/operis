@@ -2001,7 +2001,7 @@ export default function TenderDetailPage() {
           </div>
         )}
         <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-          <button onClick={() => router.push('/suppliers')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
+          <button onClick={() => router.push('/suppliers/new')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, system-ui' }}>
             + Créer un nouveau fournisseur →
           </button>
         </div>

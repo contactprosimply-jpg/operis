@@ -12,7 +12,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { id } = await params
   const body = await req.json()
-  const { name, email, additional_emails, phone, specialty_note, country, language, notes, corps_etats } = body
+  const { name, email, additional_emails, contact_name, phone, specialty_note, country, language, notes, corps_etats } = body
 
   if (corps_etats !== undefined && (!Array.isArray(corps_etats) || !corps_etats.every((v: unknown) => typeof v === 'string'))) {
     return badRequest('corps_etats doit être un tableau de chaînes')
@@ -22,7 +22,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { data, error } = await db
     .from('suppliers')
-    .update({ name, email, additional_emails, phone, specialty_note, country, language, notes })
+    .update({ name, email, additional_emails, contact_name, phone, specialty_note, country, language, notes })
     .eq('id', id)
     .eq('user_id', userId)
     .select()

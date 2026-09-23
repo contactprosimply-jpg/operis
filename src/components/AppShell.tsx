@@ -16,8 +16,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isPaywall = pathname === '/choose-plan' || pathname === '/billing/activating'
   const minimalShell = isWebsiteShellRoute(pathname) || isPaywall
-  const isFillPage = pathname === '/mail' || pathname.startsWith('/mail/')
-  const isDashboard = pathname === '/dashboard'
+  const isFillPage = pathname === '/mail' || pathname.startsWith('/mail/') || pathname === '/suppliers'
+  const isDashboard = pathname === '/dashboard' || pathname.startsWith('/suppliers/')
 
   useEffect(() => {
     document.body.classList.toggle('app-shell-mode', !minimalShell)

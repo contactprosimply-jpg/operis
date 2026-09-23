@@ -20,6 +20,11 @@ const LOCALE_ALIASES: Record<Exclude<MailLocale, 'fr'>, string[]> = {
 export function normalizeSupplierLanguage(raw: string | null | undefined): MailLocale {
   const v = raw?.trim().toLowerCase()
   if (!v) return 'fr'
+  // Égalité stricte d'abord : la recherche par sous-chaîne ci-dessous classait « Italien »
+  // en anglais (il contient « en »), avant même d'atteindre l'alias italien.
+  for (const [locale, aliases] of Object.entries(LOCALE_ALIASES) as [Exclude<MailLocale, 'fr'>, string[]][]) {
+    if (aliases.includes(v)) return locale
+  }
   for (const [locale, aliases] of Object.entries(LOCALE_ALIASES) as [Exclude<MailLocale, 'fr'>, string[]][]) {
     if (aliases.some(alias => v === alias || v.includes(alias))) return locale
   }

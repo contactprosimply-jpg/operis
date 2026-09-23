@@ -79,6 +79,8 @@ export interface Supplier {
   name: string
   email: string
   additional_emails: string[]
+  /** Personne à contacter chez le fournisseur (facultatif). */
+  contact_name: string | null
   phone: string | null
   /** Ancien champ "spécialité" en texte libre — conservé en note, non structuré. */
   specialty_note: string | null
@@ -270,6 +272,7 @@ export interface CreateSupplierPayload {
   name: string
   email: string
   additional_emails?: string[]
+  contact_name?: string | null
   phone?: string
   specialty_note?: string
   country?: string
