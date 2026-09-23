@@ -637,15 +637,6 @@ export async function fetchMailboxBackfillBatch(
   }
 }
 
-/** Lot de sync initiale INBOX — alias de fetchMailboxBackfillBatch. */
-export async function fetchInboxBackfillBatch(
-  config: MailAccountConfig,
-  mailboxPath: string,
-  options: { belowUid: number; limit: number },
-): Promise<MailboxBackfillBatch> {
-  return fetchMailboxBackfillBatch(config, mailboxPath, options)
-}
-
 /** Liste rapide des enveloppes (sans télécharger le corps — ~10x plus rapide). */
 export async function fetchRecentEnvelopes(
   config: MailAccountConfig,
