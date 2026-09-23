@@ -592,7 +592,7 @@ export type InboxBackfillBatch = MailboxBackfillBatch
 export async function fetchMailboxBackfillBatch(
   config: MailAccountConfig,
   mailboxPath: string,
-  options: { belowUid: number; limit: number },
+  options: { belowUid: number; limit: number; sinceDate?: Date | null },
 ): Promise<MailboxBackfillBatch> {
   const accountUser = config.imap_user.trim()
   const client = createImapClient(config)
@@ -601,7 +601,11 @@ export async function fetchMailboxBackfillBatch(
 
   try {
     const exists = mailboxExists(client)
-    const allUidsRaw = await client.search({ all: true }, { uid: true })
+    // sinceDate borne l'import initial à N mois d'historique (SEARCH SINCE, au jour près) ;
+    // sans elle, toute la boîte est parcourue.
+    const allUidsRaw = options.sinceDate
+      ? await client.search({ since: options.sinceDate }, { uid: true })
+      : await client.search({ all: true }, { uid: true })
     const allUids = Array.isArray(allUidsRaw) ? allUidsRaw : []
     const mailboxTotal = allUids.length || exists
     const maxUid = allUids.length ? Math.max(...allUids) : 0

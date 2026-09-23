@@ -14,6 +14,8 @@ export interface UserSettings {
   mail_signature_enabled: boolean
   ao_detection_threshold: number
   mail_module_enabled: boolean
+  /** Mois d'historique importés à la première synchro IMAP (0 = illimité). */
+  mail_sync_lookback_months: number
   updated_at?: string
 }
 
@@ -30,6 +32,7 @@ export const DEFAULT_USER_SETTINGS: Omit<UserSettings, 'user_id'> = {
   mail_signature_enabled: true,
   ao_detection_threshold: 5,
   mail_module_enabled: true,
+  mail_sync_lookback_months: 12,
 }
 
 export type UserSettingsSaveResult = {
@@ -87,6 +90,7 @@ function normalizeSettings(userId: string, raw: Partial<UserSettings> | null): U
     mail_signature_enabled: raw?.mail_signature_enabled ?? DEFAULT_USER_SETTINGS.mail_signature_enabled,
     ao_detection_threshold: Number(raw?.ao_detection_threshold ?? DEFAULT_USER_SETTINGS.ao_detection_threshold),
     mail_module_enabled: raw?.mail_module_enabled ?? DEFAULT_USER_SETTINGS.mail_module_enabled,
+    mail_sync_lookback_months: Number(raw?.mail_sync_lookback_months ?? DEFAULT_USER_SETTINGS.mail_sync_lookback_months),
     updated_at: raw?.updated_at,
   }
 }
@@ -106,6 +110,7 @@ function settingsRow(userId: string, settings: UserSettings, updatedAt: string) 
     mail_signature_enabled: settings.mail_signature_enabled,
     ao_detection_threshold: settings.ao_detection_threshold,
     mail_module_enabled: settings.mail_module_enabled,
+    mail_sync_lookback_months: settings.mail_sync_lookback_months,
     updated_at: updatedAt,
   }
 }

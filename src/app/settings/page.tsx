@@ -13,6 +13,7 @@ import { useAuth } from '@/components/AuthProvider'
 import MailRelancesSection from '@/components/settings/MailRelancesSection'
 import NotificationsSection from '@/components/settings/NotificationsSection'
 import AoDetectionSection from '@/components/settings/AoDetectionSection'
+import MailSyncDepthCard from '@/components/settings/MailSyncDepthCard'
 import BillingSummarySection from '@/components/settings/BillingSummarySection'
 import { cacheUserSettingsLocally } from '@/lib/user-settings'
 
@@ -632,6 +633,7 @@ function SettingsPageContent() {
               <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>Même identifiant et mot de passe que IMAP.</div>
             </div>
             </form>
+            <MailSyncDepthCard onSaved={() => show('✓ Paramètres enregistrés')} onError={msg => show(`Erreur : ${msg}`)} />
           </>
         )}
 

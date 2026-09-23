@@ -23,6 +23,7 @@ const PATCH_KEYS: Array<keyof UserSettings> = [
   'mail_signature_enabled',
   'ao_detection_threshold',
   'mail_module_enabled',
+  'mail_sync_lookback_months',
 ]
 
 function parsePatch(body: Record<string, unknown>): Partial<UserSettings> {
@@ -41,6 +42,10 @@ function parsePatch(body: Record<string, unknown>): Partial<UserSettings> {
     if (typeof body[key] === 'number' && Number.isFinite(body[key])) {
       (patch as Record<string, number>)[key] = body[key] as number
     }
+  }
+
+  if (patch.mail_sync_lookback_months !== undefined) {
+    patch.mail_sync_lookback_months = Math.min(120, Math.max(0, Math.round(patch.mail_sync_lookback_months)))
   }
 
   return patch

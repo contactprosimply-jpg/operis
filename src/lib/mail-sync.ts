@@ -40,6 +40,7 @@ import {
   notifyImportantThreadReply,
 } from '@/lib/user-notifications'
 import { customFolderLabel } from '@/lib/mail-folders'
+import { lookbackSinceDate } from '@/lib/mail-sync-lookback'
 import type { AddressObject } from 'mailparser'
 
 function addressObjectText(addr: AddressObject | AddressObject[] | undefined): string {
@@ -1386,9 +1387,19 @@ export async function syncMailSingleBatch(
     state = { ...state, processed: 0, total: 0, cursor: null }
   }
 
+  // Limite d'historique de l'import initial (réglage utilisateur, 12 mois par défaut) — ne
+  // s'applique qu'aux phases d'import (INBOX / Envoyés), jamais au rafraîchissement incrémental,
+  // et ne supprime rien : les mails déjà importés restent en base.
+  let sinceDate: Date | null = null
+  if (phase !== 'incremental') {
+    const { getUserSettings } = await import('@/lib/user-settings')
+    sinceDate = lookbackSinceDate((await getUserSettings(db, userId)).mail_sync_lookback_months)
+  }
+
   const batch = await fetchMailboxBackfillBatch(acc, mailboxPath, {
     belowUid,
     limit: batchLimit,
+    sinceDate,
   })
 
   if (folder === 'inbox' && imapUidValidityChanged(acc.inbox_uidvalidity ?? 0, batch.uidValidity) && acc.id) {
@@ -1434,7 +1445,8 @@ export async function syncMailSingleBatch(
       {
         folder,
         mailboxPath,
-        sinceDays: 3650,
+        // Inerte ici : les enveloppes sont préchargées ci-dessus, la borne réelle est sinceDate.
+        sinceDays: sinceDate ? Math.ceil((Date.now() - sinceDate.getTime()) / 86_400_000) : 3650,
         limit: batch.envelopes.length,
         skipOutbound: folder === 'inbox',
         fullScan: phase !== 'incremental',

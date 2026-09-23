@@ -54,6 +54,7 @@ export interface UserSettings {
   mail_signature_enabled: boolean
   ao_detection_threshold: number
   mail_module_enabled: boolean
+  mail_sync_lookback_months: number
   updated_at?: string
 }
 
