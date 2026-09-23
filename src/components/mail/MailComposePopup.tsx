@@ -7,6 +7,7 @@ import { getSignatureData } from '@/lib/email-signature'
 import { useExternalWindowPortal } from '@/lib/use-external-window'
 import ContactRecipientField from '@/components/mail/ContactRecipientField'
 import type { OperisContact } from '@/lib/contacts'
+import { parseAddresses } from '@/lib/supplier-address'
 
 const WINDOW_WIDTH = 760
 const WINDOW_HEIGHT = 680
@@ -53,6 +54,7 @@ export default function MailComposePopup({
   contactsRef,
   tenderId,
   suggestedTenderContacts,
+  suggestedCc,
 }: {
   compose: { to: string; cc: string; bcc: string; subject: string; body: string }
   onChange: (patch: Partial<{ to: string; cc: string; bcc: string; subject: string; body: string }>) => void
@@ -80,6 +82,8 @@ export default function MailComposePopup({
   contactsRef?: React.RefObject<OperisContact[] | null>
   tenderId?: string | null
   suggestedTenderContacts?: OperisContact[]
+  /** Adresses proposées en copie, décochées par défaut (ex. e-mails secondaires d'un fournisseur). */
+  suggestedCc?: string[]
 }) {
   const [showCc, setShowCc] = useState(false)
   const [showBcc, setShowBcc] = useState(false)
@@ -382,6 +386,31 @@ export default function MailComposePopup({
               />
             )}
           </FieldRow>
+          {suggestedCc && suggestedCc.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', width: 36, textTransform: 'uppercase' }}>Copie</span>
+              {suggestedCc.map(addr => {
+                const checked = parseAddresses(compose.cc).includes(addr.toLowerCase())
+                return (
+                  <label key={addr} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        const entries = compose.cc.split(',').map(x => x.trim()).filter(Boolean)
+                        const next = checked
+                          ? entries.filter(entry => !parseAddresses(entry).includes(addr.toLowerCase()))
+                          : [...entries, addr]
+                        onChange({ cc: next.join(', ') })
+                        if (!checked) setShowCc(true)
+                      }}
+                    />
+                    {addr}
+                  </label>
+                )
+              })}
+            </div>
+          )}
           {!showCc && !showBcc && (
             <div style={{ padding: '4px 0 8px', display: 'flex', gap: 12 }}>
               <button type="button" onClick={() => setShowCc(true)} style={linkBtnStyle}>Cc</button>

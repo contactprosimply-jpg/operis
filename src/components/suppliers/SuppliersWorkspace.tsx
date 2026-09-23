@@ -9,6 +9,7 @@ import SupplierList from './SupplierList'
 import SupplierDetail from './SupplierDetail'
 import ConsultOnTenderModal from './ConsultOnTenderModal'
 import { CorpsEtatCategorizeModal } from './CorpsEtatCategorizeModal'
+import { useMailReadiness } from './useMailReadiness'
 import { filterSuppliers, visibleOrder, type SupplierSort } from './supplier-list-model'
 
 export default function SuppliersWorkspace() {
@@ -16,6 +17,7 @@ export default function SuppliersWorkspace() {
   const { suppliers, loading, refetch, remove } = useSuppliers()
   const { corpsEtats } = useCorpsEtats()
   const { show, ToastComponent } = useToast()
+  const mail = useMailReadiness()
 
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SupplierSort>('lot')
@@ -74,6 +76,8 @@ export default function SuppliersWorkspace() {
           key={selected.id}
           supplier={selected}
           corpsEtats={corpsEtats}
+          mail={mail}
+          onNotify={show}
           onBack={() => setMobileView('list')}
           onConsult={() => setConsulting(true)}
           onDelete={onDelete}

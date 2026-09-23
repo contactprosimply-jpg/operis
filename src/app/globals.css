@@ -655,6 +655,11 @@ body:not(.app-shell-mode) { overflow-x: clip; }
 .sp-status--won { background: var(--db-green-bg); color: var(--db-green-text); }
 .sp-coords { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-top: 12px; }
 .sp-coords dd { margin: 4px 0 0; font-size: 14px; overflow-wrap: anywhere; }
+.sp-exch { list-style: none; margin: 8px 0 0; padding: 0; }
+.sp-exch li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--db-sep); font-size: 13px; }
+.sp-exch li:last-child { border-bottom: none; }
+.sp-exch-subject { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-exch-date { color: var(--db-text-2); font-family: 'DM Mono', monospace; font-size: 12px; white-space: nowrap; }
 
 .sp-form-page { min-height: 100%; background: var(--db-page); color: var(--db-text); font-family: 'DM Sans', system-ui, sans-serif; flex: 1; padding: 24px 28px 48px; }
 .sp-form-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }

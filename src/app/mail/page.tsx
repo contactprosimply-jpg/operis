@@ -16,7 +16,7 @@ import {
 } from '@/lib/mail-smart-labels'
 import { emitMailUnreadChanged } from '@/lib/mail-unread-events'
 import { Spinner, useModalBodyLock } from '@/components/ui'
-import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
+import { appendSignatureToBody, getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import { groupEmailsByDate } from '@/lib/mail-grouping'
 import { AO_CATEGORY_BADGE, type AoKeywordCategory } from '@/lib/ao-email-analysis'
 import { tenderSetupUrl } from '@/lib/tender-setup-nav'
@@ -150,18 +150,6 @@ function formatFileSize(bytes: number) {
 function isEmptyComposeHtml(html: string): boolean {
   const text = html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/\s/g, '')
   return !text
-}
-
-function appendSignatureToBody(body: string, signatureHtml: string, signatureText: string): string {
-  if (!signatureHtml.trim()) return body
-  const isHtml = (body.includes('<') && body.includes('>')) || signatureHtml.includes('<')
-  if (isHtml) {
-    const block = body.trim()
-    const hr = '<hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0">'
-    return block ? `${block}${hr}${signatureHtml}` : signatureHtml
-  }
-  const plainSig = signatureText.replace(/^\n\n--\n/, '').trim()
-  return body.trim() ? `${body.trim()}\n\n--\n${plainSig}` : plainSig
 }
 
 async function fileToBase64(file: File): Promise<string> {

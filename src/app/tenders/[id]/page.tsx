@@ -8,7 +8,7 @@ import { CorpsEtatPicker } from '@/components/ui/CorpsEtatPicker'
 import { useCorpsEtats } from '@/hooks'
 import ConsultationComposeModal, { type ConsultationComposePayload } from '@/components/ConsultationComposeModal'
 import MailComposePopup from '@/components/mail/MailComposePopup'
-import { getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
+import { appendSignatureToBody, getSignatureData, stripSignatureFromBody } from '@/lib/email-signature'
 import type { Email } from '@/types/database'
 import {
   type OperisContact,
@@ -43,18 +43,6 @@ const PRIORITE_OPTIONS = [
   { value: 'haute', label: '↑ Haute', color: '#fbbf24' },
   { value: 'urgente', label: '⚡ Urgente', color: '#f87171' },
 ]
-
-function appendSignatureToBody(body: string, signatureHtml: string, signatureText: string): string {
-  if (!signatureHtml.trim()) return body
-  const isHtml = (body.includes('<') && body.includes('>')) || signatureHtml.includes('<')
-  if (isHtml) {
-    const block = body.trim()
-    const hr = '<hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0">'
-    return block ? `${block}${hr}${signatureHtml}` : signatureHtml
-  }
-  const plainSig = signatureText.replace(/^\n\n--\n/, '').trim()
-  return body.trim() ? `${body.trim()}\n\n--\n${plainSig}` : plainSig
-}
 
 function isElectronDesktop(): boolean {
   return typeof window !== 'undefined' && !!window.operisDesktop

@@ -86,3 +86,15 @@ export function saveSignatureToStorage(sig: SignatureFields, mode: 'fields' | 'h
   localStorage.setItem('operis_signature', JSON.stringify(payload))
   localStorage.setItem('operis_signature_mode', mode)
 }
+
+export function appendSignatureToBody(body: string, signatureHtml: string, signatureText: string): string {
+  if (!signatureHtml.trim()) return body
+  const isHtml = (body.includes('<') && body.includes('>')) || signatureHtml.includes('<')
+  if (isHtml) {
+    const block = body.trim()
+    const hr = '<hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0">'
+    return block ? `${block}${hr}${signatureHtml}` : signatureHtml
+  }
+  const plainSig = signatureText.replace(/^\n\n--\n/, '').trim()
+  return body.trim() ? `${body.trim()}\n\n--\n${plainSig}` : plainSig
+}

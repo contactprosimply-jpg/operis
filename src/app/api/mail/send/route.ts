@@ -17,6 +17,7 @@ import {
 import { upsertContactsFromOutboundSend } from '@/lib/contacts'
 import { extractEmailAddress } from '@/lib/mail-attachments'
 import { isFirstTimeContact, queueVerificationChallenge } from '@/lib/mail-human-verification'
+import { isRegisteredSupplierRecipient } from '@/lib/supplier-address'
 import { operisFooter } from '@/lib/email-compose'
 import { MAX_UPLOAD_BYTES, requestBodyTooLarge, tooLargeResponse } from '@/lib/upload-limits'
 import { markEmailHandledQuietly } from '@/lib/priorities'
@@ -255,8 +256,13 @@ export async function POST(req: NextRequest) {
   })
 
   // Vérification anti-bot : un premier contact (jamais échangé) passe par un mail-défi avant
-  // livraison — sauf réponse à un mail reçu, où le destinataire n'est par définition pas nouveau.
-  if (!resolvedReplyId && await isFirstTimeContact(db, userId, toText)) {
+  // livraison — sauf réponse à un mail reçu, où le destinataire n'est par définition pas nouveau,
+  // et sauf fournisseur enregistré par l'utilisateur (il l'a ajouté lui-même : rien à vérifier).
+  if (
+    !resolvedReplyId
+    && !(await isRegisteredSupplierRecipient(db, userId, toText))
+    && await isFirstTimeContact(db, userId, toText)
+  ) {
     const challenge = await queueVerificationChallenge(db, userId, {
       toAddress: toText,
       cc: typeof cc === 'string' ? cc.slice(0, 500) : undefined,

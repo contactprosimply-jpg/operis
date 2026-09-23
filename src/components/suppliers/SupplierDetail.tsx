@@ -4,6 +4,9 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-client'
 import { effectiveMailLanguageLabel } from '@/lib/supplier-languages'
+import SupplierMailComposer from './SupplierMailComposer'
+import type { SupplierExchange } from '@/lib/supplier-exchanges'
+import type { MailReadiness } from './useMailReadiness'
 import type { CorpsEtat, Supplier } from '@/types/database'
 
 interface HistoryEntry {
@@ -25,14 +28,31 @@ const fmtPrice = (v: number | null) => v != null ? `${v.toLocaleString('fr-FR', 
 const fmtDate = (v: string) => new Date(v).toLocaleDateString('fr-FR')
 
 export default function SupplierDetail({
-  supplier, corpsEtats, onBack, onConsult, onDelete,
+  supplier, corpsEtats, mail, onBack, onConsult, onDelete, onNotify,
 }: {
   supplier: Supplier
   corpsEtats: CorpsEtat[]
+  mail: MailReadiness
   onBack: () => void
   onConsult: () => void
   onDelete: () => void
+  onNotify: (message: string) => void
 }) {
+  const [composing, setComposing] = useState(false)
+  const [exchangesVersion, setExchangesVersion] = useState(0)
+  const [exchanges, setExchanges] = useState<{ id: string; list: SupplierExchange[] | null } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    authFetch(`/api/suppliers/${supplier.id}/exchanges`)
+      .then(r => r.json())
+      .then(json => { if (!cancelled) setExchanges({ id: supplier.id, list: json.success ? json.data : null }) })
+      .catch(() => { if (!cancelled) setExchanges({ id: supplier.id, list: null }) })
+    return () => { cancelled = true }
+  }, [supplier.id, exchangesVersion])
+  const exchangesLoading = exchanges?.id !== supplier.id
+  const exchangeList = exchangesLoading ? null : exchanges?.list ?? null
+
   const [state, setState] = useState<{ id: string; history: History | null; error: boolean } | null>(null)
 
   useEffect(() => {
@@ -75,7 +95,9 @@ export default function SupplierDetail({
           {phone
             ? <a className="sp-btn" href={`tel:${phone.replace(/\s+/g, '')}`}>Appeler</a>
             : <span className="sp-btn" aria-disabled="true">Appeler</span>}
-          <a className="sp-btn" href={`mailto:${supplier.email}`}>E-mail</a>
+          {mail === 'unavailable'
+            ? <Link className="sp-btn" href="/settings?tab=messagerie">Connecter ma messagerie</Link>
+            : <button type="button" className="sp-btn" disabled={mail === 'loading'} onClick={() => setComposing(true)}>E-mail</button>}
           <button type="button" className="sp-btn sp-btn--primary" onClick={onConsult}>Consulter sur un AO</button>
         </div>
       </div>
@@ -136,6 +158,24 @@ export default function SupplierDetail({
       </div>
 
       <div className="sp-card">
+        <div className="sp-label">Derniers échanges</div>
+        {exchangesLoading ? <div className="sp-empty">…</div>
+          : exchangeList === null ? <div className="sp-empty">Échanges indisponibles</div>
+          : exchangeList.length === 0 ? <div className="sp-empty">Aucun échange avec ce fournisseur.</div>
+          : (
+            <ul className="sp-exch">
+              {exchangeList.map(x => (
+                <li key={x.id}>
+                  <span className={`sp-status${x.direction === 'received' ? ' sp-status--won' : ''}`}>{x.direction === 'received' ? 'Reçu' : 'Envoyé'}</span>
+                  <span className="sp-exch-subject">{x.subject}</span>
+                  <span className="sp-exch-date">{fmtDate(x.date)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+      </div>
+
+      <div className="sp-card">
         <div className="sp-label">Coordonnées</div>
         <dl className="sp-coords">
           {supplier.contact_name && <div><dt className="sp-label">Contact</dt><dd>{supplier.contact_name}</dd></div>}
@@ -154,6 +194,19 @@ export default function SupplierDetail({
           <button type="button" className="sp-btn sp-btn--danger" onClick={onDelete}>Supprimer</button>
         </div>
       </div>
+      {composing && (
+        <SupplierMailComposer
+          supplier={supplier}
+          onClose={() => setComposing(false)}
+          onSent={({ pendingVerification }) => {
+            setComposing(false)
+            setExchangesVersion(v => v + 1)
+            onNotify(pendingVerification
+              ? 'E-mail de vérification envoyé : votre message partira après confirmation.'
+              : 'E-mail envoyé')
+          }}
+        />
+      )}
     </section>
   )
 }
