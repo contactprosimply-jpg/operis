@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect, useSyncExternalStore } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useTenders } from '@/hooks'
+import { useTenders, useCorpsEtats } from '@/hooks'
 import { authFetch } from '@/lib/auth-client'
 import { useAuth } from '@/components/AuthProvider'
 import TenderOriginBadge from '@/components/TenderOriginBadge'
@@ -21,10 +21,13 @@ import { Button, Modal, Field, Badge, useToast, Card, KpiCard, tenderListRowStyl
 import { TONE_VARS, tenderStageDisplay } from '@/lib/tender-stage'
 import type { TenderStatus } from '@/types/database'
 
+// Libellés affichés = vocabulaire de la maquette AO-Liste (valeurs techniques inchangées).
+// en_cours et urgence partagent "En consultation" : "urgence" reste distingué par sa couleur
+// rouge (TONE_VARS.red) sur le statut dérivé affiché ailleurs (liste, en-tête de fiche).
 const STATUS_OPTIONS: { value: TenderStatus; label: string }[] = [
-  { value: 'nouveau', label: 'Nouveau' },
-  { value: 'en_cours', label: 'En cours' },
-  { value: 'urgence', label: 'Urgence' },
+  { value: 'nouveau', label: 'À étudier' },
+  { value: 'en_cours', label: 'En consultation' },
+  { value: 'urgence', label: 'En consultation' },
   { value: 'gagne', label: 'Gagné' },
   { value: 'perdu', label: 'Perdu' },
   { value: 'cloture', label: 'Clôturé' },
@@ -104,6 +107,7 @@ export default function TendersPage() {
   const { session } = useAuth()
   const currentUserId = session?.user?.id
   const { tenders, loading, refreshing, create, markStatus } = useTenders()
+  const { corpsEtats } = useCorpsEtats()
   const { show, ToastComponent } = useToast()
   const [showModal, setShowModal] = useState(false)
   const [filter, setFilter] = useState('actifs')
@@ -320,7 +324,7 @@ export default function TendersPage() {
           <thead>
             <tr className="aol-thead">
               {[
-                'Appel d’offres', 'Priorité', 'Échéance', 'Réponses', 'Meilleur devis',
+                'Appel d’offres', 'Corps d’état', 'Échéance', 'Réponses', 'Meilleur devis',
                 ...(showCreatorColumn ? ['Créé par'] : []),
                 'Statut', '',
               ].map(h => (
@@ -331,7 +335,9 @@ export default function TendersPage() {
           <tbody>
             {filtered.map((t, i) => {
               const respPct = t.nb_suppliers > 0 ? Math.round((t.nb_responses / t.nb_suppliers) * 100) : 0
-              const priorite = PRIORITE_LABEL[t.priorite ?? 'normale'] ?? PRIORITE_LABEL.normale
+              const corpsEtatLabels = (t.corps_etats ?? [])
+                .map(id => corpsEtats.find(ce => ce.id === id)?.label)
+                .filter((l): l is string => !!l)
               const creatorLabel = t.creator_label ?? getTenderCreatorLabel(t, currentUserId, org)
               const assigneeLabel = t.assignee_label ?? getTenderAssigneeLabel(t, currentUserId, org)
               const stage = tenderStageDisplay(t)
@@ -355,9 +361,12 @@ export default function TendersPage() {
                     )}
                   </td>
                   <td style={{ padding: '14px' }}>
-                    <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: priorite.color, fontWeight: 600 }}>
-                      {priorite.icon} {priorite.label}
-                    </span>
+                    {corpsEtatLabels.length > 0 ? (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                        {corpsEtatLabels.slice(0, 2).map(l => <span key={l} className="aol-tag">{l}</span>)}
+                        {corpsEtatLabels.length > 2 && <span style={{ fontSize: 12, color: 'var(--db-text-2)' }}>+{corpsEtatLabels.length - 2}</span>}
+                      </div>
+                    ) : <span style={{ color: 'var(--db-text-2)' }}>—</span>}
                   </td>
                   <td style={{ padding: '14px' }}>
                     <div style={{ fontSize: 14, color: 'var(--db-text)' }}>

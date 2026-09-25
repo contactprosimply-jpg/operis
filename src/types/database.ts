@@ -234,6 +234,7 @@ export interface TenderStats {
   priorite?: string | null
   creator_label?: string | null
   assignee_label?: string | null
+  corps_etats?: string[]
 }
 
 export interface ConsultationWithSupplier extends ConsultationSupplier {

@@ -29,10 +29,12 @@ import { normalizeAttachments } from '@/lib/mail-attachments'
 import { isTenderSetupQuery } from '@/lib/tender-setup-nav'
 import { TONE_VARS, tenderStageDisplay, type StatusTone } from '@/lib/tender-stage'
 
+// Libellés affichés = vocabulaire de la maquette AO-Liste (valeurs techniques inchangées).
+// en_cours et urgence partagent "En consultation" : "urgence" reste distingué par sa couleur.
 const STATUS_OPTIONS = [
-  { value: 'nouveau', label: 'Nouveau', color: '#60a5fa' },
-  { value: 'en_cours', label: 'En cours', color: '#60a5fa' },
-  { value: 'urgence', label: 'Urgence', color: '#fbbf24' },
+  { value: 'nouveau', label: 'À étudier', color: '#60a5fa' },
+  { value: 'en_cours', label: 'En consultation', color: '#60a5fa' },
+  { value: 'urgence', label: 'En consultation', color: '#fbbf24' },
   { value: 'gagne', label: 'Gagné', color: '#4ade80' },
   { value: 'perdu', label: 'Perdu', color: '#f87171' },
   { value: 'cloture', label: 'Clôturé', color: '#6b7280' },

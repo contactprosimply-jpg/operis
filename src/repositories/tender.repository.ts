@@ -36,7 +36,22 @@ export const tenderRepository = {
 
     const { data, error } = await query.order('deadline', { ascending: true, nullsFirst: false })
     if (error) throw new Error(error.message)
-    return data as TenderStats[]
+    const rows = (data ?? []) as TenderStats[]
+    if (!rows.length) return rows
+
+    // Corps d'état par AO — une seule requête batch (pas de colonne dédiée sur tender_stats).
+    const { data: corpsEtatsRows } = await db
+      .from('tender_corps_etats')
+      .select('tender_id, corps_etat_id')
+      .in('tender_id', rows.map(r => r.tender_id))
+    const corpsEtatsByTender = new Map<string, string[]>()
+    for (const r of corpsEtatsRows ?? []) {
+      const list = corpsEtatsByTender.get(r.tender_id) ?? []
+      list.push(r.corps_etat_id)
+      corpsEtatsByTender.set(r.tender_id, list)
+    }
+
+    return rows.map(row => ({ ...row, corps_etats: corpsEtatsByTender.get(row.tender_id) ?? [] }))
   },
 
   async findById(id: string, userId: string): Promise<TenderDetail | null> {
