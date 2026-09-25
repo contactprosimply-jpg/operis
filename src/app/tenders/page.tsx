@@ -17,7 +17,8 @@ import { MotionConfig } from 'framer-motion'
 import { TenderCard } from '@/components/tender/TenderCard'
 import { TenderKanban } from '@/components/tender/TenderKanban'
 import { TenderViewSwitch, type TenderViewMode } from '@/components/tender/TenderViewSwitch'
-import { Button, Modal, Field, Badge, useToast, Card, KpiCard, tableRowHoverHandlers, tenderListRowStyle, TableSkeleton } from '@/components/ui'
+import { Button, Modal, Field, Badge, useToast, Card, KpiCard, tenderListRowStyle, TableSkeleton } from '@/components/ui'
+import { TONE_VARS, tenderStageDisplay } from '@/lib/tender-stage'
 import type { TenderStatus } from '@/types/database'
 
 const STATUS_OPTIONS: { value: TenderStatus; label: string }[] = [
@@ -106,6 +107,7 @@ export default function TendersPage() {
   const { show, ToastComponent } = useToast()
   const [showModal, setShowModal] = useState(false)
   const [filter, setFilter] = useState('actifs')
+  const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ title: '', client: '', deadline: '', description: '', is_own_client: false })
   const [org, setOrg] = useState<OrganizationPayload | null>(null)
@@ -120,15 +122,18 @@ export default function TendersPage() {
 
   const inTeam = !!org?.members?.length
   const showCreatorColumn = inTeam || tenders.some(t => !!t.creator_label)
-  const tableColCount = showCreatorColumn ? 10 : 9
+  const tableColCount = showCreatorColumn ? 8 : 7
 
   const effectiveFilter = view === 'kanban' && !KANBAN_FILTERS.includes(filter) ? 'tous' : filter
-  const filtered = effectiveFilter === 'actifs'
+  const byStatus = effectiveFilter === 'actifs'
     ? tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status))
     : effectiveFilter === 'tous' ? tenders
     : effectiveFilter === 'mes_assignes' ? tenders.filter(t => t.assigned_to === currentUserId)
     : effectiveFilter === 'sans_echeance' ? tenders.filter(t => ['nouveau', 'en_cours', 'urgence'].includes(t.status) && !t.deadline)
     : tenders.filter(t => t.status === effectiveFilter)
+  const searchLower = search.trim().toLowerCase()
+  const filtered = !searchLower ? byStatus : byStatus.filter(t =>
+    t.title.toLowerCase().includes(searchLower) || t.client.toLowerCase().includes(searchLower))
 
   const handleCreate = async () => {
     if (!form.title || !form.client) return
@@ -187,36 +192,60 @@ export default function TendersPage() {
     ...(filter === 'sans_echeance' || stats.sansEcheance > 0 ? [{ key: 'sans_echeance', label: 'Sans échéance' }] : []),
   ]
 
+  const countForFilterKey = (key: string) => {
+    if (key === 'actifs') return stats.actifs
+    if (key === 'tous') return stats.total
+    if (key === 'mes_assignes') return tenders.filter(t => t.assigned_to === currentUserId).length
+    if (key === 'sans_echeance') return stats.sansEcheance
+    if (key === 'gagne') return stats.gagnes
+    if (key === 'perdu') return stats.perdus
+    return tenders.filter(t => t.status === key).length
+  }
+  const visibleFilters = filters.filter(f => view !== 'kanban' || KANBAN_FILTERS.includes(f.key))
+  const mainFilters = visibleFilters.filter(f => f.key !== 'sans_echeance')
+  const echeanceFilter = visibleFilters.find(f => f.key === 'sans_echeance')
+
   return (
-    <div className="animate-fade">
+    <div className="aol-page animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {ToastComponent}
 
-      <div className="kpi-grid" style={{ marginBottom: 24 }}>
+      <div className="aol-head">
+        <div>
+          <div className="aol-eyebrow">Appels d&apos;offres · {stats.actifs} en cours</div>
+          <h1 className="aol-h1">Vos appels d&apos;offres</h1>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label className="aol-search">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+            <input type="text" placeholder="Rechercher un AO, un client…" aria-label="Rechercher un AO" value={search} onChange={e => setSearch(e.target.value)} />
+          </label>
+          <span data-tour="tenders-create" style={{ display: 'inline-flex' }}>
+            <button type="button" className="aol-new-btn" onClick={() => setShowModal(true)}>+ Nouvel AO</button>
+          </span>
+        </div>
+      </div>
+
+      <div className="kpi-grid">
         <KpiCard label="Actifs" value={stats.actifs} color="blue" delay={0} />
         <KpiCard label="Gagnés" value={stats.gagnes} color="green" delay={60} />
         <KpiCard label="Perdus" value={stats.perdus} color="amber" delay={120} />
         <KpiCard label="Total" value={stats.total} color="purple" delay={180} />
       </div>
 
-      <div className="page-toolbar">
-        <div className="page-toolbar-tabs">
-          {filters.filter(f => view !== 'kanban' || KANBAN_FILTERS.includes(f.key)).map(f => (
-            <button key={f.key} onClick={() => setFilter(f.key)} style={{
-              padding: '8px 16px', fontSize: 12, cursor: 'pointer', border: 'none', background: 'transparent',
-              color: effectiveFilter === f.key ? 'var(--accent)' : 'var(--text-muted)',
-              fontFamily: 'DM Sans, system-ui', fontWeight: effectiveFilter === f.key ? 600 : 400,
-              borderBottom: effectiveFilter === f.key ? '2px solid var(--accent)' : '2px solid transparent',
-              marginBottom: -1, transition: 'all 0.2s ease',
-            }}>{f.label}</button>
-          ))}
-        </div>
-        <div className="page-toolbar-actions" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {refreshing && <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>↻ sync</span>}
-          <TenderViewSwitch value={view} onChange={changeView} />
-          <span data-tour="tenders-create" style={{ display: 'inline-flex' }}>
-            <Button variant="primary" onClick={() => setShowModal(true)}>+ Nouvel AO</Button>
-          </span>
-        </div>
+      <div className="aol-filters">
+        {mainFilters.map(f => (
+          <button key={f.key} type="button" className="aol-pill" aria-pressed={effectiveFilter === f.key} onClick={() => setFilter(f.key)}>
+            {f.label} <span>· {countForFilterKey(f.key)}</span>
+          </button>
+        ))}
+        <span style={{ flexGrow: 1 }} />
+        {echeanceFilter && (
+          <button type="button" className="aol-pill aol-pill--warn" aria-pressed={effectiveFilter === echeanceFilter.key} onClick={() => setFilter(echeanceFilter.key)}>
+            {echeanceFilter.label} <span>· {countForFilterKey(echeanceFilter.key)}</span>
+          </button>
+        )}
+        {refreshing && <span style={{ fontSize: 11, color: 'var(--db-text-2)', fontFamily: 'DM Mono, monospace' }}>↻ sync</span>}
+        <TenderViewSwitch value={view} onChange={changeView} />
       </div>
 
       {view === 'cartes' && (
@@ -285,17 +314,17 @@ export default function TendersPage() {
           <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>Aucun AO</div>
         )}
       </div>
-      <Card hover={false} className="tenders-table-view" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="aol-table-card tenders-table-view">
         <div className="table-scroll">
         <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+            <tr className="aol-thead">
               {[
-                'Titre', 'Client', 'Deadline', 'Budget HT', 'Priorité', 'Statut',
+                'Appel d’offres', 'Priorité', 'Échéance', 'Réponses', 'Meilleur devis',
                 ...(showCreatorColumn ? ['Créé par'] : []),
-                'Fournisseurs', 'Réponses', 'Devis',
+                'Statut', '',
               ].map(h => (
-                <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>{h}</th>
+                <th key={h} style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 500 }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -303,20 +332,17 @@ export default function TendersPage() {
             {filtered.map((t, i) => {
               const respPct = t.nb_suppliers > 0 ? Math.round((t.nb_responses / t.nb_suppliers) * 100) : 0
               const priorite = PRIORITE_LABEL[t.priorite ?? 'normale'] ?? PRIORITE_LABEL.normale
-              const rowHandlers = tableRowHoverHandlers(t.status)
               const creatorLabel = t.creator_label ?? getTenderCreatorLabel(t, currentUserId, org)
               const assigneeLabel = t.assignee_label ?? getTenderAssigneeLabel(t, currentUserId, org)
+              const stage = tenderStageDisplay(t)
+              const toneVars = TONE_VARS[stage.tone]
               return (
                 <tr key={t.tender_id} onClick={() => router.push(`/tenders/${t.tender_id}`)}
-                  className="animate-fade"
-                  style={{
-                    borderBottom: '1px solid var(--border)', cursor: 'pointer',
-                    animationDelay: `${i * 30}ms`,
-                    ...tenderListRowStyle(t.status),
-                  }}
-                  {...rowHandlers}>
-                  <td style={{ padding: '12px 14px' }}>
-                    <div style={{ fontWeight: 600 }}>{t.title}</div>
+                  className="aol-row animate-fade"
+                  style={{ animationDelay: `${i * 30}ms` }}>
+                  <td style={{ padding: '14px' }}>
+                    <div className="aol-title">{t.title}</div>
+                    <div className="aol-client">{t.client}</div>
                     {(creatorLabel || assigneeLabel) && (
                       <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                         {creatorLabel && (
@@ -328,24 +354,48 @@ export default function TendersPage() {
                       </div>
                     )}
                   </td>
-                  <td style={{ padding: '12px 14px', color: 'var(--text-secondary)' }}>{t.client}</td>
-                  <td style={{ padding: '12px 14px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: deadlineColor(t.days_remaining), fontWeight: t.days_remaining !== null && t.days_remaining <= 3 ? 600 : 400 }}>
-                    {t.days_remaining !== null ? `${t.days_remaining}j` : '—'}
-                  </td>
-                  <td style={{ padding: '12px 14px', fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#34d399' }}>{formatBudget(t.budget_ht)}</td>
-                  <td style={{ padding: '12px 14px' }}>
+                  <td style={{ padding: '14px' }}>
                     <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: priorite.color, fontWeight: 600 }}>
                       {priorite.icon} {priorite.label}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 14px' }} onClick={e => e.stopPropagation()}>
+                  <td style={{ padding: '14px' }}>
+                    <div style={{ fontSize: 14, color: 'var(--db-text)' }}>
+                      {t.deadline ? new Date(t.deadline).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '—'}
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginTop: 2, color: t.deadline ? deadlineColor(t.days_remaining) : 'var(--db-orange)' }}>
+                      {t.deadline
+                        ? (t.days_remaining !== null ? (t.days_remaining < 0 ? 'Échéance dépassée' : `J-${t.days_remaining}`) : '—')
+                        : 'Sans échéance'}
+                    </div>
+                  </td>
+                  <td style={{ padding: '14px' }}>
+                    {t.nb_suppliers > 0 ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div className="aol-bar-track"><div className="aol-bar-fill" style={{ width: `${respPct}%` }} /></div>
+                        <span style={{ fontSize: 13, fontWeight: 600, minWidth: 30, color: 'var(--db-text)' }}>{t.nb_responses}/{t.nb_suppliers}</span>
+                      </div>
+                    ) : <span style={{ color: 'var(--db-text-2)' }}>—</span>}
+                  </td>
+                  <td style={{ padding: '14px' }}>
+                    {t.min_quote ? (
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--db-green-text)' }}>{formatBudget(t.min_quote)}</span>
+                    ) : <span style={{ color: 'var(--db-text-2)' }}>—</span>}
+                  </td>
+                  {showCreatorColumn && (
+                    <td style={{ padding: '14px', fontSize: 11, color: 'var(--db-text-2)', fontFamily: 'DM Sans, system-ui' }}>
+                      {creatorLabel ?? creatorColumnLabel(t, currentUserId, org)}
+                    </td>
+                  )}
+                  <td style={{ padding: '14px' }} onClick={e => e.stopPropagation()}>
                     <select
+                      aria-label={`Statut de ${t.title}`}
                       value={t.status}
                       onChange={e => handleStatusChange(e, t.tender_id, e.target.value as TenderStatus)}
+                      className="aol-status-pill"
                       style={{
-                        fontSize: 11, fontFamily: 'DM Sans, system-ui', fontWeight: 500,
-                        background: 'var(--bg-card)', border: '1px solid var(--border)',
-                        borderRadius: 6, padding: '5px 8px', color: 'var(--text-primary)', cursor: 'pointer',
+                        border: 'none', fontFamily: 'DM Sans, system-ui', cursor: 'pointer',
+                        ...toneVars,
                       }}
                     >
                       {STATUS_OPTIONS.map(opt => (
@@ -353,24 +403,19 @@ export default function TendersPage() {
                       ))}
                     </select>
                   </td>
-                  {showCreatorColumn && (
-                    <td style={{ padding: '12px 14px', fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'DM Sans, system-ui' }}>
-                      {creatorLabel ?? creatorColumnLabel(t, currentUserId, org)}
-                    </td>
-                  )}
-                  <td style={{ padding: '12px 14px' }}><Badge>{t.nb_suppliers}</Badge></td>
-                  <td style={{ padding: '12px 14px' }}><Badge color={respPct === 100 ? 'green' : respPct >= 50 ? 'amber' : t.nb_suppliers > 0 ? 'red' : 'gray'}>{t.nb_responses}/{t.nb_suppliers}</Badge></td>
-                  <td style={{ padding: '12px 14px' }}><Badge color={t.nb_quotes > 0 ? 'green' : 'gray'} glow={t.nb_quotes > 0}>{t.nb_quotes}</Badge></td>
+                  <td style={{ padding: '14px', color: 'var(--db-text-2)' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+                  </td>
                 </tr>
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={tableColCount} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>Aucun AO</td></tr>
+              <tr><td colSpan={tableColCount} style={{ padding: 32, textAlign: 'center', color: 'var(--db-text-2)', fontSize: 12 }}>Aucun AO</td></tr>
             )}
           </tbody>
         </table>
         </div>
-      </Card>
+      </div>
       </>
       )}
 
@@ -393,7 +438,7 @@ export default function TendersPage() {
         </label>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
           <Button variant="ghost" onClick={() => setShowModal(false)}>Annuler</Button>
-          <Button variant="primary" onClick={handleCreate} loading={creating}>Créer l'AO</Button>
+          <Button variant="primary" onClick={handleCreate} loading={creating}>Créer l&apos;AO</Button>
         </div>
       </Modal>
     </div>
