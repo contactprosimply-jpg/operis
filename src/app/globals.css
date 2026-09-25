@@ -49,6 +49,9 @@
   --db-green: #0F8A5F;
   --db-green-text: #0B6B49;
   --db-green-bg: #E7F6EF;
+  --db-blue: #0369A1;
+  --db-blue-text: #0369A1;
+  --db-blue-bg: #E0F2FE;
   --db-orange-border: #F3C99B;
   --db-family-bg: #F7F9FC;
   --db-tag: #475569;
@@ -711,6 +714,111 @@ textarea.sp-input { height: auto; min-height: 96px; padding: 10px 12px; resize: 
 /* Sans souris, pas de survol : les actions de ligne ne doivent jamais rester invisibles. */
 @media (hover: none) {
   .row-actions { opacity: 1 !important; }
+}
+
+/* ═══ Appels d'offres — liste (AO-Liste.dc.html) — jetons --db-* du thème (lib/theme.ts) ═══ */
+.aol-page { background: var(--db-page); color: var(--db-text); font-family: 'DM Sans', system-ui, sans-serif; }
+.aol-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.aol-eyebrow { font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--db-text-2); }
+.aol-h1 { margin: 6px 0 0; font-size: 30px; font-weight: 700; letter-spacing: -0.01em; color: var(--db-text); }
+.aol-search { width: 320px; max-width: 100%; height: 44px; background: var(--db-card); border: 1px solid var(--db-border); border-radius: 10px; display: flex; align-items: center; gap: 10px; padding: 0 14px; color: var(--db-text-2); box-sizing: border-box; }
+.aol-search input { flex: 1; min-width: 0; border: none; outline: none; font-family: inherit; font-size: 14px; color: var(--db-text); background: transparent; }
+.aol-new-btn { height: 44px; padding: 0 16px; border-radius: 10px; border: none; background: var(--db-accent); color: var(--db-on-accent); font-family: inherit; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; white-space: nowrap; }
+.aol-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.aol-pill { height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--db-btn-border); background: var(--db-card); color: var(--db-text); font-weight: 500; font-family: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.aol-pill[aria-pressed="true"] { border-color: var(--db-dark); background: var(--db-dark); color: #fff; font-weight: 600; }
+.aol-pill--warn { border-color: var(--db-orange-border); background: var(--db-orange-bg); color: var(--db-orange); font-weight: 600; }
+.aol-pill span { opacity: 0.7; }
+.aol-table-card { background: var(--db-card); border: 1px solid var(--db-border); border-radius: 14px; overflow: hidden; }
+.aol-thead { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--db-text-2); border-bottom: 1px solid var(--db-sep); }
+.aol-row { border-bottom: 1px solid var(--db-sep); cursor: pointer; }
+.aol-row:last-child { border-bottom: none; }
+.aol-row:hover { background: var(--db-family-bg); }
+.aol-title { font-size: 15px; font-weight: 600; color: var(--db-text); }
+.aol-client { font-size: 13px; color: var(--db-text-2); margin-top: 2px; }
+.aol-tag { display: inline-block; white-space: nowrap; font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 999px; background: var(--db-tag-bg); color: var(--db-tag); }
+.aol-deadline { font-size: 14px; color: var(--db-text); }
+.aol-deadline-sub { font-size: 12px; font-weight: 600; margin-top: 2px; }
+.aol-bar-track { flex-grow: 1; height: 6px; background: var(--db-sep); border-radius: 999px; }
+.aol-bar-fill { height: 6px; border-radius: 999px; background: var(--db-accent); }
+.aol-status-pill { display: inline-block; white-space: nowrap; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; }
+
+/* ═══ Appels d'offres — fiche (AO-Detail-Onglets.dc.html) ═══ */
+.ao-page { background: var(--db-page); color: var(--db-text); font-family: 'DM Sans', system-ui, sans-serif; }
+.ao-breadcrumb { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; text-decoration: none; color: var(--db-text); }
+.ao-status-pill { display: inline-block; white-space: nowrap; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; }
+.ao-h1 { margin: 10px 0 0; font-size: 30px; font-weight: 700; letter-spacing: -0.01em; color: var(--db-text); }
+.ao-subline { font-size: 14px; color: var(--db-text-2); margin-top: 4px; }
+.ao-assignee { display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 42px; border: 1px solid var(--db-border); border-radius: 10px; background: var(--db-card); color: var(--db-text); font-family: inherit; cursor: pointer; }
+.ao-avatar { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; flex-shrink: 0; background: var(--db-accent-bg); color: var(--db-accent-text); }
+.ao-btn { height: 42px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--db-btn-border); background: var(--db-card); color: var(--db-text); font-family: inherit; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; cursor: pointer; }
+.ao-btn--primary { border: none; background: var(--db-accent); color: var(--db-on-accent); }
+.ao-stepper-card { background: var(--db-card); border: 1px solid var(--db-border); border-radius: 14px; }
+.ao-stepper { display: flex; align-items: center; padding: 18px 24px; }
+.ao-step { display: flex; align-items: center; flex-grow: 1; }
+.ao-step:last-child { flex-grow: 0; }
+.ao-step-dot { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.ao-step-dot--done { background: var(--db-green); color: #fff; }
+.ao-step-dot--current { background: var(--db-accent); color: var(--db-on-accent); box-shadow: 0 0 0 4px var(--db-accent-bg); }
+.ao-step-dot--pending { border: 2px solid var(--db-border); box-sizing: border-box; color: var(--db-text-2); background: transparent; }
+.ao-step-label { font-size: 14px; font-weight: 700; color: var(--db-text); }
+.ao-step-label--current { color: var(--db-accent-text); }
+.ao-step-label--pending { color: var(--db-text-2); }
+.ao-step-date { font-size: 12px; color: var(--db-text-2); }
+.ao-step-line { flex-grow: 1; height: 2px; margin: 0 10px; background: var(--db-border); }
+.ao-step-line--done { background: var(--db-green); }
+.ao-tabbar { display: flex; gap: 6px; border-bottom: 1px solid var(--db-border); flex-wrap: wrap; }
+.ao-tabbtn { height: 46px; padding: 0 2px; margin-right: 26px; border: none; background: transparent; font-family: inherit; font-size: 15px; font-weight: 600; color: var(--db-text-2); border-bottom: 2px solid transparent; cursor: pointer; }
+.ao-tabbtn[aria-selected="true"] { color: var(--db-text); border-bottom-color: var(--db-accent); }
+.ao-tabbtn-count { font-size: 12px; color: var(--db-text-2); font-weight: 500; margin-left: 4px; }
+.ao-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+.ao-consult-table { background: var(--db-card); border: 1px solid var(--db-border); border-radius: 14px; overflow: hidden; }
+.ao-consult-thead { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--db-text-2); border-bottom: 1px solid var(--db-sep); }
+.ao-consult-row { border-bottom: 1px solid var(--db-sep); }
+.ao-consult-row:last-child { border-bottom: none; }
+.ao-follow-pill { display: inline-block; white-space: nowrap; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; }
+.ao-side { display: flex; flex-direction: column; gap: 14px; }
+.ao-side-card { background: var(--db-card); border: 1px solid var(--db-border); border-radius: 14px; padding: 18px 20px; }
+.ao-side-label { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--db-text-2); }
+
+@media (max-width: 1023px) {
+  .ao-body { grid-template-columns: minmax(0, 1fr); }
+  .ao-stepper { flex-wrap: wrap; gap: 12px; padding: 16px; }
+  .ao-step-line { display: none; }
+}
+
+/* ═══ Appels d'offres — documents (AO-Detail-Documents.dc.html) ═══ */
+.aod-layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; align-items: start; }
+.aod-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.aod-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.aod-search { width: 260px; max-width: 100%; height: 36px; background: var(--db-card); border: 1px solid var(--db-border); border-radius: 10px; display: flex; align-items: center; gap: 8px; padding: 0 12px; color: var(--db-text-2); box-sizing: border-box; }
+.aod-search input { flex: 1; min-width: 0; border: none; outline: none; font-family: inherit; font-size: 13px; color: var(--db-text); background: transparent; }
+.aod-table-card { background: var(--db-card); border: 1px solid var(--db-border); border-radius: 14px; overflow: hidden; }
+.aod-thead { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--db-text-2); border-bottom: 1px solid var(--db-sep); }
+.aod-row { border-bottom: 1px solid var(--db-sep); cursor: pointer; }
+.aod-row:last-child { border-bottom: none; }
+.aod-row:hover { background: var(--db-family-bg); }
+.aod-row[data-selected="true"] { background: var(--db-accent-bg); box-shadow: inset 3px 0 0 var(--db-accent); }
+.aod-filetype { font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 700; padding: 3px 6px; border-radius: 5px; flex-shrink: 0; }
+.aod-filetype--pdf { color: var(--db-red); background: var(--db-red-bg); }
+.aod-filetype--doc { color: var(--db-blue-text); background: var(--db-blue-bg); }
+.aod-sens-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+.aod-sens-pill--received { color: var(--db-green-text); background: var(--db-green-bg); }
+.aod-sens-pill--sent { color: var(--db-accent-text); background: var(--db-accent-bg); }
+.aod-sens-pill--imported { color: #8b5cf6; background: rgba(139,92,246,0.14); }
+.aod-person { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.aod-person-name { font-size: 13px; font-weight: 600; color: var(--db-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aod-person-sub { font-size: 11px; color: var(--db-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aod-dropzone { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 16px; border: 1.5px dashed var(--db-accent); border-radius: 14px; background: var(--db-card); font-size: 14px; color: var(--db-accent-text); font-weight: 600; cursor: pointer; }
+.aod-side { display: flex; flex-direction: column; gap: 14px; }
+.aod-side-card { background: var(--db-card); border: 1px solid var(--db-border); border-radius: 14px; padding: 18px 20px; }
+.aod-timeline-item { position: relative; display: flex; gap: 12px; padding-bottom: 14px; }
+.aod-timeline-line { position: absolute; left: 15px; top: 34px; bottom: -6px; width: 2px; background: var(--db-border); }
+.aod-timeline-dot { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+@media (max-width: 1023px) {
+  .aod-layout { grid-template-columns: minmax(0, 1fr); }
+  .aod-side { display: none; }
 }
 
 /* Cartes KPI en 2 colonnes : le libellé ne doit pas chevaucher l'icône (ex. « TAUX RÉPONSE » à 360px). */
