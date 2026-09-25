@@ -38,6 +38,12 @@ export interface TenderDocumentItem {
   is_optional?: boolean
   /** Traçabilité des documents importés manuellement (kind: 'imported'). */
   imported_by_name?: string | null
+  /** Traçabilité des documents envoyés (kind: 'sent') : membre à l'origine de l'envoi. */
+  sent_by_name?: string | null
+  /** Pour un envoi groupé (consultation multi-fournisseurs) : la liste complète des destinataires. */
+  sent_to_suppliers?: string[]
+  /** Traçabilité des documents reçus (kind: 'received') : membre dont la boîte mail a reçu le message. */
+  received_by_name?: string | null
 }
 
 export interface TenderDocumentVersion extends TenderDocumentItem {
@@ -779,6 +785,7 @@ async function collectInboundMailDocuments(
   seenFiles: Set<string>,
   label = 'Demande AO',
   allVersions?: TenderDocumentItem[],
+  receivedByName?: string | null,
 ): Promise<TenderDocumentItem[]> {
   const { data: em } = await db
     .from('emails')
@@ -814,6 +821,7 @@ async function collectInboundMailDocuments(
       email_id: em.id,
       attachment_index: i,
       is_png: isPngAttachment(att.filename, att.contentType),
+      received_by_name: receivedByName ?? null,
     }
 
     if (allVersions) trackDocumentVersion(allVersions, item)
@@ -834,6 +842,7 @@ async function collectLinkedInboundMailDocuments(
   sourceEmailId: string | null | undefined,
   seenFiles: Set<string>,
   allVersions?: TenderDocumentItem[],
+  receivedByName?: string | null,
 ): Promise<TenderDocumentItem[]> {
   const { data: emails } = await db
     .from('emails')
@@ -881,6 +890,7 @@ async function collectLinkedInboundMailDocuments(
         email_id: em.id,
         attachment_index: i,
         is_png: isPngAttachment(att.filename, att.contentType),
+        received_by_name: receivedByName ?? null,
       }
 
       if (allVersions) trackDocumentVersion(allVersions, item)
@@ -1145,6 +1155,11 @@ export async function collectTenderDocuments(
   const seenSent = new Set<string>()
   const excludedKeys = await loadExcludedMailAttachmentKeys(db, userId, tenderId)
 
+  // La boîte mail de cet AO est celle de userId (toutes les requêtes emails ci-dessous sont scopées
+  // à ce seul utilisateur) : c'est donc le membre qui a réellement reçu les mails entrants.
+  const { data: mailOwnerProfile } = await db.from('profiles').select('full_name').eq('id', userId).maybeSingle()
+  const receivedByName = mailOwnerProfile?.full_name?.trim() || null
+
   const sourceEmailId = await resolveSourceEmailId(db, userId, tenderId)
   let inboundClientLabel = 'Client'
   let sourceReceivedAt: string | null = null
@@ -1194,10 +1209,10 @@ export async function collectTenderDocuments(
 
     await repairTenderInboundSources(db, userId, tenderId, sourceEmailId, sourceInboundKeys)
 
-    received.push(...await collectInboundMailDocuments(db, userId, sourceEmailId, seenFiles, 'Demande AO', allVersions))
+    received.push(...await collectInboundMailDocuments(db, userId, sourceEmailId, seenFiles, 'Demande AO', allVersions, receivedByName))
   }
 
-  received.push(...await collectLinkedInboundMailDocuments(db, userId, tenderId, sourceEmailId, seenFiles, allVersions))
+  received.push(...await collectLinkedInboundMailDocuments(db, userId, tenderId, sourceEmailId, seenFiles, allVersions, receivedByName))
 
   const quoteBySupplier = new Map(quotes.map(q => [q.supplier_id ?? q.supplier?.id, q]))
 
@@ -1231,12 +1246,13 @@ export async function collectTenderDocuments(
       download_type: 'mail',
       email_id: email.id,
       attachment_index: origIndex >= 0 ? origIndex : 0,
+      received_by_name: receivedByName,
     }, allVersions)
   }
 
   const { data: tenderDocs } = await db
     .from('tender_documents')
-    .select('id, filename, content_type, size, source, created_at, email_id, imported_by, supplier:suppliers(name), importer:profiles!tender_documents_imported_by_fkey(full_name)')
+    .select('id, filename, content_type, size, source, created_at, email_id, imported_by, supplier:suppliers(name), importer:profiles!tender_documents_imported_by_fkey(full_name), sender:profiles!tender_documents_user_id_fkey(full_name)')
     .eq('tender_id', tenderId)
     .eq('user_id', userId)
     .is('deleted_at', null)
@@ -1249,6 +1265,7 @@ export async function collectTenderDocuments(
 
     const supplierName = (doc.supplier as { name?: string } | null)?.name
     const importerName = (doc.importer as { full_name?: string } | null)?.full_name
+    const senderName = (doc.sender as { full_name?: string } | null)?.full_name?.trim() || null
     const inboundTitles = titleAoInbound(inboundClientLabel)
     const outboundTitles = doc.source === 'consultation'
       ? titleSentToSupplier(supplierName, 'consultation')
@@ -1277,6 +1294,8 @@ export async function collectTenderDocuments(
       email_id: doc.email_id ?? undefined,
       mail_source: mailDocSourceLabel(doc.source),
       imported_by_name: isManualImport ? (importerName?.trim() || 'un membre') : undefined,
+      received_by_name: (!isManualImport && inbound) ? receivedByName : undefined,
+      sent_by_name: (!isManualImport && !inbound) ? senderName : undefined,
     }
 
     if (isManualImport) {
@@ -1300,35 +1319,56 @@ export async function collectTenderDocuments(
 
   const { data: emailLogs } = await db
     .from('email_logs')
-    .select('id, type, subject, sent_at, attachments, supplier:suppliers(name)')
+    .select('id, type, subject, sent_at, attachments, user_id, supplier:suppliers(name), sender:profiles!email_logs_user_id_fkey(full_name)')
     .eq('tender_id', tenderId)
     .order('sent_at', { ascending: false })
 
+  // Un envoi de consultation crée une ligne email_logs par fournisseur (cf. tenderService.sendConsultation) ;
+  // on regroupe ces lignes (même type + même minute d'envoi + même sujet) pour reconstituer un seul
+  // envoi « à N fournisseurs » plutôt que N lignes identiques.
+  type EmailLogRow = NonNullable<typeof emailLogs>[number]
+  const logGroups = new Map<string, EmailLogRow[]>()
   for (const log of emailLogs ?? []) {
-    const attachments = toAttachmentMeta(log.attachments)
-    const supplierName = (log.supplier as { name?: string } | null)?.name
+    const minute = log.sent_at ? new Date(log.sent_at).toISOString().slice(0, 16) : 'unknown'
+    const key = `${log.type ?? ''}|${minute}|${log.subject ?? ''}`
+    const list = logGroups.get(key) ?? []
+    list.push(log)
+    logGroups.set(key, list)
+  }
+
+  for (const logs of logGroups.values()) {
+    const first = logs[0]
+    const attachments = toAttachmentMeta(first.attachments)
+    const supplierNames = Array.from(new Set(
+      logs.map(l => (l.supplier as { name?: string } | null)?.name).filter((n): n is string => !!n),
+    ))
+    const senderName = (first.sender as { full_name?: string } | null)?.full_name?.trim() || null
+    const representativeName = supplierNames.length > 1 ? `${supplierNames.length} fournisseurs` : supplierNames[0]
+
     for (let i = 0; i < attachments.length; i++) {
       const att = attachments[i]
       if (!passesAoDocumentFilter(att)) continue
 
-      const key = `sent:log:${log.id}:${i}`
+      const key = `sent:log:${first.id}:${i}`
       if (seenSent.has(key)) continue
       seenSent.add(key)
 
-      const titles = titleSentToSupplier(supplierName, log.type ?? 'consultation')
+      const titles = titleSentToSupplier(representativeName, first.type ?? 'consultation')
       const logItem: TenderDocumentItem = {
-        id: `log:${log.id}:${i}`,
+        id: `log:${first.id}:${i}`,
         kind: 'sent',
         filename: att.filename,
         contentType: att.contentType,
         size: att.size,
-        date: log.sent_at,
-        label: log.subject ?? log.type,
-        supplier_name: supplierName,
+        date: first.sent_at,
+        label: first.subject ?? first.type,
+        supplier_name: supplierNames[0],
         category: titles.category,
         display_title: titles.display_title,
         download_type: 'tender_doc',
-        document_id: `log:${log.id}:${i}`,
+        document_id: `log:${first.id}:${i}`,
+        sent_by_name: senderName,
+        sent_to_suppliers: supplierNames.length > 0 ? supplierNames : undefined,
       }
       trackDocumentVersion(allVersions, logItem)
       sent.push(logItem)
