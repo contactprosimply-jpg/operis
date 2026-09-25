@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { authFetch, getAccessToken } from '@/lib/auth-client'
-import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast, Card } from '@/components/ui'
+import { TenderStatusBadge, ConsultationStatusBadge, Badge, Button, Modal, Field, Spinner, useToast } from '@/components/ui'
 import { CorpsEtatPicker } from '@/components/ui/CorpsEtatPicker'
 import { useCorpsEtats } from '@/hooks'
 import ConsultationComposeModal, { type ConsultationComposePayload } from '@/components/ConsultationComposeModal'
@@ -27,6 +27,7 @@ import { groupEmailsByThread, computeThreadStatus, THREAD_STATUS_META } from '@/
 import { AO_CATEGORY_BADGE, type AoKeywordCategory } from '@/lib/ao-email-analysis'
 import { normalizeAttachments } from '@/lib/mail-attachments'
 import { isTenderSetupQuery } from '@/lib/tender-setup-nav'
+import { TONE_VARS, tenderStageDisplay, type StatusTone } from '@/lib/tender-stage'
 
 const STATUS_OPTIONS = [
   { value: 'nouveau', label: 'Nouveau', color: '#60a5fa' },
@@ -72,6 +73,67 @@ function DeadlineBadge({ deadline }: { deadline: string | null }) {
       {' '}
       <span style={{ fontSize: 11 }}>({days < 0 ? `${Math.abs(days)}j dépassé` : `${days}j restants`})</span>
     </span>
+  )
+}
+
+type StepState = 'done' | 'current' | 'pending'
+
+function fmtStepDate(d: string | null | undefined): string {
+  if (!d) return ''
+  return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+}
+
+/** Étapes dérivées de l'état réel de l'AO (aucun nouvel état en base) : Reçu → Consultation → Devis → Remise → Résultat. */
+function TenderProgressStepper({ tender, consultations, quotes }: { tender: any; consultations: any[]; quotes: any[] }) {
+  const isResolved = tender.status === 'gagne' || tender.status === 'perdu' || tender.status === 'cloture'
+  const consultDates = consultations.map((c: any) => c.last_sent_at ?? c.created_at).filter(Boolean).sort()
+  const quoteDates = quotes.map((q: any) => q.received_at ?? q.created_at).filter(Boolean).sort()
+  const nbSuppliers = consultations.length
+  const nbQuotes = quotes.length
+
+  const steps: { key: string; label: string; date: string; state: StepState }[] = [
+    { key: 'recu', label: 'Reçu', date: fmtStepDate(tender.created_at), state: 'done' },
+    {
+      key: 'consultation', label: 'Consultation',
+      date: consultDates.length ? fmtStepDate(consultDates[0]) : '—',
+      state: nbSuppliers > 0 ? 'done' : 'current',
+    },
+    {
+      key: 'devis', label: 'Devis',
+      date: nbSuppliers > 0 ? `${nbQuotes} / ${nbSuppliers}` : '—',
+      state: nbSuppliers === 0 ? 'pending' : nbQuotes >= nbSuppliers && nbQuotes > 0 ? 'done' : 'current',
+    },
+    {
+      key: 'remise', label: 'Remise',
+      date: tender.deadline ? fmtStepDate(tender.deadline) : (quoteDates.length ? fmtStepDate(quoteDates[quoteDates.length - 1]) : '—'),
+      state: isResolved ? 'done' : nbQuotes > 0 ? 'current' : 'pending',
+    },
+    {
+      key: 'resultat', label: 'Résultat',
+      date: isResolved ? fmtStepDate(tender.updated_at) : '—',
+      state: isResolved ? 'done' : 'pending',
+    },
+  ]
+
+  return (
+    <div className="ao-stepper-card">
+      <div className="ao-stepper">
+        {steps.map((s, i) => (
+          <div key={s.key} className="ao-step" style={i === steps.length - 1 ? { flexGrow: 0 } : undefined}>
+            <div className={`ao-step-dot ao-step-dot--${s.state}`}>
+              {s.state === 'done' ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12 5 5L20 7" /></svg>
+              ) : i + 1}
+            </div>
+            <div style={{ marginLeft: 10 }}>
+              <div className={`ao-step-label${s.state !== 'pending' ? (s.state === 'current' ? ' ao-step-label--current' : '') : ' ao-step-label--pending'}`}>{s.label}</div>
+              <div className="ao-step-date">{s.date}</div>
+            </div>
+            {i < steps.length - 1 && <div className={`ao-step-line${s.state === 'done' ? ' ao-step-line--done' : ''}`} />}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -1043,8 +1105,6 @@ export default function TenderDetailPage() {
   )
 
   const prioriteOpt = PRIORITE_OPTIONS.find(p => p.value === tender.priorite)
-  const headerBorder = tender.priorite === 'urgente' ? '#ef4444'
-    : tender.priorite === 'haute' ? '#f59e0b' : 'var(--border-hi)'
 
   const quoteBySupplier = new Map<string, any>(quotes.map((q: any) => [q.supplier_id, q]))
   const sortedQuotes = [...quotes].sort((a: any, b: any) => (parseFloat(a.price_ht) || 0) - (parseFloat(b.price_ht) || 0))
@@ -1064,88 +1124,99 @@ export default function TenderDetailPage() {
     return { delta, pct }
   }
 
+  const deadlineDays = tender.deadline ? Math.ceil((new Date(tender.deadline).getTime() - Date.now()) / 86400000) : null
+  const deadlineTone: StatusTone = deadlineDays === null ? 'gray' : deadlineDays < 0 || deadlineDays <= 3 ? 'red' : deadlineDays <= 7 ? 'orange' : 'gray'
+  const corpsEtatLabels: string[] = (tender.corps_etats ?? [])
+    .map((id: string) => corpsEtats.find(ce => ce.id === id)?.label)
+    .filter((l: string | undefined): l is string => !!l)
+  const stage = tenderStageDisplay({ status: tender.status, nb_suppliers: consultations.length, nb_quotes: quotes.length })
+
+  const bestQuote = quotes.find((q: any) => q.id === bestQuoteId)
+  const nextRelaunch = consultations
+    .filter((c: any) => ['envoye', 'relance', 'relance_2'].includes(c.status) && c.last_sent_at)
+    .map((c: any) => ({ supplier: c.supplier?.name as string | undefined, due: new Date(new Date(c.last_sent_at).getTime() + 7 * 86400000) }))
+    .sort((a: { due: Date }, b: { due: Date }) => a.due.getTime() - b.due.getTime())[0]
+
   return (
-    <div className="animate-fade">
+    <div className="ao-page animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       {ToastComponent}
 
-      {/* Header */}
-      <Card hover={false} className="ao-header" style={{
-        padding: '22px 26px', marginBottom: 24,
-        background: 'var(--bg-card)',
-        border: `1px solid ${headerBorder}`,
-        borderLeft: `4px solid ${headerBorder}`,
-      }}>
-        <div className="ao-header-row" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <button className="tap-min ao-back" onClick={() => router.push('/tenders')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, padding: 0, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'DM Sans, system-ui' }}>
-              ← Retour aux AO
-            </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <h1 className="ao-title" style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', overflowWrap: 'anywhere' }}>{tender.title}</h1>
-              <TenderStatusBadge status={tender.status} pulse={tender.status === 'urgence'} />
-              {tender.is_own_client && (
-                <span style={{
-                  fontSize: 10, fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em',
-                  color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid rgba(79,142,247,0.3)',
-                  borderRadius: 6, padding: '3px 9px', fontWeight: 600,
-                }}>
-                  Vous êtes le client
-                </span>
-              )}
-              {prioriteOpt && tender.priorite !== 'normale' && (
-                <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: prioriteOpt.color, background: `${prioriteOpt.color}20`, border: `1px solid ${prioriteOpt.color}40`, borderRadius: 6, padding: '3px 9px', fontWeight: 600 }}>{prioriteOpt.label}</span>
-              )}
-            </div>
-            <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>{tender.client}</div>
-            {(() => {
-              const creatorLabel = tender.creator_label ?? getTenderCreatorLabel(tender, currentUserId, org)
-              const assigneeLabel = tender.assignee_label ?? getTenderAssigneeLabel(tender, currentUserId, org)
-              if (!creatorLabel && !assigneeLabel) return null
-              return (
-                <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {creatorLabel && (
-                    <TenderOriginBadge label={creatorLabel} type="creator" />
-                  )}
-                  {assigneeLabel && (
-                    <TenderOriginBadge label={assigneeLabel} type="assigned" />
-                  )}
-                </div>
-              )
-            })()}
-            {tender.access?.can_assign && org?.members && org.members.length > 1 && (
-              <div style={{ marginTop: 12 }}>
-                <Button variant="ghost" onClick={() => setShowAssignModal(true)}>
-                  👤 {tender.assigned_to ? 'Réassigner' : 'Assigner'}
-                </Button>
-              </div>
+      <button type="button" className="ao-breadcrumb" onClick={() => router.push('/tenders')} style={{ background: 'none', cursor: 'pointer', padding: 0, alignSelf: 'flex-start' }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+        Appels d&apos;offres
+      </button>
+
+      <div className="ao-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span className="ao-status-pill" style={TONE_VARS[stage.tone]}>{stage.label}</span>
+            {tender.deadline && (
+              <span className="ao-status-pill" style={TONE_VARS[deadlineTone]}>
+                {deadlineDays !== null && (deadlineDays < 0 ? 'Échéance dépassée' : `J-${deadlineDays}`)} · remise le {new Date(tender.deadline).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+              </span>
             )}
-            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Suivi de l&apos;AO</span>
-                {refreshing && <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'DM Mono, monospace' }}>↻ sync</span>}
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {STATUS_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => handleQuickStatus(opt.value)}
-                    disabled={updatingStatus !== null}
-                    style={{
-                      padding: '6px 12px', fontSize: 11, cursor: updatingStatus ? 'wait' : 'pointer',
-                      borderRadius: 6, fontFamily: 'DM Sans, system-ui', fontWeight: tender.status === opt.value ? 600 : 400,
-                      border: tender.status === opt.value ? `2px solid ${opt.color}` : '1px solid var(--border)',
-                      background: tender.status === opt.value ? `${opt.color}18` : 'transparent',
-                      color: tender.status === opt.value ? opt.color : 'var(--text-secondary)',
-                      opacity: updatingStatus && updatingStatus !== opt.value ? 0.45 : 1,
-                    }}
-                  >
-                    {updatingStatus === opt.value ? '…' : opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {tender.is_own_client && (
+              <span className="ao-status-pill" style={TONE_VARS.accent}>Vous êtes le client</span>
+            )}
+            {prioriteOpt && tender.priorite !== 'normale' && (
+              <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: prioriteOpt.color, background: `${prioriteOpt.color}20`, border: `1px solid ${prioriteOpt.color}40`, borderRadius: 6, padding: '3px 9px', fontWeight: 600 }}>{prioriteOpt.label}</span>
+            )}
           </div>
+          <h1 className="ao-h1" style={{ overflowWrap: 'anywhere' }}>{tender.title}</h1>
+          <div className="ao-subline">{tender.client}</div>
+          {corpsEtatLabels.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+              {corpsEtatLabels.map(l => <span key={l} className="aol-tag">{l}</span>)}
+            </div>
+          )}
+          {(() => {
+            const creatorLabel = tender.creator_label ?? getTenderCreatorLabel(tender, currentUserId, org)
+            const assigneeLabel = tender.assignee_label ?? getTenderAssigneeLabel(tender, currentUserId, org)
+            if (!creatorLabel && !assigneeLabel) return null
+            return (
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                {creatorLabel && (
+                  <TenderOriginBadge label={creatorLabel} type="creator" />
+                )}
+                {assigneeLabel && (
+                  <TenderOriginBadge label={assigneeLabel} type="assigned" />
+                )}
+              </div>
+            )
+          })()}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {tender.access?.can_assign && org?.members && org.members.length > 1 && (
+            <button type="button" className="ao-assignee" onClick={() => setShowAssignModal(true)}>
+              <span className="ao-avatar">👤</span>
+              {tender.assigned_to ? 'Réassigner' : 'Assigner'}
+            </button>
+          )}
+          <span title={
+            !tender.dossier_url
+              ? 'Aucun lien configuré — cliquez pour le renseigner'
+              : isHttpsDossierUrl(tender.dossier_url)
+                ? `Ouvrir dans un nouvel onglet : ${tender.dossier_url}`
+                : isElectronDesktop()
+                  ? `Ouvrir : ${tender.dossier_url}`
+                  : `Copier le chemin : ${tender.dossier_url}`
+          }>
+            <button type="button" className="ao-btn" onClick={handleOpenFolder}>
+              📂 {tender.dossier_url ? 'Dossier' : 'Créer le lien'}
+            </button>
+          </span>
+          {tender.dossier_url && (
+            <span title="Modifier le lien du dossier">
+              <button type="button" className="ao-btn" onClick={() => setShowFolderPathModal(true)}>⚙️</button>
+            </span>
+          )}
+          <span data-tour="tenders-create" style={{ display: 'inline-flex' }}>
+            <button type="button" className="ao-btn ao-btn--primary" onClick={() => setShowAddSupplierModal(true)}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              Ajouter un fournisseur
+            </button>
+          </span>
           <button
             type="button"
             className="ao-actions-toggle"
@@ -1155,90 +1226,80 @@ export default function TenderDetailPage() {
             Actions {actionsOpen ? '▴' : '▾'}
           </button>
           <div className={`ao-header-actions${actionsOpen ? ' is-open' : ''}`} style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
-            <span style={{ display: 'inline-flex', gap: 2 }}>
-              <span title={
-                !tender.dossier_url
-                  ? 'Aucun lien configuré — cliquez pour le renseigner'
-                  : isHttpsDossierUrl(tender.dossier_url)
-                    ? `Ouvrir dans un nouvel onglet : ${tender.dossier_url}`
-                    : isElectronDesktop()
-                      ? `Ouvrir : ${tender.dossier_url}`
-                      : `Copier le chemin : ${tender.dossier_url}`
-              }>
-                <Button variant="ghost" onClick={handleOpenFolder}>
-                  {tender.dossier_url ? '📂 Lien dossier' : '📂 Créer le lien'}
-                </Button>
-              </span>
-              {tender.dossier_url && (
-                <span title="Modifier le lien du dossier">
-                  <Button variant="ghost" onClick={() => setShowFolderPathModal(true)}>⚙️</Button>
-                </span>
-              )}
-            </span>
             <Button variant="ghost" onClick={handleExportPdf} loading={exportingPdf}>Exporter PDF</Button>
-            <Button variant="ghost" onClick={() => refreshTender()} disabled={refreshing}>Actualiser</Button>
+            <Button variant="ghost" onClick={() => refreshTender()} disabled={refreshing}>{refreshing ? '↻ sync' : 'Actualiser'}</Button>
             <Button variant="ghost" onClick={() => setShowEdit(true)}>Modifier</Button>
             {tender.access?.can_delete && (
               <Button variant="danger" onClick={handleDelete}>Supprimer</Button>
             )}
           </div>
         </div>
-      </Card>
+      </div>
+
+      {/* Suivi de l'AO — changement de statut rapide (état réel, pas juste dérivé) */}
+      <div className="ao-side-card" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <span className="ao-side-label">Changer le statut</span>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {STATUS_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => handleQuickStatus(opt.value)}
+              disabled={updatingStatus !== null}
+              style={{
+                padding: '6px 12px', fontSize: 11, cursor: updatingStatus ? 'wait' : 'pointer',
+                borderRadius: 999, fontFamily: 'DM Sans, system-ui', fontWeight: tender.status === opt.value ? 600 : 400,
+                border: tender.status === opt.value ? `2px solid ${opt.color}` : '1px solid var(--db-btn-border)',
+                background: tender.status === opt.value ? `${opt.color}18` : 'transparent',
+                color: tender.status === opt.value ? opt.color : 'var(--db-text-2)',
+                opacity: updatingStatus && updatingStatus !== opt.value ? 0.45 : 1,
+              }}
+            >
+              {updatingStatus === opt.value ? '…' : opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {tender.status === 'gagne' && (
         <div style={{
-          marginBottom: 20, padding: '16px 20px', borderRadius: 12,
-          background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)',
+          padding: '16px 20px', borderRadius: 12,
+          background: 'var(--db-green-bg)', border: '1px solid var(--db-green)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
         }}>
-          <div style={{ fontSize: 14, color: '#34d399', fontWeight: 600 }}>
+          <div style={{ fontSize: 14, color: 'var(--db-green-text)', fontWeight: 600 }}>
             🎉 AO gagné ! Continuez avec Simply pour gérer le chantier.
           </div>
           <span style={{
-            fontSize: 12, fontWeight: 600, color: 'var(--text-muted)',
-            border: '1px dashed var(--border-hi)', borderRadius: 8, padding: '8px 14px',
+            fontSize: 12, fontWeight: 600, color: 'var(--db-text-2)',
+            border: '1px dashed var(--db-border)', borderRadius: 8, padding: '8px 14px',
           }}>
             Bientôt disponible
           </span>
         </div>
       )}
 
+      <TenderProgressStepper tender={tender} consultations={consultations} quotes={quotes} />
+
       {/* Onglets */}
-      <div className="ao-tabs" style={{
-        display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap',
-        padding: '4px', background: 'var(--bg-card)', borderRadius: 12,
-        border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)',
-      }}>
+      <div className="ao-tabbar ao-tabs">
         {([
-          { id: 'fournisseurs' as const, label: 'Fournisseurs', count: consultations.length },
+          { id: 'fournisseurs' as const, label: 'Consultation', count: consultations.length },
           { id: 'devis' as const, label: 'Devis', count: quotes.length },
           { id: 'comparatif' as const, label: 'Comparatif', count: quotes.length },
           { id: 'documents' as const, label: 'Documents', count: documentsTabCount },
-          { id: 'mails' as const, label: 'Mails', count: mailsTabCount },
+          { id: 'mails' as const, label: 'Mails liés', count: mailsTabCount },
           { id: 'infos' as const, label: 'Informations', count: 0 },
         ]).map(tab => (
           <button
             key={tab.id}
             type="button"
+            className="ao-tabbtn"
+            aria-selected={activeTab === tab.id}
             onClick={() => setActiveTab(tab.id)}
-            style={{
-              flex: '1 1 auto', minWidth: 100, padding: '10px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
-              fontFamily: 'DM Sans, system-ui', fontSize: 13, fontWeight: activeTab === tab.id ? 600 : 500,
-              background: activeTab === tab.id ? 'var(--accent)' : 'transparent',
-              color: activeTab === tab.id ? '#fff' : 'var(--text-secondary)',
-              transition: 'background 0.15s, color 0.15s',
-            }}
           >
             {tab.label}
-            {tab.count > 0 && (
-              <span style={{
-                marginLeft: 6, fontSize: 10, fontFamily: 'DM Mono, monospace',
-                background: activeTab === tab.id ? 'rgba(255,255,255,0.25)' : 'var(--bg-hover)',
-                padding: '2px 6px', borderRadius: 10,
-              }}>
-                {tab.count}
-              </span>
-            )}
+            {tab.count > 0 && <span className="ao-tabbtn-count">{tab.count}</span>}
           </button>
         ))}
       </div>
@@ -1341,9 +1402,10 @@ export default function TenderDetailPage() {
       )}
 
       {activeTab === 'fournisseurs' && (
-      <div style={card}>
+      <div className="ao-body">
+      <div className="ao-consult-table" style={{ padding: '20px 22px' }}>
         <div className="ao-section-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--db-text)' }}>
             Fournisseurs consultés ({consultations.length})
           </div>
           <div className="ao-section-actions" style={{ display: 'flex', gap: 8 }}>
@@ -1523,6 +1585,51 @@ export default function TenderDetailPage() {
           )}
           </>
         )}
+      </div>
+
+      <aside className="ao-side">
+        <div className="ao-side-card">
+          <div className="ao-side-label">Réponses</div>
+          <div style={{ fontSize: 30, fontWeight: 700, marginTop: 6, color: 'var(--db-text)' }}>
+            {consultations.length ? quotes.length : 0}
+            <span style={{ fontSize: 18, color: 'var(--db-text-2)' }}> / {consultations.length}</span>
+          </div>
+          {consultations.length > 0 && (
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div className="aol-bar-track"><div className="aol-bar-fill" style={{ width: `${Math.round((quotes.length / consultations.length) * 100)}%` }} /></div>
+              <span style={{ fontSize: 13, fontWeight: 600, minWidth: 30, color: 'var(--db-text)' }}>{quotes.length}/{consultations.length}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="ao-side-card">
+          <div className="ao-side-label">Meilleur devis</div>
+          {bestQuote ? (
+            <>
+              <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--db-green-text)', marginTop: 6 }}>
+                {fmtPrice(minPrice)} <span style={{ fontSize: 14, color: 'var(--db-text-2)', fontWeight: 500 }}>HT</span>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--db-text-2)', marginTop: 4 }}>
+                {bestQuote.supplier?.name ?? '—'}{bestQuote.received_at ? ` · reçu le ${new Date(bestQuote.received_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}` : ''}
+              </div>
+            </>
+          ) : <div style={{ fontSize: 13, color: 'var(--db-text-2)', marginTop: 6 }}>Aucun devis reçu</div>}
+        </div>
+
+        <div className="ao-side-card">
+          <div className="ao-side-label">Prochaine relance auto</div>
+          {nextRelaunch ? (
+            <>
+              <div style={{ fontSize: 17, fontWeight: 700, marginTop: 8, color: 'var(--db-text)' }}>
+                {nextRelaunch.due.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })}
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--db-text-2)', marginTop: 4 }}>
+                {nextRelaunch.supplier ?? 'Fournisseur'}, sans réponse à J+7
+              </div>
+            </>
+          ) : <div style={{ fontSize: 13, color: 'var(--db-text-2)', marginTop: 6 }}>Aucune relance programmée</div>}
+        </div>
+      </aside>
       </div>
       )}
 
